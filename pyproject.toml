@@ -1,31 +1,33 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "torch==2.6.0"]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nemo-_placeholder"
+name = "nemo-reinforcer"
 version = "0.0.1"
-description = "_Placeholder"
+description = "Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache 2.0"}
 dependencies = [
-    "torch==2.6.0"
+    "torch==2.6.0",
+    "colored==2.2.3",
+    "ray[default]==2.43.0",
+    "transformers",
+    "wandb",
+    "numpy",
+    "datasets",
+    "rich",
+    "math-verify",
+    "accelerate>=0.26",
+    "tensorboard",
+    "omegaconf",
+    "torchdata",
+    "vllm==0.8.0",
 ]
 
 [tool.setuptools]
-packages = ["nemo__placeholder"]
-
-[dependency-groups]
-dev = [
-    "pre-commit==3.6.0",
-    "ruff==0.9.9",
-]
-test = [
-    "pytest>=7.0.0",
-    "pytest-timeout",
-    "pytest-cov",
-]
+packages = ["nemo_reinforcer"]
 
 [project.optional-dependencies]
 build = [
@@ -42,6 +44,16 @@ docs = [
     "myst_parser",  # For our markdown docs
     "nvidia-sphinx-theme",  # Our NVIDIA theme
 ]
+dev = [
+    "pre-commit==3.6.0",
+    "ruff==0.9.9",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-timeout",
+    "pytest-cov",
+]
+
 
 [tool.black]
 line-length = 120

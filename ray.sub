@@ -1,0 +1,174 @@
+#!/bin/bash
+#SBATCH --nodes=2
+#SBATCH --exclusive
+#SBATCH --account=ACCOUNT
+#SBATCH --job-name=JOB_NAME
+#SBATCH --partition=PARTITION
+#SBATCH --time=1:0:0
+#SBATCH --dependency=singleton
+#SBATCH --gres=gpu:8
+
+
+set -eou pipefail
+
+########################################################
+# User defined variables
+########################################################
+CONTAINER=$CONTAINER
+MOUNTS=$MOUNTS
+COMMAND=${COMMAND:-}  # This is a script relative to the SLURM_SUBMIT_DIR. If left empty, it will leave the cluster idle after it's brought up.
+########################################################
+
+COMMON_SRUN_ARGS=""
+COMMON_SRUN_ARGS+=" --export=ALL"
+COMMON_SRUN_ARGS+=" --no-container-mount-home"
+COMMON_SRUN_ARGS+=" --mpi=pmix"
+COMMON_SRUN_ARGS+=" --container-mounts=$MOUNTS"
+COMMON_SRUN_ARGS+=" --container-image=$CONTAINER"
+COMMON_SRUN_ARGS+=" --container-workdir=$SLURM_SUBMIT_DIR"
+# TODO: delete these (just for debugging)
+COMMON_SRUN_ARGS+=" -p $SLURM_JOB_PARTITION"
+COMMON_SRUN_ARGS+=" -A $SLURM_JOB_ACCOUNT"
+COMMON_SRUN_ARGS+=" --gres=gpu:8"
+
+# Create logs directory
+LOG_DIR="$SLURM_JOB_ID-logs"
+mkdir -p $LOG_DIR
+
+# Number of GPUs per node
+gpus_per_node=8
+
+num_retries=5
+
+# Getting the node names and IP addresses in the SLURM allocation
+nodes=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
+nodes_array=($nodes)
+ip_addresses_array=()
+
+for node in $nodes; do
+    ip_address=$(host $node | awk '/has address/ { print $4 }')
+    # Add the IP address to the array
+    ip_addresses_array+=("$ip_address")
+done
+
+head_node=${nodes_array[0]}
+head_node_ip=${ip_addresses_array[0]}
+
+port=41993
+ip_head=$head_node_ip:$port
+
+# First we start the head of the ray cluster on one of the physical nodes
+# In this case we are giving an entire physical node to the ray head node
+# The ray head node is marked by including --head to the ray start command
+head_cmd=$(cat <<EOF
+env
+cat <<EOFINNER | tee /launch-head.sh
+ray start --head \
+--node-ip-address="$head_node_ip" \
+--port=$port \
+--block
+EOFINNER
+chmod +x /launch-head.sh
+
+count=0
+while true; do
+  bash /launch-head.sh
+  count=\$((count+1))
+  echo "Head node failed \$count times, restarting..."
+done
+echo ret_code=\$?
+EOF
+)
+srun $COMMON_SRUN_ARGS --container-name=ray-head --nodes=1 --ntasks=1 -w "$head_node" -o $LOG_DIR/ray-head.log bash -x -c "$head_cmd" &
+
+# We now need to start the Ray worker nodes
+# We define the following variables to help
+num_ray_worker_nodes=$((SLURM_JOB_NUM_NODES - 1)) # One physical node is for the ray head node, rest are for ray worker nodes
+export NUM_ACTORS=$((gpus_per_node * num_ray_worker_nodes)) # 8 actors per ray worker node (one for each GPU)
+
+# Start Ray worker nodes
+# We want 1 Ray worker node per physical node
+# Worker nodes are started with ray start but without the --head flag
+# NOTE: Ports start above 20000 since 10001-10257 frequently ran into conflicts
+min_worker_port=20001
+max_worker_port=20257
+for ((i = 1; i <= num_ray_worker_nodes; i++)); do
+  node_i=${nodes_array[$i]}
+    
+  worker_cmd=$(cat <<EOF
+env
+cat <<EOFINNER | tee /launch-worker.sh
+ray start --address "$ip_head" \
+          --resources="{\"worker_units\": $gpus_per_node}" \
+          --min-worker-port=$min_worker_port \
+          --max-worker-port=$max_worker_port --block
+EOFINNER
+
+count=0
+while true; do
+  bash /launch-worker.sh
+  count=\$((count+1))
+  echo "Worker failed \$count times, restarting..."
+done
+echo ret_code=\$?
+EOF
+)
+  srun $COMMON_SRUN_ARGS --container-name=ray-worker-$i --exact --nodes=1 --ntasks=1 --cpus-per-task=$((16 * gpus_per_node)) -w "$node_i" -o $LOG_DIR/ray-worker-$i.log bash -x -c "$worker_cmd" &
+  sleep 3
+done
+
+echo "[INFO] Querying head node too early can cause pyxis to fail"
+for i in {30..1}; do
+  echo "[INFO] Waiting for $i seconds before querying head node..."
+  sleep 1
+done
+# At this stage the Ray cluster bringup has started on the physical nodes in the allocation
+# Before we launch a job on this cluster we need to make sure that the bringup is complete
+# We do so by querying the number of worker_units in the ray cluster and asserting = NUM_ACTORS
+extract_worker_units() {
+  status_output=$(srun --overlap --container-name=ray-head --nodes=1 --ntasks=1 -w "$head_node" ray status)
+  if echo "$status_output" | grep -q "worker_units"; then
+    worker_units=$(echo "$status_output" | grep "worker_units" | awk -F'[/. ]' '{print $4}')
+    echo $worker_units
+  else
+    echo 0
+  fi
+}
+
+# Poll to make sure that all Ray worker nodes have connected to the head.
+# All workers have connected when number of GPUs in ray cluster
+# is equal to NUM_ACTORS. We use the utility function above
+# to check how many GPUs have come online in the ray cluster
+while true; do
+  worker_units=$(extract_worker_units)
+  echo "[INFO] Number of actors online: $worker_units/$NUM_ACTORS"
+  if [ "$worker_units" -eq "$NUM_ACTORS" ]; then
+    break
+  fi
+  sleep 2
+done
+
+echo "All workers connected!"
+
+# We can now launch a job on this cluster
+# We do so by launching a driver process on the physical node that the head node is on
+# This driver process is responsible for launching a job on the Ray cluster
+CONTAINER_CWD=$(scontrol show job $SLURM_JOB_ID --json | jq -r '.jobs[].current_working_directory')
+if [[ -n "$COMMAND" ]]; then
+  srun --overlap --container-name=ray-head --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "$head_node" -o $LOG_DIR/ray-driver.log $COMMAND
+else
+  echo "[INFO]: Ray Cluster is idled, run this on the slurm head node to get a shell to the head node:"
+  cat <<EOF >$SLURM_SUBMIT_DIR/${SLURM_JOB_ID}-attach.sh
+# No args launches on the head node
+WORKER_NUM=\${1:-0}
+if [[ \$WORKER_NUM -eq 0 ]]; then
+  srun --gres=gpu:8 -A $SLURM_JOB_ACCOUNT -p $SLURM_JOB_PARTITION --overlap --container-name=ray-head --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "$head_node" --jobid $SLURM_JOB_ID --pty bash
+else
+  nodes_array=($nodes)
+  srun --gres=gpu:8 -A $SLURM_JOB_ACCOUNT -p $SLURM_JOB_PARTITION --overlap --container-name=ray-worker-\$WORKER_NUM --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "\${nodes_array[\$WORKER_NUM]}" --jobid $SLURM_JOB_ID --pty bash
+fi
+EOF
+  chmod +x $SLURM_SUBMIT_DIR/${SLURM_JOB_ID}-attach.sh
+  echo "     bash $SLURM_SUBMIT_DIR/${SLURM_JOB_ID}-attach.sh"
+  sleep infinity
+fi

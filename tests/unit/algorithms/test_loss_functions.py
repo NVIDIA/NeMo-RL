@@ -1,0 +1,49 @@
+import torch
+from nemo_reinforcer.algorithms.loss_functions import NLLLoss
+
+
+def test_nll_loss():
+    loss_fn = NLLLoss()
+
+    vocab_size = 8
+    data = {
+        "input_ids": torch.arange(vocab_size / 2)
+        .unsqueeze(0)
+        .to(torch.int64)
+        .to("cuda"),
+        "token_mask": torch.tensor([[0, 0, 1, 1]]).to("cuda"),
+        "sample_mask": torch.tensor([[1]]).to("cuda"),
+    }
+
+    ### assume we predict the correct token with high probability
+    next_token_logits = (
+        torch.tensor(
+            [
+                [0, 999.0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 999.0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 999.0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0.0, 0, 0, 0],  ## unused because we don't have a label
+            ]
+        )
+        .unsqueeze(0)
+        .to("cuda")
+    )
+    loss, metrics_dict = loss_fn(next_token_logits, data)
+    torch.testing.assert_allclose(loss.cpu(), torch.tensor(0.0))
+
+    ## now assume we predict the incorrect token with high probability
+    next_token_logits = (
+        torch.tensor(
+            [
+                [999.0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 999.0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 999.0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0],
+            ]
+        )
+        .unsqueeze(0)
+        .to("cuda")
+    )
+    loss, metrics_dict = loss_fn(next_token_logits, data)
+    ## loss per token is 999, and we have two unmasked tokens
+    torch.testing.assert_allclose(loss.cpu(), torch.tensor(1998.0))
