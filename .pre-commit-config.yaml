@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+    - id: end-of-file-fixer
+      # only include python files
+      files: \.py$
+    - id: trailing-whitespace
+      # only include python files
+      files: \.py$
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: "v0.9.9" # Use the appropriate version
+    hooks:
+    - id: ruff
+      args: ["--fix"]
+    - id: ruff-format

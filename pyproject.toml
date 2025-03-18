@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=42", "wheel", "torch==2.6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nemo-_placeholder"
+version = "0.0.1"
+description = "_Placeholder"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache 2.0"}
+dependencies = [
+    "torch==2.6.0"
+]
+
+[tool.setuptools]
+packages = ["nemo__placeholder"]
+
+[dependency-groups]
+dev = [
+    "pre-commit==3.6.0",
+    "ruff==0.9.9",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-timeout",
+    "pytest-cov",
+]
+
+[project.optional-dependencies]
+build = [
+    "torch==2.6.0", 
+    "setuptools", 
+    "packaging",
+    "einops"
+]
+docs = [
+    "sphinx",
+    "sphinx-autobuild",  # For live doc serving while editing docs
+    "sphinx-autodoc2",  # For documenting Python API
+    "sphinx-copybutton",  # Adds a copy button for code blocks
+    "myst_parser",  # For our markdown docs
+    "nvidia-sphinx-theme",  # Our NVIDIA theme
+]
+
+[tool.black]
+line-length = 120
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | build
+)/
+'''
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.ruff.lint]
+# Enable all `pydocstyle` rules, limiting to those that adhere to the
+# Google convention via `convention = "google"`, below.
+select = ["D"]
+
+# On top of the Google convention, disable `D417`, which requires
+# documentation for every function parameter.
+# TODO: Remove D10 once we are about to release to get all the docstrings written
+ignore = ["D417", "D10"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# Section to exclude errors for different file types
+[tool.ruff.per-file-ignores]
+# Ignore all directories named `tests`.
+"tests/**" = ["D"]
+# Ignore all files that end in `_test.py`.
+"*_test.py" = ["D"]

@@ -1,0 +1,125 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+name: ~test template
+
+on:
+  workflow_call:
+    inputs:
+      RUNNER:
+        type: string
+        description: Runner to use for test
+        required: true
+      TIMEOUT:
+        type: number
+        description: Max runtime of test in minutes
+        required: false
+        default: 10
+      SCRIPT:
+        type: string
+        description: Test script to execute
+        required: true
+      AFTER_SCRIPT:
+        type: string
+        description: Script to run after main test
+        required: false
+        default: ":"
+      IS_OPTIONAL:
+        type: boolean
+        description: Failure will cancel all other tests if set to true
+        required: false
+        default: false
+    outputs:
+      conclusion:
+        description: Conclusion of main test step
+        value: ${{ jobs.main.outputs.conclusion }}
+      log:
+        description: Last 2000 characters of the test step's log
+        value: ${{ jobs.main.outputs.log }} 
+jobs:
+  
+  main:
+    runs-on: ${{ inputs.RUNNER }} 
+    outputs:
+      conclusion: ${{ steps.main.conclusion }}
+      log: ${{ steps.main.outputs.log }}
+    steps:
+        - name: Docker system cleanup
+          run: |
+            docker system prune -a --filter "until=48h" --force || true
+
+        - name: Docker pull image
+          run: |
+            docker pull nemoci.azurecr.io/nemo__placeholder_container:${{ github.run_id }}
+
+        - name: Start container
+          run: |
+            docker run --rm -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=64g \
+              --env TRANSFORMERS_OFFLINE=0 \
+              --env HYDRA_FULL_ERROR=1 \
+              --env HF_HOME=/home/TestData/_placeholder/hf_home \
+              --env _PLACEHOLDER_CI_DIR=/home/TestData/_placeholder \
+              --env _PLACEHOLDER_REPO_DIR=/opt/NeMo-_Placeholder \
+              --volume /mnt/datadrive/TestData/_placeholder/checkpoints:/home/TestData/_placeholder/checkpoints:ro \
+              --volume /mnt/datadrive/TestData/_placeholder/hf_home/hub:/home/TestData/_placeholder/hf_home/hub:ro \
+              nemoci.azurecr.io/nemo__placeholder_container:${{ github.run_id }} \
+              bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
+  
+        - id: main
+          name: Run main script
+          timeout-minutes: ${{ inputs.TIMEOUT }}
+          run: |
+            # Print the host driver for debugging
+            nvidia-smi
+            mkdir -p ${{ github.run_id }}
+            cd ${{ github.run_id }}/
+
+            set +e
+            (
+            set -e
+
+            cmd=$(cat <<"RUN_TEST_EOF"
+            nvidia-smi
+            # Sanity check the driver/cuda combo
+            cudaCheck
+            # In case git commands need to be run inside _Placeholder
+            git config --global --add safe.directory $_PLACHOLDER_REPO_DIR
+            ${{ inputs.SCRIPT }}
+            RUN_TEST_EOF
+            )
+            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
+            ) 2> >(tee err.log)
+
+            EXIT_CODE=$?
+
+            echo "log=$(tail -c 2000 err.log |  base64 -w 0)" >> "$GITHUB_OUTPUT"
+            
+            exit $EXIT_CODE
+
+        - uses: "NVIDIA/NeMo/.github/actions/cancel-workflow@main"
+          if: failure() && inputs.IS_OPTIONAL == false
+
+        - name: after_script
+          if: always() && inputs.AFTER_SCRIPT != ':'
+          run: |
+            cmd=$(cat <<"RUN_TEST_EOF"
+            ${{ inputs.AFTER_SCRIPT }}
+            RUN_TEST_EOF
+            )
+            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
+
+        - name: Container shutdown
+          if: always()
+          run: |
+            docker container stop nemo_container_${{ github.run_id }} || true
+            docker container rm nemo_container_${{ github.run_id }} || true
