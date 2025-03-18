@@ -77,7 +77,7 @@ jobs:
           LABEL: ${{ github.event.label.name == 'Run CICD' }}
           MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
         run: |
-          Some output that's helpful for debugging
+          # Some output that's helpful for debugging
           echo "Docs changed: $CHANGED_DOCS"
           echo "Src changed: $CHANGED_SRC"
           
