@@ -110,7 +110,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Check lint
+      - name: Run unit tests
         run: |
           pip install uv
           uv venv -p python3.10 .venv
