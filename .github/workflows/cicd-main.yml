@@ -92,6 +92,7 @@ jobs:
     name: Lint check
     needs: [pre-flight]
     runs-on: ubuntu-latest
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -100,3 +101,23 @@ jobs:
           pip install pre-commit
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
+
+  unit-tests:
+    name: Unit tests
+    needs: [pre-flight]
+    runs-on: ubuntu-latest
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Check lint
+        run: |
+          pip install uv
+          uv venv -p python3.10 .venv
+          uv pip install --force-reinstall .
+          uv run --group test -- pytest
+
+      - name: after_script
+        if: always()
+        run: |
+          rm -rf .venv
