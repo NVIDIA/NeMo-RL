@@ -16,20 +16,20 @@
 MAJOR = 0
 MINOR = 0
 PATCH = 1
-PRE_RELEASE = ''
+PRE_RELEASE = ""
 
 # Use the following formatting: (major, minor, patch, pre-release)
 VERSION = (MAJOR, MINOR, PATCH, PRE_RELEASE)
 
-__shortversion__ = '.'.join(map(str, VERSION[:3]))
-__version__ = '.'.join(map(str, VERSION[:3])) + ''.join(VERSION[3:])
+__shortversion__ = ".".join(map(str, VERSION[:3]))
+__version__ = ".".join(map(str, VERSION[:3])) + ''.join(VERSION[3:])
 
-__package_name__ = 'nemo__placeholder'
-__contact_names__ = 'NVIDIA'
-__contact_emails__ = 'nemo-_placeholder@nvidia.com'
-__homepage__ = 'https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/'
-__repository_url__ = 'https://github.com/nvidia/nemo__placeholder'
-__download_url__ = 'https://github.com/NVIDIA/NeMo__placeholder'
-__description__ = '_placeholder'
-__license__ = 'Apache2'
-__keywords__ = '_placeholder'
+__package_name__ = "nemo__placeholder"
+__contact_names__ = "NVIDIA"
+__contact_emails__ = "nemo-_placeholder@nvidia.com"
+__homepage__ = "https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/stable/"
+__repository_url__ = "https://github.com/nvidia/nemo__placeholder"
+__download_url__ = "https://github.com/NVIDIA/NeMo__placeholder"
+__description__ = "_placeholder"
+__license__ = "Apache2"
+__keywords__ = "_placeholder"
