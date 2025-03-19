@@ -18,7 +18,6 @@
 #     branches:
 #       - main
 #       - 'r**'
-#   pull_request:
     
 # defaults:
 #   run:
