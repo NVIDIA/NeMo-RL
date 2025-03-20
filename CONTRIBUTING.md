@@ -37,8 +37,8 @@ We follow a direct clone and branch workflow for now:
 
 1. Clone the repository directly:
    ```bash
-   git clone https://github.com/NVIDIA/nemo__placeholder
-   cd nemo-reinforcer
+   git clone https://github.com/NVIDIA/reinforcer
+   cd reinforcer
    ```
 
 2. Create a new branch for your changes:

@@ -28,7 +28,7 @@
 #     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_test_publish_wheel.yml@v0.22.3
 #     with:
 #       dry-run: true
-#       python-package: nemo__placeholder
+#       python-package: nemo_reinforcer
 #       python-version: "3.12"
 #     secrets:
 #       TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
