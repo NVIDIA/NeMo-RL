@@ -105,7 +105,7 @@ jobs:
   unit-tests:
     name: Unit tests
     needs: [pre-flight]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted-azure
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     steps:
       - name: Checkout repository
@@ -114,9 +114,8 @@ jobs:
         run: |
           pip install uv
           uv venv -p python3.10 .venv
-          uv pip install --force-reinstall .
-          uv run --group test -- pytest
-
+          uv pip install --force-reinstall .[vllm,test,dev,compile]
+          uv run --group test -- bash -x tests/run_unit.sh
       - name: after_script
         if: always()
         run: |
