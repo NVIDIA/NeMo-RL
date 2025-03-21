@@ -124,6 +124,5 @@ jobs:
       RUNNER: self-hosted-azure
       TIMEOUT: 10
       SCRIPT: |
-        nvidia-smi
         cd ${REINFORCER_REPO_DIR}
-        bash tests/run_unit_in_docker.sh
+        uv run --extra test bash -x ./run_unit.sh
