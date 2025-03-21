@@ -44,4 +44,4 @@ fi
 # We have found that 111 does not always work and can leave the filesystem permissions in a bad state.
 
 # Run the script inside the Docker container with GPU support
-docker run -u root $INTERACTIVE_FLAG --ulimit memlock=-1 --ulimit stack=67108864 --rm --gpus '"device=0,1"' -v "$PROJECT_ROOT:$PROJECT_ROOT" -v $HF_HOME:/hf_home -e HF_TOKEN -e HF_HOME=/hf_home -e HOME=/tmp/ -w $SCRIPT_DIR "$CONTAINER" -- bash -x -c "umask 000 && uv run bash -x $TEST_SCRIPT"
+docker run -u root $INTERACTIVE_FLAG --ulimit memlock=-1 --ulimit stack=67108864 --rm --gpus '"device=0,1"' -v "$PROJECT_ROOT:$PROJECT_ROOT" -v $HF_HOME:/hf_home -e WANDB_API_KEY -e HF_TOKEN -e HF_HOME=/hf_home -e HOME=/tmp/ -w $SCRIPT_DIR "$CONTAINER" -- bash -x -c "umask 000 && uv run bash -x $TEST_SCRIPT"

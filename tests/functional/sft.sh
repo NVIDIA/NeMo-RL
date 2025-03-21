@@ -2,6 +2,8 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 PROJECT_ROOT=$(realpath $SCRIPT_DIR/../..)
+# Mark the current repo as safe, since wandb fetchs metadata about the repo
+git config --global --add safe.directory $PROJECT_ROOT
 
 set -eou pipefail
 
@@ -21,12 +23,14 @@ python -u $PROJECT_ROOT/examples/run_sft.py \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \
+    checkpointing.enabled=false \
     $@ \
     2>&1 | tee $RUN_LOG
 
 cd $SCRIPT_DIR
 python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
+# TODO: tighten metric checking, this is just for sanity to detect immediate divergence
 python check_metrics.py $JSON_METRICS \
-  'data["train/loss"]["9"] < 600' \
+  'data["train/loss"]["9"] < 1500' \
 

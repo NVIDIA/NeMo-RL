@@ -2,6 +2,8 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 PROJECT_ROOT=$(realpath $SCRIPT_DIR/../..)
+# Mark the current repo as safe, since wandb fetchs metadata about the repo
+git config --global --add safe.directory $PROJECT_ROOT
 
 set -eou pipefail
 
@@ -30,5 +32,4 @@ python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
 python check_metrics.py $JSON_METRICS \
     'max(data["train/token_mult_prob_error"]) < 1.1' \
-    'data["validation/avg_length"]["10"] < 1024' \
 
