@@ -39,6 +39,9 @@ on:
         description: Failure will cancel all other tests if set to true
         required: false
         default: false
+    secrets:
+      HF_TOKEN:
+        required: true
     outputs:
       conclusion:
         description: Conclusion of main test step
@@ -60,24 +63,26 @@ jobs:
 
         - name: Docker pull image
           run: |
-            docker pull nemoci.azurecr.io/nemo__placeholder_container:${{ github.run_id }}
+            docker pull nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }}
 
         - name: Start container
           run: |
             docker run --rm -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=64g \
               --env TRANSFORMERS_OFFLINE=0 \
               --env HYDRA_FULL_ERROR=1 \
-              --env HF_HOME=/home/TestData/_placeholder/hf_home \
-              --env _PLACEHOLDER_CI_DIR=/home/TestData/_placeholder \
-              --env _PLACEHOLDER_REPO_DIR=/opt/NeMo-_Placeholder \
-              --volume /mnt/datadrive/TestData/_placeholder/checkpoints:/home/TestData/_placeholder/checkpoints:ro \
-              --volume /mnt/datadrive/TestData/_placeholder/hf_home/hub:/home/TestData/_placeholder/hf_home/hub:ro \
-              nemoci.azurecr.io/nemo__placeholder_container:${{ github.run_id }} \
+              --env HF_HOME=/home/TestData/reinforcer/hf_home \
+              --env REINFORCER_CI_DIR=/home/TestData/reinforcer \
+              --env REINFORCER_REPO_DIR=/opt/NeMo-Reinforcer \
+              --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
+              --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
+              nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \
               bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
   
         - id: main
           name: Run main script
           timeout-minutes: ${{ inputs.TIMEOUT }}
+          env:
+            HF_TOKEN: ${{ secrets.HF_TOKEN }}
           run: |
             # Print the host driver for debugging
             nvidia-smi
@@ -90,14 +95,13 @@ jobs:
 
             cmd=$(cat <<"RUN_TEST_EOF"
             nvidia-smi
-            # Sanity check the driver/cuda combo
-            cudaCheck
-            # In case git commands need to be run inside _Placeholder
-            git config --global --add safe.directory $_PLACHOLDER_REPO_DIR
+
+            # In case git commands need to be run inside Reinforcer
+            git config --global --add safe.directory $REINFORCER_REPO_DIR
             ${{ inputs.SCRIPT }}
             RUN_TEST_EOF
             )
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
+            docker exec -u root -e HF_TOKEN nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
             ) 2> >(tee err.log)
 
             EXIT_CODE=$?

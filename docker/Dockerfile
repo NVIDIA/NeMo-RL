@@ -1,7 +1,18 @@
 ARG BASE_IMAGE=anyscale/ray:2.43.0-py312-cu125
 FROM ${BASE_IMAGE}
 
+WORKDIR /opt/NeMo-Reinforcer
+
 RUN sudo apt-get update && sudo apt-get install -y jq
 
-RUN pip install --no-cache-dir uv
 RUN echo "unset RAY_RUNTIME_ENV_HOOK" >> /home/ray/.bashrc
+
+COPY pyproject.toml .
+
+RUN pip install uv && \
+    uv venv -p python3.12 && \
+    uv pip install -r pyproject.toml --extra dev --extra test
+
+COPY . .
+
+RUN uv pip install -e .

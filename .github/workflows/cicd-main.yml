@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-name: "CICD NeMo _Placeholder"
+name: "CICD Reinforcer"
 
 on:
   pull_request:
@@ -101,23 +101,30 @@ jobs:
           pip install pre-commit
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
+  
+  build-container:
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    needs: [pre-flight]
+    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
+    with:
+      build-ref: ${{ github.sha }}
+      image-name: nemo_reinforcer_container
+      dockerfile: docker/Dockerfile
+      image-label: nemo-reinforcer
+      build-args: |
+        MAX_JOBS=32
+        REINFORCER_COMMIT=${{ github.sha }}
 
   unit-tests:
     name: Unit tests
-    needs: [pre-flight]
-    runs-on: ubuntu-latest
+    needs: [build-container, pre-flight]
+    uses: ./.github/workflows/_run_test.yml
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Run unit tests
-        run: |
-          pip install uv
-          uv venv -p python3.10 .venv
-          uv pip install --force-reinstall .
-          uv run --group test -- pytest
-
-      - name: after_script
-        if: always()
-        run: |
-          rm -rf .venv
+    with:
+      RUNNER: self-hosted-azure
+      TIMEOUT: 10
+      SCRIPT: |
+        cd ${REINFORCER_REPO_DIR}
+        uv run bash -x ./tests/run_unit.sh
+    secrets:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
