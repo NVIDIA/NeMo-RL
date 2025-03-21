@@ -6,7 +6,6 @@ PROJECT_ROOT=$(realpath ${SCRIPT_DIR}/..)
 set -eou pipefail
 
 cd $SCRIPT_DIR
-GPUS_PER_NODE=$(nvidia-smi -L | grep -c '^GPU')
 
 if ! command -v pytest >/dev/null 2>&1; then
     echo "[ERROR] pytest not found. Make sure it's installed."
@@ -14,14 +13,21 @@ if ! command -v pytest >/dev/null 2>&1; then
 elif ! command -v ray >/dev/null 2>&1; then
     echo "[ERROR] ray binary not installed, which suggests this package is not installed."
     exit 1
-elif [[ $GPUS_PER_NODE -lt 2 ]]; then
-    echo "[ERROR]: Unit tests need at least 2 GPUs, but found $GPUS_PER_NODE"
-    exit 1
 fi
 
-export CUDA_DEVICE_ORDER=PCI_BUS_ID
-nvidia-smi
-export CUDA_VISIBLE_DEVICES=0,1
+# First try to connect to a ray cluster
+if ! ray status &>/dev/null; then
+    # If we cannot, then check if the local machine has at least two gpus to run the tests
+    GPUS_PER_NODE=$(nvidia-smi -L | grep -c '^GPU')
+    if [[ $GPUS_PER_NODE -lt 2 ]]; then
+        echo "[ERROR]: Unit tests need at least 2 GPUs, but found $GPUS_PER_NODE"
+        exit 1
+    fi
+    export CUDA_DEVICE_ORDER=PCI_BUS_ID
+    nvidia-smi
+    export CUDA_VISIBLE_DEVICES=0,1
+fi
+
 export PYTHONPATH=$(realpath ${SCRIPT_DIR}/..):${PYTHONPATH:-}
 export RAY_DEDUP_LOGS=0
 
