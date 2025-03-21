@@ -24,3 +24,4 @@ class PolicyConfig(TypedDict):
     learning_rate: float
     logprob_batch_size: int
     generation: GenerationConfig
+    precision: str

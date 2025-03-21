@@ -1,13 +1,13 @@
 # GRPO Algorithm Configuration
 grpo:
-  num_prompts_per_step: 8
+  num_prompts_per_step: 32
   num_generations_per_prompt: 8
-  max_num_steps: 100
+  max_num_steps: 1000000
   normalize_rewards: true
   use_leave_one_out_baseline: true
   val_period: 10
   val_at_start: true
-  max_val_samples: 16
+  max_val_samples: 256
   val_batch_size: 16
 
 loss_fn:
@@ -29,6 +29,7 @@ policy:
   generation_batch_size: 32
   logprob_batch_size: 4
   max_total_sequence_length: 512
+  precision: "bfloat16"
 
   optimizer:
     name: "torch.optim.AdamW"
@@ -65,9 +66,8 @@ data:
   max_input_seq_length: ${policy.max_total_sequence_length} # upper bound, real truncation occurs at vllm.max_model_len
   prompt_file: "examples/prompts/cot.txt"
   system_prompt_file: null
-  dataset_name: "datasets/Eurus-2-RL-Data/Eurus-2-RL-Data-math_train.jsonl"
-  val_dataset_name: "datasets/Eurus-2-RL-Data/Eurus-2-RL-Data-math_val.jsonl"
-
+  dataset_name: "OpenMathInstruct-2"
+  
 env:
   math:
     num_workers: 8

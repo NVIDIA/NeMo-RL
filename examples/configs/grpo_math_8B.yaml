@@ -8,6 +8,7 @@ policy:
   generation_batch_size: 32
   logprob_batch_size: 2
   max_total_sequence_length: 4096
+  precision: "bfloat16"
 
   optimizer:
     name: "torch.optim.AdamW"

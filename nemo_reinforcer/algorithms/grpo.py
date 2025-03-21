@@ -180,7 +180,8 @@ def setup(
 
     # Load validation dataset if provided
     val_dataloader = None
-    if "val_dataset_name" in data_config and data_config["val_dataset_name"]:
+    # If validation is enabled, load the validation dataloader
+    if grpo_config["val_period"] > 0 or grpo_config["val_at_start"]:
         val_dataloader = StatefulDataLoader(
             val_dataset,
             batch_size=grpo_config["val_batch_size"],
@@ -445,7 +446,9 @@ def grpo_train(
 
     # Run grpo training (single-turn)
     for batch in dataloader:
-        print(f"\n{'=' * 25} Step {step + 1}/{min(len(dataloader), master_config['grpo']['max_num_steps'])} {'=' * 25}")
+        print(
+            f"\n{'=' * 25} Step {step + 1}/{min(len(dataloader), master_config['grpo']['max_num_steps'])} {'=' * 25}"
+        )
 
         with timer.time("total_step_time"):
             # Prepare batch
