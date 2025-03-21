@@ -87,8 +87,29 @@ class RayWorkerGroup:
 [TODO @sahilj Diagram]
 
 
-
 ### Single-Controller & Execution Diagram
+We control the RL Actors using a single-process head controller. Using the aforementioned abstractions, this allows us to represent the main loop of GRPO as though we were working on 1 GPU
+```python
+# data processing/transformations between each step omitted
+def grpo_train(
+    policy: PolicyInterface,
+    policy_generation: GenerationInterface,
+    environment: EnvironmentInterface,
+    dataloader: Iterable[BatchedDataDict[DatumSpec]],
+):
+    loss_fn = GRPOLossFn()
+    for batch in dataloader:
+        batch.repeat_interleave(num_generations_per_prompt) # repeat for GRPO
+        generations = policy_generation.generate(batch) 
+        rewards = environment.step(generations)
+
+        logprobs = policy.get_logprobs(generations)
+        reference_logprobs = policy.get_reference_logprobs(generations)
+
+        training_data = calculate_grpo_trainnig_data(generations, logprobs, reference_logprobs, rewards)
+        policy.train(generations, logprobs, reference_logprobs, GRPOLossFn)
+```
+For a real implementation of grpo (with valiation, checkpointing, memory movement, and the omitted data processing steps), see [grpo_train](../../nemo_reinforcer/algorithms/grpo.py)
 
 ## Walking through an implementation of GRPO
 

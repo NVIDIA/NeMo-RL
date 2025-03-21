@@ -1,6 +1,6 @@
 # SFT Algorithm Configuration
 sft:
-  num_steps: 20
+  max_num_steps: 20
   val_period: 10
   val_batches: 8
   val_global_batch_size: 32

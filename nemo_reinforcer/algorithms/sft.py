@@ -51,7 +51,7 @@ def _default_sft_save_state() -> SFTSaveState:
 
 
 class SFTConfig(TypedDict):
-    num_steps: int
+    max_num_steps: int
     val_period: int
     val_batches: int
     val_global_batch_size: int
@@ -437,5 +437,5 @@ def sft_train(
         timer.reset()
         step += 1
 
-        if step >= master_config["sft"]["num_steps"]:
+        if step >= master_config["sft"]["max_num_steps"]:
             break
