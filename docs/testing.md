@@ -47,7 +47,24 @@ uv pip install -e '.[test]'
 uv run bash tests/functional/sft.sh
 ```
 
-:::{warning}
-`tests/functional/grpo.sh` does not currently use an open-source dataset. This will be updated
-in the future to enable independent validation.
-:::
+At the end of each functional test, the metric checks will be printed as well as
+whether they pass or fail. Here is an example:
+
+```text
+                              Metric Checks
+┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┓
+┃ Status ┃ Check                          ┃ Value             ┃ Message ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━┩
+│ PASS   │ data["train/loss"]["9"] < 1500 │ 817.4517822265625 │         │
+└────────┴────────────────────────────────┴───────────────────┴─────────┘
+```
+
+### Running Functional Tests in a Hermetic Environment
+
+For environments lacking necessary dependencies (e.g., `gcc`, `nvcc`)
+or where environmental configuration may be problematic, tests can be run
+in docker with this script:
+
+```sh
+CONTAINER=... bash run_functional_in_docker.sh functional/sft.sh
+```

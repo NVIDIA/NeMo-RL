@@ -30,7 +30,7 @@ python -u $PROJECT_ROOT/examples/run_sft.py \
 cd $SCRIPT_DIR
 python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
-# TODO: tighten metric checking, this is just for sanity to detect immediate divergence
+# TODO: loss is very noisy, this check is mainly for sanity of immediate divergence
 python check_metrics.py $JSON_METRICS \
   'data["train/loss"]["9"] < 1500' \
 
