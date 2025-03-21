@@ -39,6 +39,9 @@ on:
         description: Failure will cancel all other tests if set to true
         required: false
         default: false
+    secrets:
+      HF_TOKEN:
+        required: true
     outputs:
       conclusion:
         description: Conclusion of main test step
@@ -85,10 +88,6 @@ jobs:
             nvidia-smi
             mkdir -p ${{ github.run_id }}
             cd ${{ github.run_id }}/
-            
-            if [ -n "${HF_TOKEN}" ]; then
-                echo "HF_TOKEN is set and not empty"
-            fi
 
             set +e
             (
