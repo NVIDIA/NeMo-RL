@@ -7,6 +7,7 @@ USER root
 
 RUN apt-get update && sudo apt-get install -y jq
 
+RUN pip install uv
 RUN echo "unset RAY_RUNTIME_ENV_HOOK" >> /home/ray/.bashrc
 
 FROM base AS hermetic
