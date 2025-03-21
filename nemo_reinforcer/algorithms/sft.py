@@ -55,9 +55,10 @@ def _default_sft_save_state() -> SFTSaveState:
 class SFTConfig(TypedDict):
     num_steps: int
     val_period: int
+    val_batches: int
+    val_global_batch_size: int
+    val_micro_batch_size: int
     val_at_start: bool
-    checkpoint_dir: str
-
 
 class MasterConfig(TypedDict):
     policy: PolicyConfig
@@ -77,7 +78,6 @@ def setup(
     RayVirtualCluster,
     StatefulDataLoader,
     Optional[StatefulDataLoader],
-    AutoTokenizer,
     NLLLoss,
     MasterConfig,
     Logger,
@@ -124,7 +124,7 @@ def setup(
         train_dataset,
         batch_size=policy_config["train_global_batch_size"],
         shuffle=True,
-        collate_fn=rl_collate_fn,  ## TODO: change this for sft! or make it more general
+        collate_fn=rl_collate_fn,
     )
 
     if last_checkpoint_path is not None:
@@ -134,7 +134,6 @@ def setup(
         train_dataloader.load_state_dict(dataloader_state_dict)
 
 
-    ## TODO: support different batch sizes for train and val
     val_dataloader = StatefulDataLoader(
         val_dataset,
         batch_size=sft_config["val_global_batch_size"],
@@ -415,8 +414,7 @@ def sft_train(
         total_time = timing_metrics.get("total_step_time", 0)
         print(f"  • Total step time: {total_time:.2f}s")
 
-        # Display all other timing metrics
-        ## TODO: remove?
+        # Display all other timing metrics (if any)
         for k, v in sorted(
             timing_metrics.items(), key=lambda item: item[1], reverse=True
         ):
