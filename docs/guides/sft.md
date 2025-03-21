@@ -18,8 +18,8 @@ To override a value in the config, either update the value in the `yaml` file di
 
 ```bash
 uv run examples/run_sft.py \
-    cluster.gpus_per_node=8 \
-    logger.wandb.name="sft-dev-8-gpu"
+    cluster.gpus_per_node=1 \
+    logger.wandb.name="sft-dev-1-gpu"
 ```
 
 ## Datasets
