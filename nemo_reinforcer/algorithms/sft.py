@@ -399,6 +399,8 @@ def sft_train(
                     policy.save_checkpoint(
                         os.path.join(checkpoint_path, "policy.pt"),
                         os.path.join(checkpoint_path, "policy_optimizer.pt"),
+                        ## NOTE: below is a workaround to avoid a bug with checkpointing
+                        ## this should be removed once the bug is fixed
                         offload_to_cpu=False,
                     )
                     torch.save(
