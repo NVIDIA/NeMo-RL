@@ -1,5 +1,6 @@
 #!/bin/bash
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+PROJECT_ROOT=$(realpath $SCRIPT_DIR/..)
 
 set -eou pipefail
 
@@ -12,10 +13,17 @@ fi
 # CONTAINER is expected to be set as an environment variable
 if [[ -z "${CONTAINER:-}" ]]; then
     echo "Error: CONTAINER environment variable is not set."
-    echo "Usage: CONTAINER=<docker-container> $0 [optional pytest-args...]"
+    echo "Usage: CONTAINER=<docker-container> $0 <script to run, e.g., functional/grpo.sh>"
     exit 1
 fi
 
+if [[ $# -ne 1 ]]; then
+    echo "Error: Did not provide functional test script to run."
+    echo "Usage: CONTAINER=<docker-container> $0 <script to run, e.g., functional/grpo.sh>"
+    exit 1
+fi
+
+TEST_SCRIPT=$(realpath $1)
 CONTAINER=${CONTAINER}
 
 export HF_HOME=${HF_HOME:-$(realpath $SCRIPT_DIR/../hf_home)}
@@ -36,4 +44,4 @@ fi
 # We have found that 111 does not always work and can leave the filesystem permissions in a bad state.
 
 # Run the script inside the Docker container with GPU support
-docker run -u root $INTERACTIVE_FLAG --ulimit memlock=-1 --ulimit stack=67108864 --rm --gpus '"device=0,1"' -v "$(realpath $SCRIPT_DIR/..):/workspace" -v $HF_HOME:/hf_home -e HF_TOKEN -e HF_HOME=/hf_home -e HOME=/tmp/ -w /workspace/tests "$CONTAINER" -- bash -x -c "umask 000 && uv run --extra test bash -x ./run_unit.sh $@"
+docker run -u root $INTERACTIVE_FLAG --ulimit memlock=-1 --ulimit stack=67108864 --rm --gpus '"device=0,1"' -v "$PROJECT_ROOT:$PROJECT_ROOT" -v $HF_HOME:/hf_home -e WANDB_API_KEY -e HF_TOKEN -e HF_HOME=/hf_home -e HOME=/tmp/ -w $SCRIPT_DIR "$CONTAINER" -- bash -x -c "umask 000 && uv run bash -x $TEST_SCRIPT"

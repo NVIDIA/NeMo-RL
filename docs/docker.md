@@ -1,7 +1,22 @@
-# Building Docker Image
+# Building Docker Images
 
-## Docker Build
+### Base Image
+If you only need the base image with ray + uv, you can build it like so:
 ```sh
 cd docker/
-docker buildx build -t nemo-reinforcer -f Dockerfile .
+docker buildx build -t reinforcer -f Dockerfile ..
 ```
+
+This is **our recommendation** as it is a small image and allows you to specify your python dependencies at runtime.
+
+### Hermetic Image
+We also provide a way to build the docker image with all of default dependencies to get started.
+```sh
+cd docker/
+docker buildx build --target hermetic -t reinforcer -f Dockerfile ..
+```
+
+This image sets up the python environment for you, so you do not have to use `uv` if you don't need
+any other packages.
+
+This image is useful in situations where you may not have network connectivity to re-download packages.

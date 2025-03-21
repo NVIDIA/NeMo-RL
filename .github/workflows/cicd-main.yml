@@ -102,6 +102,20 @@ jobs:
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
   
+  sphinx-build:
+    name: Sphinx build
+    needs: [pre-flight]
+    runs-on: ubuntu-latest
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: build docs
+        run: |
+          pip install uv
+          cd docs/
+          uv run --extra docs sphinx-build . _build/html
+
   build-container:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     needs: [pre-flight]
@@ -115,6 +129,20 @@ jobs:
         MAX_JOBS=32
         REINFORCER_COMMIT=${{ github.sha }}
 
+  sphinx-doctest:
+    name: Sphinx doctest
+    needs: [build-container, pre-flight]
+    uses: ./.github/workflows/_run_test.yml
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    with:
+      RUNNER: self-hosted-azure
+      TIMEOUT: 10
+      SCRIPT: |
+        cd ${REINFORCER_REPO_DIR}/docs
+        uv run --extra docs sphinx-build -b doctest . _build/doctest
+    secrets:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
   unit-tests:
     name: Unit tests
     needs: [build-container, pre-flight]
@@ -125,6 +153,27 @@ jobs:
       TIMEOUT: 10
       SCRIPT: |
         cd ${REINFORCER_REPO_DIR}
-        uv run bash -x ./tests/run_unit.sh
+        uv run --extra test bash -x ./tests/run_unit.sh
+    secrets:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+  functional-tests:
+    name: ${{ matrix.test_case }}
+    needs: [build-container, pre-flight]
+    uses: ./.github/workflows/_run_test.yml
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    strategy:
+      matrix:
+        test_case:
+          - sft.sh
+          - grpo.sh
+    with:
+      # TODO: For now, allow these to fail since the checks are not robust.
+      OPTIONAL: true
+      RUNNER: self-hosted-azure
+      TIMEOUT: 8
+      SCRIPT: |
+        cd ${REINFORCER_REPO_DIR}
+        uv run bash ./tests/functional/${{ matrix.test_case }}
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
