@@ -23,13 +23,13 @@ export UV_CACHE_DIR=/path/that/all/workers/can/access/uv_cache
 # Run from the root of NeMo-Reinforcer repo
 NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
 
-COMMAND="bash -c 'uv pip install -e .; uv run ./examples/run_grpo.py'" \
+COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py" \
 RAY_DEDUP_LOGS=0 \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
 sbatch \
-    --nodes=$((NUM_ACTOR_NODES + 1)) \
+    --nodes=${NUM_ACTOR_NODES} \
     --account=YOUR_ACCOUNT \
     --job-name=YOUR_JOBNAME \
     --partition=YOUR_PARTITION \
@@ -52,6 +52,11 @@ tail -f 1980204-logs/ray-driver.log
 ```
 
 ### Interactive Launching
+
+:::{tip}
+A key advantage of running interactively on the head node is the ability to execute multiple multi-node jobs without needing to requeue in the SLURM job queue. This means during debugging sessions, you can avoid submitting a new `sbatch` command each time and instead debug and re-submit your Reinforcer job directly from the interactive session.
+:::
+
 To run interactively, launch the same command as the [Batched Job Submission](#batched-job-submission) except omit the `COMMAND` line:
 ```sh
 # Run from the root of NeMo-Reinforcer repo
@@ -62,7 +67,7 @@ UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
 sbatch \
-    --nodes=$((NUM_ACTOR_NODES + 1)) \
+    --nodes=${NUM_ACTOR_NODES} \
     --account=YOUR_ACCOUNT \
     --job-name=YOUR_JOBNAME \
     --partition=YOUR_PARTITION \
@@ -81,9 +86,9 @@ bash 1980204-attach.sh
 ```
 Now that you are on the head node, you can launch the command like so:
 ```sh
-uv venv -p python3.12.9 .venv
+uv venv .venv
 uv pip install -e .
-uv run ./examples/run_grpo.py
+uv run ./examples/run_grpo_math.py
 ```
 
 ## Kubernetes

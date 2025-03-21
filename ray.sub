@@ -9,7 +9,7 @@
 #SBATCH --gres=gpu:8
 
 
-set -eou pipefail
+set -eoux pipefail
 
 ########################################################
 # User defined variables
