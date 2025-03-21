@@ -1,12 +1,13 @@
 # What does this PR do ?
 
-Add a one line overview of what this PR aims to accomplish.
+**Add a one line overview of what this PR aims to accomplish.**
 
-# Changelog 
-- Please update the [CHANGELOG.md](/CHANGELOG.md) under next version with high level changes in this PR.
+# Issues
+List issues that this PR closes ([syntax](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword)):
+
 
 # Usage
-* You can potentially add a usage example below
+* **You can potentially add a usage example below**
 
 ```python
 # Add a code snippet demonstrating how to use this 
@@ -14,12 +15,10 @@ Add a one line overview of what this PR aims to accomplish.
 
 # Before your PR is "Ready for review"
 **Pre checks**:
-- [ ] Make sure you read and followed [Contributor guidelines](/CONTRIBUTING.md)
+- [ ] Make sure you read and followed [Contributor guidelines](/NVIDIA/reinforcer/blob/main/CONTRIBUTING.md)
 - [ ] Did you write any new necessary tests?
-- [ ] Did you add or update any necessary documentation? Make sure to also update the [NeMo Framework User Guide](https://docs.nvidia.com/nemo-framework/user-guide/latest/index.html) which contains the tutorials
-
-# Checklist when contributing
-- [ ] TBD
+- [ ] Did you run the unit tests and functional tests locally? Visit our [Testing Guide](/NVIDIA/reinforcer/blob/main/docs/testing.md) for how to run tests
+- [ ] Did you add or update any necessary documentation? Visit our [Document Development Guide](/NVIDIA/reinforcer/blob/main/docs/documentation.md) for how to write, build and test the docs.
 
 # Additional Information
-* Related to # (issue)
+* ...
