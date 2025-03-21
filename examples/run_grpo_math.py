@@ -56,7 +56,6 @@ def parse_args():
 # ===============================================================================
 
 
-# this processor expects the datum_dict to have a 'problem' key and an 'expected_answer' key
 def openinstructmath2_data_processor(
     datum_dict: Dict[str, Any],
     task_data_spec: TaskDataSpec,
@@ -182,8 +181,11 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
     )
 
     # Load OpenMathInstruct2Dataset using reinforcer datasets
-    print(f"Loading nvidia/OpenMathInstruct2Dataset for training and validation")
-    data = OpenMathInstruct2Dataset()
+    if data_config["dataset_name"] == "OpenMathInstruct-2":
+        print(f"Loading nvidia/OpenMathInstruct2Dataset for training and validation")
+        data = OpenMathInstruct2Dataset()
+    else:
+        raise ValueError(f"No processor for dataset {data_config['dataset_name']}.")
 
     tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
 

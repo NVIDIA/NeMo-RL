@@ -47,7 +47,66 @@ uv pip install -e '.[dev,test]'
 # Use uv run to launch any runs. 
 # Note that it is recommended to not activate the venv and instead use `uv run` since
 # it ensures consistent environment usage across different shells and sessions.
+# Example: uv run python examples/run_grpo_math.py
+```
+
+## Quick start
+
+**Reminder**: Don't forget to set your HF_HOME and WANDB_API_KEY (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
+
+### GRPO
+
+We have a reference GRPO experiment config set up trained for math benchmarks using the [OpenInstructMath2](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2) dataset.
+
+#### Single GPU
+
+To run GRPO on a single GPU for `Llama-3.2-1B-Instruct`:
+
+```sh
+# Run the GRPO math example using a 1B parameter model
 uv run python examples/run_grpo_math.py
+```
+
+By default, this uses the configuration in `examples/configs/grpo_math_1B.yaml`. You can customize parameters with command-line overrides:
+
+```sh
+uv run python examples/run_grpo_math.py \
+  policy.model_name="Qwen/Qwen2-1.5B" \
+  checkpointing.checkpoint_dir="results/qwen1_5b_math" \
+  logger.wandb_enabled=True \
+  logger.wandb.name="grpo-qwen1_5b_math" \
+  logger.num_val_samples_to_print=10
+```
+
+#### Multi-node
+
+For distributed training across multiple nodes:
+
+Set `UV_CACHE_DIR` to a directory that can be read from all workers before running any uv run command.
+```sh
+export UV_CACHE_DIR=/path/that/all/workers/can/access/uv_cache
+```
+
+```sh
+# Run from the root of NeMo-Reinforcer repo
+NUM_ACTOR_NODES=2
+# Add a timestamp to make each job name unique
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+# grpo_math_8b uses Llama-3.1-8B-Instruct model
+COMMAND="bash -c \"uv pip install -e .; uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml cluster.num_nodes=2 checkpointing.checkpoint_dir='results/llama8b_2nodes' policy.train_global_batch_size=64 logger.wandb_enabled=True logger.wandb.name='grpo-llama8b_math'\"" \
+RAY_DEDUP_LOGS=0 \
+UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
+CONTAINER=YOUR_CONTAINER \
+MOUNTS="$PWD:$PWD" \
+sbatch \
+    --nodes=$(NUM_ACTOR_NODES) \
+    --account=YOUR_ACCOUNT \
+    --job-name=YOUR_JOBNAME \
+    --partition=YOUR_PARTITION \
+    --time=4:0:0 \
+    --gres=gpu:8 \
+    ray.sub
 ```
 
 ## Cluster Start
