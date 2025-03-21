@@ -190,25 +190,25 @@ class Logger(LoggerInterface):
 
 def flatten_dict(d: Dict[str, Any], sep: str = ".") -> Dict[str, Any]:
     """Flatten a nested dictionary.
-    
+
     Handles nested dictionaries and lists by creating keys with separators.
     For lists, the index is used as part of the key.
-    
+
     Args:
         d: Dictionary to flatten
         sep: Separator to use between nested keys
-        
+
     Returns:
         Flattened dictionary with compound keys
-        
+
     Examples:
         ```{doctest}
         >>> flatten_dict({"a": 1, "b": {"c": 2}})
         {'a': 1, 'b.c': 2}
-        
+
         >>> flatten_dict({"a": [1, 2], "b": {"c": [3, 4]}})
         {'a.0': 1, 'a.1': 2, 'b.c.0': 3, 'b.c.1': 4}
-        
+
         >>> flatten_dict({"a": [{"b": 1}, {"c": 2}]})
         {'a.0.b': 1, 'a.1.c': 2}
         ```

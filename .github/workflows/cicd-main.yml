@@ -102,6 +102,18 @@ jobs:
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
   
+  sphinx-build:
+    name: Unit tests
+    needs: [pre-flight]
+    runs-on: ubuntu-latest
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: build docs
+        run: |
+          pip install uv
+          cd docs/
+          uv run --no-project --extra docs sphinx-build . _build/html
+
   build-container:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     needs: [pre-flight]
@@ -114,6 +126,20 @@ jobs:
       build-args: |
         MAX_JOBS=32
         REINFORCER_COMMIT=${{ github.sha }}
+
+  sphinx-doctest:
+    name: Unit tests
+    needs: [build-container, pre-flight]
+    uses: ./.github/workflows/_run_test.yml
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    with:
+      RUNNER: self-hosted-azure
+      TIMEOUT: 10
+      SCRIPT: |
+        cd ${REINFORCER_REPO_DIR}/docs
+        uv run --extra docs sphinx-build -b doctest . _build/doctest
+    secrets:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
   unit-tests:
     name: Unit tests
