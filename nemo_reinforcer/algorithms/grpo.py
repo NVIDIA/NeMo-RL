@@ -445,7 +445,9 @@ def grpo_train(
 
     # Run grpo training (single-turn)
     for batch in dataloader:
-        print(f"\n{'=' * 25} Step {step + 1}/{min(len(dataloader), master_config['grpo']['max_num_steps'])} {'=' * 25}")
+        print(
+            f"\n{'=' * 25} Step {step + 1}/{min(len(dataloader), master_config['grpo']['max_num_steps'])} {'=' * 25}"
+        )
 
         with timer.time("total_step_time"):
             # Prepare batch
