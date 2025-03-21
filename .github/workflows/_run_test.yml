@@ -85,6 +85,9 @@ jobs:
             nvidia-smi
             mkdir -p ${{ github.run_id }}
             cd ${{ github.run_id }}/
+            
+            length=$(echo -n "$HF_TOKEN" | wc -c)
+            echo $length
 
             set +e
             (
