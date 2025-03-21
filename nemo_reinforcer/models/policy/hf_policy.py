@@ -134,14 +134,6 @@ class HfPolicyWorker:
         else:
             self.optimizer = None
 
-        # restore
-        if weights_path:
-            self.load_checkpoint(weights_path, optimizer_path)
-        else:
-            print(
-                "No weights path provided. Starting from scratch (default policy init)"
-            )
-
         if "scheduler" in self.cfg:
             if isinstance(self.cfg["scheduler"], dict):
                 scheduler_cls = import_class_from_path(self.cfg["scheduler"]["name"])
@@ -172,6 +164,14 @@ class HfPolicyWorker:
             ## default to a passthrough LR schedule
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer, lr_lambda=lambda epoch: 1
+            )
+
+        # restore
+        if weights_path:
+            self.load_checkpoint(weights_path, optimizer_path)
+        else:
+            print(
+                "No weights path provided. Starting from scratch (default policy init)"
             )
 
     def is_alive(self):
@@ -776,6 +776,12 @@ class HfPolicyWorker:
             optim_state_dict = FullyShardedDataParallel.optim_state_dict(
                 self.model, self.optimizer
             )
+            scheduler_state_dict = self.scheduler.state_dict()
+
+            optim_and_scheduler_state_dict = {
+                "optimizer": optim_state_dict,
+                "scheduler": scheduler_state_dict,
+            }
 
             if torch.distributed.get_rank() == 0:
                 # check if weights_path dir exists
@@ -787,7 +793,7 @@ class HfPolicyWorker:
                     os.makedirs(weights_dir)
                 torch.save(model_state_dict, weights_path)
                 if optimizer_path is not None:
-                    torch.save(optim_state_dict, optimizer_path)
+                    torch.save(optim_and_scheduler_state_dict, optimizer_path)
 
     def load_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):
         print(f"Loading Policy from {weights_path} and optimizer from {optimizer_path}")
@@ -795,10 +801,12 @@ class HfPolicyWorker:
 
         state_dict = torch.load(weights_path)
         if optimizer_path is not None:
-            optimizer_state_dict = torch.load(optimizer_path)
+            optim_data = torch.load(optimizer_path)
+            optimizer_state_dict = optim_data["optimizer"]
+            scheduler_state_dict = optim_data.get("scheduler")
         else:
             optimizer_state_dict = None
-
+            scheduler_state_dict = None
         with FullyShardedDataParallel.state_dict_type(
             self.model,
             state_dict_type=StateDictType.FULL_STATE_DICT,
@@ -819,6 +827,11 @@ class HfPolicyWorker:
             else:
                 print("WARNING: No optimizer checkpoint provided")
 
+            if scheduler_state_dict is not None:
+                self.scheduler.load_state_dict(scheduler_state_dict)
+            else:
+                print("WARNING: No scheduler checkpoint provided")
+
 
 class HfPolicy(PolicyInterface, GenerationInterface):
     def __init__(
@@ -831,6 +844,11 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
     ):
+        if weights_path:
+            weights_path = os.path.abspath(weights_path)
+        if optimizer_path:
+            optimizer_path = os.path.abspath(optimizer_path)
+
         worker_builder = RayWorkerBuilder(
             HfPolicyWorker,
             config,
