@@ -6,9 +6,9 @@ The script [examples/run_sft.py](../../examples/run_sft.py) can be used to launc
 
 Be sure to launch the job using `uv`. The command to launch an SFT job is as follows:
 ```bash
-uv run examples/run_sft.py --config <PATH TO YAML CONFIG> --output-dir <PATH TO OUTPUT DIRECTORY>
+uv run examples/run_sft.py --config <PATH TO YAML CONFIG>
 ```
-If not specified, `config` will default to [examples/configs/sft.yaml](../../examples/configs/sft.yaml) and `output-dir` will default to `./outputs`.
+If not specified, `config` will default to [examples/configs/sft.yaml](../../examples/configs/sft.yaml).
 
 ## Configuration
 
