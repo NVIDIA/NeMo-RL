@@ -67,43 +67,6 @@ class MasterConfig(TypedDict):
     cluster: ClusterConfig
     checkpointing: CheckpointingConfig
 
-
-# =======================================================
-# Data Processing
-# =======================================================
-def sft_preprocessor(
-    datum_dict: Dict[str, Any],
-    task_data_spec: TaskDataSpec,
-    tokenizer,
-    max_seq_length: int,
-    idx: int,
-) -> DatumSpec:
-    """Process a datum dictionary for SFT training."""
-    message_log = get_formatted_message_log(
-        datum_dict["messages"], tokenizer, task_data_spec
-    )
-
-    length = sum(len(m["token_ids"]) for m in message_log)
-
-    loss_multiplier = 1.0
-    if length > max_seq_length:
-        # make smaller and mask out
-        for message in message_log:
-            message["token_ids"] = message["token_ids"][
-                : min(4, max_seq_length // len(message_log))
-            ]
-        loss_multiplier = 0.0
-
-    output = {
-        "message_log": message_log,
-        "length": length,
-        "extra_env_info": None,
-        "loss_multiplier": loss_multiplier,
-        "idx": idx,
-    }
-    return output
-
-
 # =======================================================
 # Setup & Initialization
 # =======================================================
@@ -157,32 +120,6 @@ def setup(
     # ==========================
     #           Data
     # ==========================
-    print("\n▶ Setting up data...")
-    data_cls = data_config["dataset_name"]
-    if data_cls == "open_assistant":
-        data = hf_datasets.OasstDataset(output_dir="/tmp/open_assistant")
-    elif data_cls == "squad":
-        data = hf_datasets.SquadDataset()
-    else:
-        raise ValueError(f"Unknown dataset class: {data_cls}")
-    print(
-        f"  ✓ Training and validation dataset loaded with {len(data.formatted_ds['train'])} and {len(data.formatted_ds['validation'])} samples, respectively."
-    )
-
-    train_dataset = data.formatted_ds["train"]
-    val_dataset = data.formatted_ds["validation"]
-    sft_task_spec = data.task_spec
-
-    tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
-
-    train_dataset = AllTaskProcessedDataset(
-        train_dataset,
-        tokenizer,
-        sft_task_spec,
-        sft_preprocessor,
-        max_seq_length=data_config["max_input_seq_length"],
-    )
-
     train_dataloader = StatefulDataLoader(
         train_dataset,
         batch_size=policy_config["train_global_batch_size"],
@@ -196,18 +133,11 @@ def setup(
         )
         train_dataloader.load_state_dict(dataloader_state_dict)
 
-    val_dataset = AllTaskProcessedDataset(
-        val_dataset,
-        tokenizer,
-        sft_task_spec,
-        sft_preprocessor,
-        max_seq_length=data_config["max_input_seq_length"],
-    )
 
     ## TODO: support different batch sizes for train and val
     val_dataloader = StatefulDataLoader(
         val_dataset,
-        batch_size=policy_config["train_global_batch_size"],
+        batch_size=sft_config["val_global_batch_size"],
         shuffle=False,
         collate_fn=rl_collate_fn,
         drop_last=True,
@@ -256,13 +186,12 @@ def setup(
         cluster,
         train_dataloader,
         val_dataloader,
-        tokenizer,
         loss_fn,
-        master_config,
         logger,
         sft_task_spec,
         checkpointer,
         sft_save_state,
+        master_config,
     )
 
 
@@ -316,7 +245,13 @@ def validate(
             )
 
             ## just run model fwd
-            val_results = policy.train(val_data, loss_fn, eval_mode=True)
+            val_results = policy.train(
+                val_data,
+                loss_fn,
+                eval_mode=True,
+                gbs=sft_config["val_global_batch_size"],
+                mbs=sft_config["val_micro_batch_size"],
+            )
             val_metrics["val_loss"] += float(val_results["loss"])
 
             if val_batches > 0 and batch_idx >= val_batches:

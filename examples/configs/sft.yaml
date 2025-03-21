@@ -3,6 +3,8 @@ sft:
   num_steps: 20
   val_period: 1
   val_batches: 8
+  val_global_batch_size: 2
+  val_micro_batch_size: 2
   val_at_start: true
 
 checkpointing:

@@ -243,10 +243,14 @@ class HfPolicyWorker:
         data: BatchedDataDict,
         loss_fn: LossFunction,
         eval_mode: bool = False,
+        gbs: Optional[int] = None,
+        mbs: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
-        mbs = self.cfg["train_micro_batch_size"]
-        gbs = self.cfg["train_global_batch_size"]
+        if gbs is None:
+            gbs = self.cfg["train_global_batch_size"]
+        if mbs is None:
+            mbs = self.cfg["train_micro_batch_size"]
         local_gbs = gbs // torch.distributed.get_world_size()
         dataset_size = data.get("input_ids").shape[0]
 
