@@ -101,22 +101,29 @@ jobs:
           pip install pre-commit
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
+  
+  build-container:
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    needs: [pre-flight]
+    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
+    with:
+      build-ref: ${{ github.sha }}
+      image-name: nemo_reinforcer_container
+      dockerfile: docker/Dockerfile
+      image-label: nemo-reinforcer
+      build-args: |
+        MAX_JOBS=32
+        REINFORCER_COMMIT=${{ github.sha }}
 
   unit-tests:
     name: Unit tests
-    needs: [pre-flight]
-    runs-on: self-hosted-azure
+    needs: [build-container, pre-flight]
+    uses: ./.github/workflows/_run_test.yml
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Run unit tests
-        run: |
-          pip install uv
-          uv venv -p python3.10 .venv
-          uv pip install --force-reinstall .[vllm,test,dev,compile]
-          uv run --group test -- bash -x tests/run_unit.sh
-      - name: after_script
-        if: always()
-        run: |
-          rm -rf .venv
+    with:
+      RUNNER: self-hosted-azure
+      TIMEOUT: 10
+      SCRIPT: |
+        nvidia-smi
+        cd ${REINFORCER_REPO_DIR}
+        bash tests/run_unit_in_docker.sh
