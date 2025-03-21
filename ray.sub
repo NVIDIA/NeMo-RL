@@ -19,13 +19,6 @@ MOUNTS=$MOUNTS
 COMMAND=${COMMAND:-}  # This is a script relative to the SLURM_SUBMIT_DIR. If left empty, it will leave the cluster idle after it's brought up.
 ########################################################
 
-########################################################
-# Global settings
-########################################################
-# Disable usage stats by default so that it's opt-in
-export RAY_USAGE_STATS_ENABLED=${RAY_USAGE_STATS_ENABLED:-0}
-########################################################
-
 COMMON_SRUN_ARGS=""
 COMMON_SRUN_ARGS+=" --export=ALL"
 COMMON_SRUN_ARGS+=" --no-container-mount-home"
@@ -70,6 +63,7 @@ head_cmd=$(cat <<EOF
 env
 cat <<EOFINNER | tee /launch-head.sh
 ray start --head \
+--disable-usage-stats \
 --num-cpus=0 \
 --num-gpus=0 \
 --node-ip-address="$head_node_ip" \
@@ -104,9 +98,11 @@ for ((i = 0; i < SLURM_JOB_NUM_NODES; i++)); do
 env
 cat <<EOFINNER | tee /launch-worker.sh
 ray start --address "$ip_head" \
+          --disable-usage-stats \
           --resources="{\"worker_units\": $gpus_per_node}" \
           --min-worker-port=$min_worker_port \
-          --max-worker-port=$max_worker_port --block
+          --max-worker-port=$max_worker_port \
+          --block
 EOFINNER
 
 count=0
