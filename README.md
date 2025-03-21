@@ -143,11 +143,28 @@ uv run python examples/run_grpo_math.py \
 
 #### Multi-node
 
-For the general multi-node setup, refer to the [SFT multi-node](#multi-node) documentation. The only thing that differs from SFT is the `COMMAND`, which is replaced with
+For the general multi-node setup, refer to the [SFT multi-node](#multi-node) documentation. The only thing that differs from SFT is the `COMMAND`:
 
 ```sh
+# Run from the root of NeMo-Reinforcer repo
+NUM_ACTOR_NODES=2
+# Add a timestamp to make each job name unique
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
 # grpo_math_8b uses Llama-3.1-8B-Instruct model
 COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml cluster.num_nodes=2 checkpointing.checkpoint_dir='results/llama8b_2nodes' policy.train_global_batch_size=64 logger.wandb_enabled=True logger.wandb.name='grpo-llama8b_math'" \
+RAY_DEDUP_LOGS=0 \
+UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
+CONTAINER=YOUR_CONTAINER \
+MOUNTS="$PWD:$PWD" \
+sbatch \
+    --nodes=${NUM_ACTOR_NODES} \
+    --account=YOUR_ACCOUNT \
+    --job-name=YOUR_JOBNAME \
+    --partition=YOUR_PARTITION \
+    --time=4:0:0 \
+    --gres=gpu:8 \
+    ray.sub
 ```
 
 ## Cluster Start
