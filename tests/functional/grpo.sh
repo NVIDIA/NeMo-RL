@@ -15,7 +15,7 @@ export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
 mkdir -p $LOG_DIR
 
 cd $PROJECT_ROOT
-python $PROJECT_ROOT/examples/run_grpo_math.py \
+python -u $PROJECT_ROOT/examples/run_grpo_math.py \
     cluster.gpus_per_node=2 \
     grpo.max_num_steps=10 \
     logger.tensorboard_enabled=true \

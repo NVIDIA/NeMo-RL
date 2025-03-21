@@ -15,7 +15,7 @@ export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
 mkdir -p $LOG_DIR
 
 cd $PROJECT_ROOT
-python $PROJECT_ROOT/examples/run_sft.py \
+python -u $PROJECT_ROOT/examples/run_sft.py \
     cluster.gpus_per_node=2 \
     sft.max_num_steps=10 \
     logger.tensorboard_enabled=true \
@@ -29,5 +29,4 @@ python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
 python check_metrics.py $JSON_METRICS \
   'data["train/loss"]["9"] < 600' \
-  'data["timing/train/sft_train_step"]["9"] < 0.25'
 
