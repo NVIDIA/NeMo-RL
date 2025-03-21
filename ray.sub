@@ -19,6 +19,13 @@ MOUNTS=$MOUNTS
 COMMAND=${COMMAND:-}  # This is a script relative to the SLURM_SUBMIT_DIR. If left empty, it will leave the cluster idle after it's brought up.
 ########################################################
 
+########################################################
+# Global settings
+########################################################
+# Disable usage stats by default so that it's opt-in
+export RAY_USAGE_STATS_ENABLED=${RAY_USAGE_STATS_ENABLED:-0}
+########################################################
+
 COMMON_SRUN_ARGS=""
 COMMON_SRUN_ARGS+=" --export=ALL"
 COMMON_SRUN_ARGS+=" --no-container-mount-home"
