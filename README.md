@@ -93,8 +93,8 @@ NUM_ACTOR_NODES=2
 # Add a timestamp to make each job name unique
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# grpo_math_8b uses Llama-3.1-8B-Instruct model
-COMMAND="uv pip install -e .; uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'\"" \
+# SFT experiment uses Llama-3.1-8B model
+COMMAND="uv pip install -e .; uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'" \
 RAY_DEDUP_LOGS=0 \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \
