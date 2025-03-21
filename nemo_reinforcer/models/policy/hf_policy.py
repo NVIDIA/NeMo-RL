@@ -73,9 +73,9 @@ class HfPolicyWorker:
         world_size = torch.distributed.get_world_size()
         model_name = self.cfg["model_name"]
         if self.cfg["precision"] == "float32":
-            dtype = torch.float32
+            self.dtype = torch.float32
         elif self.cfg["precision"] == "bfloat16":
-            dtype = torch.bfloat16
+            self.dtype = torch.bfloat16
         else:
             raise ValueError(f"Unknown precision: {self.cfg['precision']}")
 
@@ -83,12 +83,12 @@ class HfPolicyWorker:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=dtype,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
+            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
         self.reference_model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=dtype,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
+            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -272,16 +272,17 @@ class HfPolicyWorker:
                     # For right-padded sequence, set 1s at the beginning of the sequence
                     attention_mask[i, :length] = 1
 
-                outputs = self.model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    use_cache=False,
-                )
-                # Get logprobs
-                if not hasattr(outputs, "logits"):
-                    logits = self.model.lm_head(outputs.last_hidden_state)
-                else:
-                    logits = outputs.logits
+                with torch.autocast(device_type="cuda", dtype=self.dtype):
+                    outputs = self.model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        use_cache=False,
+                    )
+                    # Get logprobs
+                    if not hasattr(outputs, "logits"):
+                        logits = self.model.lm_head(outputs.last_hidden_state)
+                    else:
+                        logits = outputs.logits
 
                 loss, loss_metrics = loss_fn(logits, mb)
 
@@ -358,11 +359,12 @@ class HfPolicyWorker:
                     attention_mask[i, :length] = 1
 
                 # Process with the model directly using right-padded inputs
-                outputs = self.model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    use_cache=False,
-                )
+                with torch.autocast(device_type="cuda", dtype=self.dtype):
+                    outputs = self.model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        use_cache=False,
+                    )
                 log_probs = torch.nn.functional.log_softmax(
                     outputs.logits.to(torch.float32), dim=-1
                 )
