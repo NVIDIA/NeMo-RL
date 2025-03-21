@@ -58,7 +58,7 @@ uv pip install -e '.[dev,test]'
 
 We provide a sample SFT experiment that uses the [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
 
-#### Single GPU
+#### Single Node
 
 The experiment is set up to run on 8 GPUs. If using a machine that has access to 8 GPUs, you can launch the experiment as follows:
 
@@ -66,13 +66,13 @@ The experiment is set up to run on 8 GPUs. If using a machine that has access to
 uv run python examples/run_sft.py
 ```
 
-This trains `Llama3.1-8B` on 8 GPUs. To run on a single GPU, we'll have to override a few of the experiment settings. We replace the 8B model with a smaller 1B model
- and update the cluster configuration to use a single gpu:
+This trains `Llama3.1-8B` on 8 GPUs. To run on a single GPU, we'll have to override a few of the experiment settings. We replace the 8B model with a smaller 1B model, decrease the batch size, and update the cluster configuration to use a single gpu:
 
-TODO: do we need to decrease the batch size?
 ```sh
 uv run python examples/run_sft.py \
   policy.model_name="meta-llama/Llama-3.2-1B" \
+  policy.train_global_batch_size=16 \
+  sft.val_global_batch_size=16 \
   cluster.gpus_per_node=1
 ```
 
