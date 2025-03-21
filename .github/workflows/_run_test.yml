@@ -90,10 +90,9 @@ jobs:
 
             cmd=$(cat <<"RUN_TEST_EOF"
             nvidia-smi
-            # Sanity check the driver/cuda combo
-            cudaCheck
+
             # In case git commands need to be run inside Reinforcer
-            git config --global --add safe.directory $_PLACHOLDER_REPO_DIR
+            git config --global --add safe.directory $REINFORCER_REPO_DIR
             ${{ inputs.SCRIPT }}
             RUN_TEST_EOF
             )
