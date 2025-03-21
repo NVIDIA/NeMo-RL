@@ -1,11 +1,12 @@
 # SFT Algorithm Configuration
 sft:
-  max_num_steps: 20
+  max_num_steps: 1000
   val_period: 10
   val_batches: 8
-  val_global_batch_size: 32
-  val_micro_batch_size: 2
+  val_global_batch_size: 128
+  val_micro_batch_size: 1
   val_at_start: true
+  seed: 42
 
 checkpointing:
   enabled: true
@@ -16,29 +17,29 @@ checkpointing:
   save_period: 10
 
 policy:
-  model_name: "meta-llama/Llama-3.2-1B-Instruct"
-  train_global_batch_size: 32
-  train_micro_batch_size: 2
-  max_total_sequence_length: 1024
+  model_name: "meta-llama/Meta-Llama-3-8B"
+  train_global_batch_size: 128
+  train_micro_batch_size: 1
+  max_total_sequence_length: 2048
 
   optimizer:
     name: "torch.optim.AdamW"
     kwargs:
       lr: 5.0e-6
-      weight_decay: 0.01
-      betas: [0.9, 0.999]
-      eps: 1e-8
+      weight_decay: 0.1
+      betas: [0.9, 0.98]
+      eps: 1e-5
 
   scheduler:
     name: "torch.optim.lr_scheduler.LinearLR"
     kwargs:
-      start_factor: 0.1
+      start_factor: 0.0196078
       end_factor: 1.0
-      total_iters: 100
+      total_iters: 50
     
 data:
   max_input_seq_length: ${policy.max_total_sequence_length}
-  dataset_name: "open_assistant"
+  dataset_name: "squad"
 
 logger:
   log_dir: "logs"  # Base directory for all logs
@@ -51,5 +52,5 @@ logger:
     log_dir: "tb_logs"
 
 cluster:
-  gpus_per_node: 1
+  gpus_per_node: 8
   num_nodes: 1
