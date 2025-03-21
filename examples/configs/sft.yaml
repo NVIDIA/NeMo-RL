@@ -21,6 +21,7 @@ policy:
   train_micro_batch_size: 2
   learning_rate: 5.0e-6
   max_total_sequence_length: 1024
+  precision: "float32"
 
   scheduler:
     - name: "torch.optim.lr_scheduler.LinearLR"

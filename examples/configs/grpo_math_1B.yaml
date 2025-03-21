@@ -2,7 +2,7 @@
 grpo:
   num_prompts_per_step: 8
   num_generations_per_prompt: 8
-  max_num_steps: 100
+  max_num_steps: 1000000
   normalize_rewards: true
   use_leave_one_out_baseline: true
   val_period: 10
@@ -30,6 +30,7 @@ policy:
   learning_rate: 5.0e-6
   logprob_batch_size: 4
   max_total_sequence_length: 512
+  precision: "bfloat16"
 
   scheduler:
     - name: "torch.optim.lr_scheduler.LinearLR"
