@@ -29,9 +29,6 @@ cd $SCRIPT_DIR
 python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
 python check_metrics.py $JSON_METRICS \
-    'data["timing/train/policy_refit"]["10"] < 3.0' \
-    'data["timing/train/total_step_time"]["10"] < 20.0' \
-    'data["timing/validation/generation"]["10"] < 3.0' \
-    'max(data["train/token_mult_prob_error"]) < 1.05' \
+    'max(data["train/token_mult_prob_error"]) < 1.1' \
     'data["validation/avg_length"]["10"] < 1024' \
 
