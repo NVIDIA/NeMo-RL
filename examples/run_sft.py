@@ -15,6 +15,7 @@
 import argparse
 import os
 import pprint
+from typing import Dict, Any
 
 from omegaconf import OmegaConf
 
@@ -22,6 +23,13 @@ from nemo_reinforcer.algorithms.sft import MasterConfig, sft_train, setup
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from nemo_reinforcer.utils.config import load_config
 from nemo_reinforcer.utils.logger import get_next_experiment_dir
+from nemo_reinforcer.data import DataConfig, hf_datasets
+from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
+from nemo_reinforcer.data.interfaces import TaskDataSpec, DatumSpec
+from nemo_reinforcer.data.llm_message_utils import get_formatted_message_log
+from transformers import AutoTokenizer
+from nemo_reinforcer.models.policy import PolicyConfig
+
 
 def parse_args():
     """Parse command line arguments."""
@@ -37,6 +45,7 @@ def parse_args():
     overrides = OmegaConf.from_dotlist(remaining)
 
     return args, overrides
+
 
 # =======================================================
 # Data Processing
@@ -73,6 +82,7 @@ def sft_preprocessor(
     }
     return output
 
+
 def setup_data(data_config: DataConfig, policy_config: PolicyConfig):
     print("\n▶ Setting up data...")
     data_cls = data_config["dataset_name"]
@@ -108,7 +118,8 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig):
         max_seq_length=data_config["max_input_seq_length"],
     )
 
-    return train_dataset, val_dataset, tokenizer
+    return train_dataset, val_dataset, tokenizer, sft_task_spec
+
 
 def main():
     """Main entry point."""
@@ -137,9 +148,8 @@ def main():
 
     init_ray()
 
-
     # setup data
-    dataset, val_dataset, tokenizer = setup_data(
+    dataset, val_dataset, tokenizer, sft_task_spec = setup_data(
         config["data"], config["policy"]
     )
     (
@@ -149,11 +159,10 @@ def main():
         val_dataloader,
         loss_fn,
         logger,
-        sft_task_spec,
         checkpointer,
         sft_save_state,
         master_config,
-    ) = setup(config)
+    ) = setup(config, dataset, val_dataset)
     sft_train(
         policy,
         train_dataloader,

@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -883,7 +883,12 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         return logprobs
 
     def train(
-        self, data: BatchedDataDict, loss_fn: LossFunction, eval_mode: bool = False
+        self,
+        data: BatchedDataDict,
+        loss_fn: LossFunction,
+        eval_mode: bool = False,
+        gbs: Optional[int] = None,
+        mbs: Optional[int] = None,
     ):
         """Train the policy on a batch of data with a given loss function."""
         # Shard and replicate the batch
@@ -896,7 +901,12 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         futures = self.worker_group.run_all_workers_multiple_data(
             "train",
             sharded_data,
-            common_kwargs={"loss_fn": loss_fn, "eval_mode": eval_mode},
+            common_kwargs={
+                "loss_fn": loss_fn,
+                "eval_mode": eval_mode,
+                "gbs": gbs,
+                "mbs": mbs,
+            },
         )
         results = self.worker_group.get_all_worker_results(futures)
 

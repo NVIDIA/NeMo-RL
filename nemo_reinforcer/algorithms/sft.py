@@ -60,6 +60,7 @@ class SFTConfig(TypedDict):
     val_micro_batch_size: int
     val_at_start: bool
 
+
 class MasterConfig(TypedDict):
     policy: PolicyConfig
     data: DataConfig
@@ -68,16 +69,19 @@ class MasterConfig(TypedDict):
     cluster: ClusterConfig
     checkpointing: CheckpointingConfig
 
+
 # =======================================================
 # Setup & Initialization
 # =======================================================
 def setup(
     master_config: MasterConfig,
+    train_dataset: AllTaskProcessedDataset,
+    val_dataset: AllTaskProcessedDataset,
 ) -> Tuple[
     HfPolicy,
     RayVirtualCluster,
     StatefulDataLoader,
-    Optional[StatefulDataLoader],
+    StatefulDataLoader,
     NLLLoss,
     MasterConfig,
     Logger,
@@ -133,7 +137,6 @@ def setup(
         )
         train_dataloader.load_state_dict(dataloader_state_dict)
 
-
     val_dataloader = StatefulDataLoader(
         val_dataset,
         batch_size=sft_config["val_global_batch_size"],
@@ -187,7 +190,6 @@ def setup(
         val_dataloader,
         loss_fn,
         logger,
-        sft_task_spec,
         checkpointer,
         sft_save_state,
         master_config,
@@ -206,6 +208,8 @@ def validate(
     master_config: MasterConfig,
     sft_task_spec: TaskDataSpec,
     val_batches: int,
+    val_batch_size: int,
+    val_mbs: int,
 ):
     """Run validation on the validation dataset."""
     if val_dataloader is None:
@@ -248,8 +252,8 @@ def validate(
                 val_data,
                 loss_fn,
                 eval_mode=True,
-                gbs=sft_config["val_global_batch_size"],
-                mbs=sft_config["val_micro_batch_size"],
+                gbs=val_batch_size,
+                mbs=val_mbs,
             )
             val_metrics["val_loss"] += float(val_results["loss"])
 
@@ -303,9 +307,10 @@ def sft_train(
             sft_save_state["step"] + 1
         )  # N+1 because the checkpoint is _after_ SFT iteration N
 
+    sft_config = master_config["sft"]
     # Validation configuration
-    val_period = master_config["sft"]["val_period"]
-    val_at_start = master_config["sft"]["val_at_start"]
+    val_period = sft_config["val_period"]
+    val_at_start = sft_config["val_at_start"]
 
     # Run validation at the start if configured
     if val_at_start and step == 0:
@@ -318,7 +323,9 @@ def sft_train(
             step=0,
             master_config=master_config,
             sft_task_spec=sft_task_spec,
-            val_batches=master_config["sft"]["val_batches"],
+            val_batches=sft_config["val_batches"],
+            val_batch_size=sft_config["val_global_batch_size"],
+            val_mbs=sft_config["val_micro_batch_size"],
         )
 
         logger.log_metrics(val_metrics, step, prefix="validation")
@@ -367,7 +374,9 @@ def sft_train(
                     step=step + 1,
                     master_config=master_config,
                     sft_task_spec=sft_task_spec,
-                    val_batches=master_config["sft"]["val_batches"],
+                    val_batches=sft_config["val_batches"],
+                    val_batch_size=sft_config["val_global_batch_size"],
+                    val_mbs=sft_config["val_micro_batch_size"],
                 )
                 logger.log_metrics(
                     validation_timings, step + 1, prefix="timing/validation"
