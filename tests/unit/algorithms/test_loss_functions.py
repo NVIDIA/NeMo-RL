@@ -11,11 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import pytest
 import torch
 from nemo_reinforcer.algorithms.loss_functions import NLLLoss
 
 
 def test_nll_loss():
+    if not torch.cuda.is_available():
+        pytest.skip("No GPU available")
+
     loss_fn = NLLLoss()
 
     vocab_size = 8

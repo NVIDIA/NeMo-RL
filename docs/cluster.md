@@ -21,7 +21,7 @@ export UV_CACHE_DIR=/path/that/all/workers/can/access/uv_cache
 
 ```sh
 # Run from the root of NeMo-Reinforcer repo
-NUM_ACTOR_NODES=1  # Total nodes requested are $NUM_ACTOR_NODES + 1 (+1 for head node)
+NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
 
 COMMAND="bash -c 'uv pip install -e .; uv run ./examples/run_grpo.py'" \
 RAY_DEDUP_LOGS=0 \
@@ -55,7 +55,7 @@ tail -f 1980204-logs/ray-driver.log
 To run interactively, launch the same command as the [Batched Job Submission](#batched-job-submission) except omit the `COMMAND` line:
 ```sh
 # Run from the root of NeMo-Reinforcer repo
-NUM_ACTOR_NODES=1  # Total nodes requested are $NUM_ACTOR_NODES + 1 (+1 for head node)
+NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
 
 RAY_DEDUP_LOGS=0 \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \

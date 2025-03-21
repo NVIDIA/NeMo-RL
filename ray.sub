@@ -58,12 +58,13 @@ port=41993
 ip_head=$head_node_ip:$port
 
 # First we start the head of the ray cluster on one of the physical nodes
-# In this case we are giving an entire physical node to the ray head node
-# The ray head node is marked by including --head to the ray start command
+# Set GPU/CPU resources to 0 to avoid scheduling on the head node
 head_cmd=$(cat <<EOF
 env
 cat <<EOFINNER | tee /launch-head.sh
 ray start --head \
+--num-cpus=0 \
+--num-gpus=0 \
 --node-ip-address="$head_node_ip" \
 --port=$port \
 --block
@@ -81,10 +82,7 @@ EOF
 )
 srun $COMMON_SRUN_ARGS --container-name=ray-head --nodes=1 --ntasks=1 -w "$head_node" -o $LOG_DIR/ray-head.log bash -x -c "$head_cmd" &
 
-# We now need to start the Ray worker nodes
-# We define the following variables to help
-num_ray_worker_nodes=$((SLURM_JOB_NUM_NODES - 1)) # One physical node is for the ray head node, rest are for ray worker nodes
-export NUM_ACTORS=$((gpus_per_node * num_ray_worker_nodes)) # 8 actors per ray worker node (one for each GPU)
+export NUM_ACTORS=$((gpus_per_node * SLURM_JOB_NUM_NODES))
 
 # Start Ray worker nodes
 # We want 1 Ray worker node per physical node
@@ -92,7 +90,7 @@ export NUM_ACTORS=$((gpus_per_node * num_ray_worker_nodes)) # 8 actors per ray w
 # NOTE: Ports start above 20000 since 10001-10257 frequently ran into conflicts
 min_worker_port=20001
 max_worker_port=20257
-for ((i = 1; i <= num_ray_worker_nodes; i++)); do
+for ((i = 0; i < SLURM_JOB_NUM_NODES; i++)); do
   node_i=${nodes_array[$i]}
     
   worker_cmd=$(cat <<EOF
@@ -113,12 +111,15 @@ done
 echo ret_code=\$?
 EOF
 )
-  srun $COMMON_SRUN_ARGS --container-name=ray-worker-$i --exact --nodes=1 --ntasks=1 --cpus-per-task=$((16 * gpus_per_node)) -w "$node_i" -o $LOG_DIR/ray-worker-$i.log bash -x -c "$worker_cmd" &
+  if [[ $i -eq 0 ]]; then
+    OVERLAP_HEAD_AND_WORKER_ARG="--overlap"
+  fi
+  srun $COMMON_SRUN_ARGS ${OVERLAP_HEAD_AND_WORKER_ARG:-} --container-name=ray-worker-$i --exact --nodes=1 --ntasks=1 --cpus-per-task=$((16 * gpus_per_node)) -w "$node_i" -o $LOG_DIR/ray-worker-$i.log bash -x -c "$worker_cmd" &
   sleep 3
 done
 
 echo "[INFO] Querying head node too early can cause pyxis to fail"
-for i in {30..1}; do
+for i in {20..1}; do
   echo "[INFO] Waiting for $i seconds before querying head node..."
   sleep 1
 done
@@ -155,14 +156,15 @@ echo "All workers connected!"
 # This driver process is responsible for launching a job on the Ray cluster
 CONTAINER_CWD=$(scontrol show job $SLURM_JOB_ID --json | jq -r '.jobs[].current_working_directory')
 if [[ -n "$COMMAND" ]]; then
-  srun --overlap --container-name=ray-head --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "$head_node" -o $LOG_DIR/ray-driver.log $COMMAND
+  srun --gpus=0 --overlap --container-name=ray-head --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "$head_node" -o $LOG_DIR/ray-driver.log $COMMAND
 else
   echo "[INFO]: Ray Cluster is idled, run this on the slurm head node to get a shell to the head node:"
   cat <<EOF >$SLURM_SUBMIT_DIR/${SLURM_JOB_ID}-attach.sh
 # No args launches on the head node
-WORKER_NUM=\${1:-0}
-if [[ \$WORKER_NUM -eq 0 ]]; then
-  srun --gres=gpu:8 -A $SLURM_JOB_ACCOUNT -p $SLURM_JOB_PARTITION --overlap --container-name=ray-head --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "$head_node" --jobid $SLURM_JOB_ID --pty bash
+WORKER_NUM=\${1:-}
+if [[ -z "\$WORKER_NUM" ]]; then
+  # Empty means we are on the head node
+  srun --gpus=0 -A $SLURM_JOB_ACCOUNT -p $SLURM_JOB_PARTITION --overlap --container-name=ray-head --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "$head_node" --jobid $SLURM_JOB_ID --pty bash
 else
   nodes_array=($nodes)
   srun --gres=gpu:8 -A $SLURM_JOB_ACCOUNT -p $SLURM_JOB_PARTITION --overlap --container-name=ray-worker-\$WORKER_NUM --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "\${nodes_array[\$WORKER_NUM]}" --jobid $SLURM_JOB_ID --pty bash
