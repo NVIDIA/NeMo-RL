@@ -94,7 +94,7 @@ NUM_ACTOR_NODES=2
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # grpo_math_8b uses Llama-3.1-8B-Instruct model
-COMMAND="bash -c \"uv pip install -e .; uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'\"" \
+COMMAND="uv pip install -e .; uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'\"" \
 RAY_DEDUP_LOGS=0 \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \
@@ -125,7 +125,7 @@ uv run python examples/run_grpo_math.py
 By default, this uses the configuration in `examples/configs/grpo_math_1B.yaml`. You can customize parameters with command-line overrides. For example, to run on 8 gpus,
 
 ```sh
-# Run the GRPO math example using a 1B parameter model
+# Run the GRPO math example using a 1B parameter model using 8 GPUs
 uv run python examples/run_grpo_math.py \
   cluster.gpus_per_node=8
 ```
