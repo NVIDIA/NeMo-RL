@@ -103,7 +103,7 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure --color=always
   
   sphinx-build:
-    name: Unit tests
+    name: Sphinx build
     needs: [pre-flight]
     runs-on: ubuntu-latest
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
@@ -114,7 +114,7 @@ jobs:
         run: |
           pip install uv
           cd docs/
-          uv run --no-project --extra docs sphinx-build . _build/html
+          uv run --extra docs sphinx-build . _build/html
 
   build-container:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
@@ -130,7 +130,7 @@ jobs:
         REINFORCER_COMMIT=${{ github.sha }}
 
   sphinx-doctest:
-    name: Unit tests
+    name: Sphinx doctest
     needs: [build-container, pre-flight]
     uses: ./.github/workflows/_run_test.yml
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
