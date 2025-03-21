@@ -3,8 +3,8 @@ sft:
   num_steps: 20
   val_period: 10
   val_batches: 8
-  val_global_batch_size: 64
-  val_micro_batch_size: 8
+  val_global_batch_size: 32
+  val_micro_batch_size: 2
   val_at_start: true
 
 checkpointing:
@@ -17,8 +17,8 @@ checkpointing:
 
 policy:
   model_name: "meta-llama/Llama-3.2-1B-Instruct"
-  train_global_batch_size: 64
-  train_micro_batch_size: 8
+  train_global_batch_size: 32
+  train_micro_batch_size: 2
   learning_rate: 5.0e-6
   max_total_sequence_length: 1024
 
@@ -48,5 +48,5 @@ logger:
     log_dir: "tb_logs"
 
 cluster:
-  gpus_per_node: 2
+  gpus_per_node: 1
   num_nodes: 1
