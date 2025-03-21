@@ -77,18 +77,18 @@ class HfPolicyWorker:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.bfloat16,  # use half precision to save memory
+            torch_dtype=torch.float32,  # use full precision until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
         self.reference_model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.bfloat16,  # use half precision to save memory
+            torch_dtype=torch.float32,  # use full precision until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
 
-        self.tokenizer = tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         # If no pad token is defined, you might need:
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # ------------------------------------------------
         # 3) Move to GPU + Composable FSDP
@@ -99,23 +99,10 @@ class HfPolicyWorker:
             # Create a device mesh with 'world_size' GPUs in a 1D arrangement.
             mesh = init_device_mesh("cuda", (world_size,))
 
-            # Mixed precision training
-            # https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.MixedPrecision
-            param_dtype = torch.bfloat16  # use lower precision for model parameters
-            reduce_dtype = torch.float32  # use higher precision for gradient reduction
-            buffer_dtype = torch.float32  # use higher precision for optimizer states
-
-            mp = MixedPrecision(
-                param_dtype=param_dtype,
-                reduce_dtype=reduce_dtype,
-                buffer_dtype=buffer_dtype,
-            )
-
             return FullyShardedDataParallel(
                 model,
                 device_mesh=mesh,
                 auto_wrap_policy=size_based_auto_wrap_policy,
-                mixed_precision=mp,
             )
 
         self.model.to("cuda")
@@ -133,14 +120,6 @@ class HfPolicyWorker:
             )
         else:
             self.optimizer = None
-
-        # restore
-        if weights_path:
-            self.load_checkpoint(weights_path, optimizer_path)
-        else:
-            print(
-                "No weights path provided. Starting from scratch (default policy init)"
-            )
 
         if "scheduler" in self.cfg:
             if isinstance(self.cfg["scheduler"], dict):
@@ -172,6 +151,14 @@ class HfPolicyWorker:
             ## default to a passthrough LR schedule
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer, lr_lambda=lambda epoch: 1
+            )
+
+        # restore
+        if weights_path:
+            self.load_checkpoint(weights_path, optimizer_path)
+        else:
+            print(
+                "No weights path provided. Starting from scratch (default policy init)"
             )
 
     def is_alive(self):
@@ -758,6 +745,12 @@ class HfPolicyWorker:
             optim_state_dict = FullyShardedDataParallel.optim_state_dict(
                 self.model, self.optimizer
             )
+            scheduler_state_dict = self.scheduler.state_dict()
+
+            optim_and_scheduler_state_dict = {
+                "optimizer": optim_state_dict,
+                "scheduler": scheduler_state_dict,
+            }
 
             if torch.distributed.get_rank() == 0:
                 # check if weights_path dir exists
@@ -769,7 +762,7 @@ class HfPolicyWorker:
                     os.makedirs(weights_dir)
                 torch.save(model_state_dict, weights_path)
                 if optimizer_path is not None:
-                    torch.save(optim_state_dict, optimizer_path)
+                    torch.save(optim_and_scheduler_state_dict, optimizer_path)
 
     def load_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):
         print(f"Loading Policy from {weights_path} and optimizer from {optimizer_path}")
@@ -777,10 +770,12 @@ class HfPolicyWorker:
 
         state_dict = torch.load(weights_path)
         if optimizer_path is not None:
-            optimizer_state_dict = torch.load(optimizer_path)
+            optim_data = torch.load(optimizer_path)
+            optimizer_state_dict = optim_data["optimizer"]
+            scheduler_state_dict = optim_data.get("scheduler")
         else:
             optimizer_state_dict = None
-
+            scheduler_state_dict = None
         with FullyShardedDataParallel.state_dict_type(
             self.model,
             state_dict_type=StateDictType.FULL_STATE_DICT,
@@ -801,6 +796,11 @@ class HfPolicyWorker:
             else:
                 print("WARNING: No optimizer checkpoint provided")
 
+            if scheduler_state_dict is not None:
+                self.scheduler.load_state_dict(scheduler_state_dict)
+            else:
+                print("WARNING: No scheduler checkpoint provided")
+
 
 class HfPolicy(PolicyInterface, GenerationInterface):
     def __init__(
@@ -813,6 +813,11 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
     ):
+        if weights_path:
+            weights_path = os.path.abspath(weights_path)
+        if optimizer_path:
+            optimizer_path = os.path.abspath(optimizer_path)
+
         worker_builder = RayWorkerBuilder(
             HfPolicyWorker,
             config,

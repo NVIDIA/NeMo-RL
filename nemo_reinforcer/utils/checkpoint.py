@@ -116,7 +116,7 @@ class CheckpointManager:
             with open(save_dir / "config.json", "w") as f:
                 json.dump(run_config, f)
 
-        return save_dir
+        return Path(os.path.abspath(save_dir))
 
     def finalize_checkpoint(self, checkpoint_path: os.PathLike) -> None:
         """Complete a checkpoint by moving it from temporary to permanent location.
