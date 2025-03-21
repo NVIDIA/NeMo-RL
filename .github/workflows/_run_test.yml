@@ -64,11 +64,16 @@ jobs:
         - name: Docker pull image
           run: |
             docker pull nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }}
+        
+        - name: Docker pull image
+          run: |
+            docker run --rm -u root \
+              -v /home/azureuser/actions-runner/_work/reinforcer/reinforcer:/home/azureuser/actions-runner/_work/reinforcer/reinforcer \
+              nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \
+              chmod 755 /home/azureuser/actions-runner/_work/reinforcer/reinforcer 
 
         - name: Checkout repository
           uses: actions/checkout@v4
-          with:
-            clean: false
 
         - name: Start container
           run: |
