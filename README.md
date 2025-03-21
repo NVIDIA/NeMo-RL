@@ -47,7 +47,7 @@ uv pip install -e '.[dev,test]'
 # Use uv run to launch any runs. 
 # Note that it is recommended to not activate the venv and instead use `uv run` since
 # it ensures consistent environment usage across different shells and sessions.
-uv run python examples/run_grpo.py
+uv run python examples/run_grpo_math.py
 ```
 
 ## Cluster Start

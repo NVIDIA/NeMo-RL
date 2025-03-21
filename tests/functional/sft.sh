@@ -16,7 +16,7 @@ mkdir -p $LOG_DIR
 cd $PROJECT_ROOT
 uv run $PROJECT_ROOT/examples/run_sft.py \
     cluster.gpus_per_node=2 \
-    sft.num_steps=10 \
+    sft.max_num_steps=10 \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \

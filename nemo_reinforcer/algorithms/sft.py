@@ -36,7 +36,7 @@ from nemo_reinforcer.utils.timer import Timer
 
 
 class SFTConfig(TypedDict):
-    num_steps: int
+    max_num_steps: int
 
 
 class MasterConfig(TypedDict):
@@ -206,5 +206,5 @@ def sft_train(
         logger.log_metrics(timing_metrics, step, prefix="timing/train")
         timer.reset()
 
-        if step >= master_config["sft"]["num_steps"] - 1:
+        if step >= master_config["sft"]["max_num_steps"] - 1:
             break
