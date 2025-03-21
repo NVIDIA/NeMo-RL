@@ -336,7 +336,6 @@ def sft_train(
 
     policy.prepare_for_training()
 
-    consumed_samples = 0
     for batch in train_dataloader:
         print(f"\n{'=' * 25} Step {step + 1}/{len(train_dataloader)} {'=' * 25}")
 
@@ -367,7 +366,6 @@ def sft_train(
             ## train_data.to("cpu")
             print("▶ Taking a training step...")
             train_results = policy.train(train_data, loss_fn)
-            consumed_samples += train_data["input_ids"].shape[0]
 
             # Run validation if it's a validation step
             if val_period > 0 and (step + 1) % val_period == 0:
@@ -441,11 +439,6 @@ def sft_train(
 
         logger.log_metrics(metrics, step + 1, prefix="train")
         logger.log_metrics(timing_metrics, step + 1, prefix="timing/train")
-
-        # To match NeMo2
-        logger.log_metrics({"reduced_train_loss": metrics['loss']}, step)
-        logger.log_metrics({"lr": metrics['lr']}, step)
-        logger.log_metrics({"consumed_samples": consumed_samples}, step)
 
         timer.reset()
         step += 1

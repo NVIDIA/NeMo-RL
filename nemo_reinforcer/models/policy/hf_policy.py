@@ -115,17 +115,11 @@ class HfPolicyWorker:
         self._held_reference_model_params = None
         # register_fsdp_forward_method(self.model, "generate")
         if init_optimizer:
-            if "optimizer" in self.cfg:
-                optimizer_cls = import_class_from_path(self.cfg["optimizer"]["name"])
-                self.optimizer = optimizer_cls(
-                    self.model.parameters(),
-                    **self.cfg["optimizer"]["kwargs"]
-                )
-            else:
-                self.optimizer = torch.optim.AdamW(
-                    self.model.parameters(),
-                    lr=self.cfg["learning_rate"],
-                )
+            optimizer_cls = import_class_from_path(self.cfg["optimizer"]["name"])
+            self.optimizer = optimizer_cls(
+                self.model.parameters(),
+                **self.cfg["optimizer"]["kwargs"]
+            )
         else:
             self.optimizer = None
 
