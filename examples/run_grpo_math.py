@@ -32,6 +32,7 @@ from nemo_reinforcer.data import DataConfig
 from nemo_reinforcer.models.policy import PolicyConfig
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, rl_collate_fn
 from nemo_reinforcer.environments.math_environment import MathEnvironment
+from nemo_reinforcer.data.hf_datasets.openmathinstruct2 import OpenMathInstruct2Dataset
 
 
 def parse_args():
@@ -56,6 +57,58 @@ def parse_args():
 
 
 # this processor expects the datum_dict to have a 'problem' key and an 'expected_answer' key
+def openinstructmath2_data_processor(
+    datum_dict: Dict[str, Any],
+    task_data_spec: TaskDataSpec,
+    tokenizer,
+    max_seq_length: int,
+    idx: int,
+) -> DatumSpec:
+    """Process a datum dictionary (directly loaded from data/hf_datasets/openmathinstruct2.py) into a DatumSpec for the Math Environment."""
+    user_message = datum_dict["messages"]
+    problem = user_message[0]["content"]
+    extra_env_info = {"ground_truth": user_message[1]["content"]}
+
+    template = task_data_spec.custom_template
+    message_log: LLMMessageLogType = []
+    user_message = {
+        "role": "user",
+        "content": task_data_spec.prompt.format(problem),
+    }
+    message = tokenizer.apply_chat_template(
+        [user_message],
+        chat_template=template,
+        tokenize=False,
+        add_generation_prompt=True,
+        add_special_tokens=False,
+    )
+    user_message["token_ids"] = tokenizer(message, return_tensors="pt")["input_ids"][0]
+    user_message["content"] = message
+    message_log.append(user_message)
+
+    length = sum(len(m["token_ids"]) for m in message_log)
+
+    loss_multiplier = 1.0
+    if length > max_seq_length:
+        # make smaller and mask out
+        for message in message_log:
+            message["token_ids"] = message["token_ids"][
+                : min(4, max_seq_length // len(message_log))
+            ]
+        loss_multiplier = 0.0
+
+    output = {
+        "message_log": message_log,
+        "length": length,
+        "extra_env_info": extra_env_info,
+        "loss_multiplier": loss_multiplier,
+        "idx": idx,
+        "task_name": datum_dict["task_name"],
+    }
+    return output
+
+
+# Example of a generic math data processor
 def math_data_processor(
     datum_dict: Dict[str, Any],
     task_data_spec: TaskDataSpec,
@@ -128,36 +181,35 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
         system_prompt_file=data_config["system_prompt_file"],
     )
 
-    base_dataset = load_dataset("json", data_files=data_config["dataset_name"])["train"]
+    # Load OpenMathInstruct2Dataset using reinforcer datasets
+    print(f"Loading nvidia/OpenMathInstruct2Dataset for training and validation")
+    data = OpenMathInstruct2Dataset()
+
     tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
 
-    task_data_processors = defaultdict(lambda: (math_task_spec, math_data_processor))
-    task_data_processors["math"] = (math_task_spec, math_data_processor)
+    task_data_processors = defaultdict(
+        lambda: (math_task_spec, openinstructmath2_data_processor)
+    )
+    task_data_processors["math"] = (math_task_spec, openinstructmath2_data_processor)
 
     math_env = MathEnvironment.options(
         runtime_env={"py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE}
     ).remote(env_configs["math"])
     dataset = AllTaskProcessedDataset(
-        base_dataset,
+        data.formatted_ds["train"],
         tokenizer,
         math_task_spec,
         task_data_processors,
         max_seq_length=data_config["max_input_seq_length"],
     )
 
-    if "val_dataset_name" in data_config and data_config["val_dataset_name"]:
-        val_dataset = load_dataset("json", data_files=data_config["val_dataset_name"])[
-            "train"
-        ]
-        val_dataset = AllTaskProcessedDataset(
-            val_dataset,
-            tokenizer,
-            math_task_spec,
-            task_data_processors,
-            max_seq_length=data_config["max_input_seq_length"],
-        )
-    else:
-        val_dataset = None
+    val_dataset = AllTaskProcessedDataset(
+        data.formatted_ds["validation"],
+        tokenizer,
+        math_task_spec,
+        task_data_processors,
+        max_seq_length=data_config["max_input_seq_length"],
+    )
 
     task_to_env = defaultdict(lambda: math_env)
     task_to_env["math"] = math_env
@@ -170,7 +222,9 @@ def main():
     args, overrides = parse_args()
 
     if not args.config:
-        args.config = os.path.join(os.path.dirname(__file__), "configs", "grpo_math_1B.yaml")
+        args.config = os.path.join(
+            os.path.dirname(__file__), "configs", "grpo_math_1B.yaml"
+        )
 
     config = load_config(args.config)
     print(f"Loaded configuration from: {args.config}")
@@ -189,6 +243,10 @@ def main():
     # Get the next experiment directory with incremented ID
     config["logger"]["log_dir"] = get_next_experiment_dir(config["logger"]["log_dir"])
     print(f"📊 Using log directory: {config['logger']['log_dir']}")
+    if config["checkpointing"]["enabled"]:
+        print(
+            f"📊 Using checkpoint directory: {config['checkpointing']['checkpoint_dir']}"
+        )
 
     init_ray()
 
