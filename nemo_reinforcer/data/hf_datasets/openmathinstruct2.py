@@ -38,7 +38,7 @@ def format_math(data):
 def prepare_openinstructmath2_dataset(split: str = "train_1M", seed=42, test_size=0.05):
     """Load and split the OpenMathInstruct-2 dataset into train and validation sets using HF's train_test_split."""
     print(
-        f"WARNING: Dataset splitting with seed {seed} creates train/validation splits that may differ across machines or runs. For reproducible experiments, preprocess the dataset once and use the same seed across runs."
+        f"WARNING: For reproducible experiments, preprocess the dataset once and define your own HfDataset subclass that directly uses the preprocessed datasets."
     )
 
     # Load the original dataset
