@@ -7,7 +7,9 @@ RUN sudo apt-get update && sudo apt-get install -y jq
 
 RUN echo "unset RAY_RUNTIME_ENV_HOOK" >> /home/ray/.bashrc
 
-RUN pip install --no-cache-dir
+COPY pyproject.toml .
+
+RUN uv pip install -r pyproject.toml
 
 COPY . .
 
