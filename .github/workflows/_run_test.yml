@@ -86,8 +86,9 @@ jobs:
             mkdir -p ${{ github.run_id }}
             cd ${{ github.run_id }}/
             
-            length=$(echo -n "$HF_TOKEN" | wc -c)
-            echo $length
+            if [ -n "${HF_TOKEN}" ]; then
+                echo "HF_TOKEN is set and not empty"
+            fi
 
             set +e
             (
