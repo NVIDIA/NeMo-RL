@@ -11,9 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import random
 import warnings
 from functools import wraps
 
+import numpy as np
 import torch
 from torch.masked import as_masked_tensor
 
@@ -120,3 +122,10 @@ def masked_mean(values, mask, dim=None):
     if dim is None:
         return values[mask.bool()].mean()
     return as_masked_tensor(values, mask.bool()).mean(dim=dim).to_tensor(torch.nan)
+
+def set_seed(seed: int):
+    """Sets the seed for python, numpy, and pytorch."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)

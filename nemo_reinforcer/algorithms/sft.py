@@ -15,11 +15,13 @@ import os
 from pathlib import Path
 from typing import Optional, Tuple, TypedDict
 
+import numpy as np
 import torch
 from torchdata.stateful_dataloader import StatefulDataLoader
 from nemo_reinforcer.algorithms.loss_functions import (
     NLLLoss,
 )
+from nemo_reinforcer.algorithms.utils import set_seed
 from nemo_reinforcer.data import DataConfig
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, rl_collate_fn
 from nemo_reinforcer.data.interfaces import TaskDataSpec
@@ -57,7 +59,7 @@ class SFTConfig(TypedDict):
     val_global_batch_size: int
     val_micro_batch_size: int
     val_at_start: bool
-
+    seed: int
 
 class MasterConfig(TypedDict):
     policy: PolicyConfig
@@ -91,6 +93,8 @@ def setup(
     Returns:
         Tuple of policy, cluster, dataloader, tokenizer, loss_fn, math_env, master_config, logger
     """
+    set_seed(master_config["sft"]["seed"])
+
     # Extract individual configs for easier access
     policy_config = master_config["policy"]
     data_config = master_config["data"]
@@ -176,6 +180,7 @@ def setup(
     print(f"  ✓ Model initialized")
 
     logger = Logger(logger_config)
+    logger.log_hyperparams(master_config)
 
     print("\n" + "=" * 60)
     print(" " * 18 + "SETUP COMPLETE")
@@ -331,6 +336,7 @@ def sft_train(
 
     policy.prepare_for_training()
 
+    consumed_samples = 0
     for batch in train_dataloader:
         print(f"\n{'=' * 25} Step {step + 1}/{len(train_dataloader)} {'=' * 25}")
 
@@ -361,6 +367,7 @@ def sft_train(
             ## train_data.to("cpu")
             print("▶ Taking a training step...")
             train_results = policy.train(train_data, loss_fn)
+            consumed_samples += train_data["input_ids"].shape[0]
 
             # Run validation if it's a validation step
             if val_period > 0 and (step + 1) % val_period == 0:
@@ -410,11 +417,12 @@ def sft_train(
                     checkpointer.finalize_checkpoint(checkpoint_path)
 
         losses = train_results["loss"]
-        timing_metrics = timer.get_timing_metrics(reduction_op="sum")
-
         metrics = {
-            "loss": losses.numpy(),
+            "loss": train_results["loss"].numpy(),
         }
+        metrics.update(train_results["all_mb_metrics"])
+        metrics = {k: np.mean(v).item() for k, v in metrics.items()}
+        timing_metrics = timer.get_timing_metrics(reduction_op="sum")
 
         print("\n📊 Training Results:")
         print(f"  • Loss: {float(metrics['loss']):.4f}")
@@ -433,6 +441,11 @@ def sft_train(
 
         logger.log_metrics(metrics, step + 1, prefix="train")
         logger.log_metrics(timing_metrics, step + 1, prefix="timing/train")
+
+        # To match NeMo2
+        logger.log_metrics({"reduced_train_loss": metrics['loss']}, step)
+        logger.log_metrics({"lr": metrics['lr']}, step)
+        logger.log_metrics({"consumed_samples": consumed_samples}, step)
 
         timer.reset()
         step += 1
