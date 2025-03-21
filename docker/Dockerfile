@@ -9,9 +9,10 @@ RUN echo "unset RAY_RUNTIME_ENV_HOOK" >> /home/ray/.bashrc
 
 COPY pyproject.toml .
 
-RUN pip install --no-cache-dir uv && \
-    uv pip install -r pyproject.toml
+RUN pip install uv && \
+    uv venv -p python3.12 && \
+    uv pip install -r pyproject.toml --extra dev --extra test
 
 COPY . .
 
-RUN uv pip install -e .[dev,test]
+RUN uv pip install -e .
