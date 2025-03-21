@@ -106,8 +106,8 @@ jobs:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     needs: [pre-flight]
     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
-
-    build-ref: ${{ github.sha }}
+    with:
+      build-ref: ${{ github.sha }}
       image-name: nemo_reinforcer_container
       dockerfile: docker/Dockerfile
       image-label: nemo-reinforcer
