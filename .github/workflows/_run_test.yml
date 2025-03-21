@@ -67,6 +67,8 @@ jobs:
 
         - name: Checkout repository
           uses: actions/checkout@v4
+          with:
+            clean: false
 
         - name: Start container
           run: |
@@ -88,6 +90,8 @@ jobs:
           env:
             HF_TOKEN: ${{ secrets.HF_TOKEN }}
           run: |
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
             # Print the host driver for debugging
             nvidia-smi
             mkdir -p ${{ github.run_id }}
