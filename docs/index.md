@@ -15,6 +15,7 @@ cluster.md
 :caption: 📚 Guides
 :hidden:
 
+adding_new_models.md
 guides/sft.md
 guides/grpo.md
 ```
@@ -30,7 +31,6 @@ docker.md
 :caption: 🛠️ Development
 :hidden:
 
-adding_new_models.md
 testing.md
 documentation.md
 apidocs/index.rst
