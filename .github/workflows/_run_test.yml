@@ -74,7 +74,7 @@ jobs:
               --env REINFORCER_CI_DIR=/home/TestData/reinforcer \
               --env REINFORCER_REPO_DIR=/opt/NeMo-Reinforcer \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
-              --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub:ro \
+              --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
               nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \
               bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
   
