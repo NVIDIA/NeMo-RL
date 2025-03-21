@@ -125,4 +125,4 @@ jobs:
       TIMEOUT: 10
       SCRIPT: |
         cd ${REINFORCER_REPO_DIR}
-        uv run --extra test bash -x ./run_unit.sh
+        uv run --extra test bash -x ./tests/run_unit.sh
