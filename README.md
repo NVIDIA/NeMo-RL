@@ -54,6 +54,61 @@ uv pip install -e '.[dev,test]'
 
 **Reminder**: Don't forget to set your HF_HOME and WANDB_API_KEY (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
 
+### SFT
+
+We provide a sample SFT experiment that uses the [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
+
+#### Single GPU
+
+The experiment is set up to run on 8 GPUs. If using a machine that has access to 8 GPUs, you can launch the experiment as follows:
+
+```sh
+uv run python examples/run_sft.py
+```
+
+This trains `Llama3.1-8B` on 8 GPUs. To run on a single GPU, we'll have to override a few of the experiment settings. We replace the 8B model with a smaller 1B model
+ and update the cluster configuration to use a single gpu:
+
+TODO: do we need to decrease the batch size?
+```sh
+uv run python examples/run_sft.py \
+  policy.model_name="meta-llama/Llama-3.2-1B" \
+  cluster.gpus_per_node=1
+```
+
+Refer to [sft.yaml](examples/configs/sft.yaml) for a full list of parameters that can be overridden.
+
+#### Multi-node
+
+For distributed training across multiple nodes:
+
+Set `UV_CACHE_DIR` to a directory that can be read from all workers before running any uv run command.
+```sh
+export UV_CACHE_DIR=/path/that/all/workers/can/access/uv_cache
+```
+
+```sh
+# Run from the root of NeMo-Reinforcer repo
+NUM_ACTOR_NODES=2
+# Add a timestamp to make each job name unique
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+# grpo_math_8b uses Llama-3.1-8B-Instruct model
+COMMAND="bash -c \"uv pip install -e .; uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'\"" \
+RAY_DEDUP_LOGS=0 \
+UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
+CONTAINER=YOUR_CONTAINER \
+MOUNTS="$PWD:$PWD" \
+sbatch \
+    --nodes=${NUM_ACTOR_NODES} \
+    --account=YOUR_ACCOUNT \
+    --job-name=YOUR_JOBNAME \
+    --partition=YOUR_PARTITION \
+    --time=4:0:0 \
+    --gres=gpu:8 \
+    ray.sub
+```
+
 ### GRPO
 
 We have a reference GRPO experiment config set up trained for math benchmarks using the [OpenInstructMath2](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2) dataset.
@@ -80,33 +135,11 @@ uv run python examples/run_grpo_math.py \
 
 #### Multi-node
 
-For distributed training across multiple nodes:
-
-Set `UV_CACHE_DIR` to a directory that can be read from all workers before running any uv run command.
-```sh
-export UV_CACHE_DIR=/path/that/all/workers/can/access/uv_cache
-```
+For the general multi-node setup, refer to the [SFT multi-node](#multi-node) documentation. The only thing that differs from SFT is the `COMMAND`, which is replaced with
 
 ```sh
-# Run from the root of NeMo-Reinforcer repo
-NUM_ACTOR_NODES=2
-# Add a timestamp to make each job name unique
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-
 # grpo_math_8b uses Llama-3.1-8B-Instruct model
 COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml cluster.num_nodes=2 checkpointing.checkpoint_dir='results/llama8b_2nodes' policy.train_global_batch_size=64 logger.wandb_enabled=True logger.wandb.name='grpo-llama8b_math'" \
-RAY_DEDUP_LOGS=0 \
-UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
-CONTAINER=YOUR_CONTAINER \
-MOUNTS="$PWD:$PWD" \
-sbatch \
-    --nodes=${NUM_ACTOR_NODES} \
-    --account=YOUR_ACCOUNT \
-    --job-name=YOUR_JOBNAME \
-    --partition=YOUR_PARTITION \
-    --time=4:0:0 \
-    --gres=gpu:8 \
-    ray.sub
 ```
 
 ## Cluster Start
