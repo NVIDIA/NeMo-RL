@@ -238,7 +238,12 @@ class HfPolicyWorker:
             },
         }
 
-    def train(self, data: BatchedDataDict, loss_fn: LossFunction) -> Dict[str, Any]:
+    def train(
+        self,
+        data: BatchedDataDict,
+        loss_fn: LossFunction,
+        eval_mode: bool = False,
+    ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
         mbs = self.cfg["train_micro_batch_size"]
         gbs = self.cfg["train_global_batch_size"]
@@ -284,16 +289,18 @@ class HfPolicyWorker:
                 loss, loss_metrics = loss_fn(logits, mb)
 
                 # Backward pass
-                loss.backward()
+                if not eval_mode:
+                    loss.backward()
                 mb_losses.append(loss.item())
                 all_mb_metrics.append(loss_metrics)
 
             # Clip gradients
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            if not eval_mode:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
-            # Update parameters
-            self.optimizer.step()
-            self.scheduler.step()
+                # Update parameters
+                self.optimizer.step()
+                self.scheduler.step()
             losses.append(torch.tensor(mb_losses).mean().item())
 
         # Compute global loss across all ranks
@@ -744,9 +751,16 @@ class HfPolicyWorker:
 
         return model
 
-    def save_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):
+    def save_checkpoint(
+        self,
+        weights_path: str,
+        optimizer_path: Optional[str] = None,
+        offload_to_cpu: bool = True,
+    ):
         # Config to save full state dict on rank 0, offloaded to CPU
-        state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+        state_dict_config = FullStateDictConfig(
+            offload_to_cpu=offload_to_cpu, rank0_only=True
+        )
 
         with FullyShardedDataParallel.state_dict_type(
             self.model,
@@ -864,7 +878,9 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         )
         return logprobs
 
-    def train(self, data: BatchedDataDict, loss_fn: LossFunction):
+    def train(
+        self, data: BatchedDataDict, loss_fn: LossFunction, eval_mode: bool = False
+    ):
         """Train the policy on a batch of data with a given loss function."""
         # Shard and replicate the batch
         shards = self.dp_size
@@ -874,7 +890,9 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         # Train each shard in parallel
         futures = self.worker_group.run_all_workers_multiple_data(
-            "train", sharded_data, common_kwargs={"loss_fn": loss_fn}
+            "train",
+            sharded_data,
+            common_kwargs={"loss_fn": loss_fn, "eval_mode": eval_mode},
         )
         results = self.worker_group.get_all_worker_results(futures)
 
@@ -987,12 +1005,18 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         )
         ray.get(futures)
 
-    def save_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):
+    def save_checkpoint(
+        self,
+        weights_path: str,
+        optimizer_path: Optional[str] = None,
+        offload_to_cpu: bool = True,
+    ):
         """Save a checkpoint of the model."""
         futures = self.worker_group.run_all_workers_single_data(
             "save_checkpoint",
             weights_path,
             optimizer_path,
+            offload_to_cpu=offload_to_cpu,
             respect_tied_workers=True,
         )
         ray.get(futures)

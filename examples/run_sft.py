@@ -69,21 +69,27 @@ def main():
     (
         policy,
         cluster,
-        dataloader,
+        train_dataloader,
+        val_dataloader,
         tokenizer,
         loss_fn,
         master_config,
         logger,
         sft_task_spec,
+        checkpointer,
+        sft_save_state,
     ) = setup(config)
     sft_train(
         policy,
-        dataloader,
+        train_dataloader,
+        val_dataloader,
         tokenizer,
         loss_fn,
         master_config,
         logger,
         sft_task_spec,
+        checkpointer,
+        sft_save_state,
     )
 
 
