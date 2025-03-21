@@ -17,9 +17,9 @@ Reinforcer allows users to configure experiments using `yaml` config files. An e
 To override a value in the config, either update the value in the `yaml` file directly, or pass the override via the command line. For example:
 
 ```bash
-python examples/run_sft.py \
-    data.max_input_seq_length=8192 \
-    logger.wandb.name="sft-dev-sl-8192"
+uv run examples/run_sft.py \
+    cluster.gpus_per_node=8 \
+    logger.wandb.name="sft-dev-8-gpu"
 ```
 
 ## Datasets
