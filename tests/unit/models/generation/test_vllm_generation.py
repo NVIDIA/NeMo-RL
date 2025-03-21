@@ -191,6 +191,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         "logprob_batch_size": 1,
         "max_new_tokens": 16,
         "do_sample": False,
+        "precision": "float32",
     }
 
     vllm_policy = None
@@ -437,6 +438,7 @@ def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
         "logprob_batch_size": 1,
         "max_new_tokens": 16,
         "do_sample": False,
+        "precision": "float32",
     }
 
     hf_policy = HfPolicy(cluster, hf_config)

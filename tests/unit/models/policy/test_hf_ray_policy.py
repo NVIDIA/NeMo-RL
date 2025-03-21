@@ -32,6 +32,7 @@ basic_llama_test_config: PolicyConfig = {
     "train_micro_batch_size": 1,
     "learning_rate": 5e-6,
     "logprob_batch_size": 1,
+    "precision": "float32",
     "generation": {
         "backend": "hf",
         "temperature": 1.0,

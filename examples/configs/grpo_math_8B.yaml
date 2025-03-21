@@ -9,6 +9,7 @@ policy:
   learning_rate: 5.0e-6
   logprob_batch_size: 2
   max_total_sequence_length: 4096
+  precision: "bfloat16"
 
   scheduler:
     - name: "torch.optim.lr_scheduler.LinearLR"

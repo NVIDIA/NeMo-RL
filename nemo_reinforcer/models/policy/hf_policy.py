@@ -72,17 +72,23 @@ class HfPolicyWorker:
         rank = torch.distributed.get_rank()
         world_size = torch.distributed.get_world_size()
         model_name = self.cfg["model_name"]
+        if self.cfg["precision"] == "float32":
+            dtype = torch.float32
+        elif self.cfg["precision"] == "bfloat16":
+            dtype = torch.bfloat16
+        else:
+            raise ValueError(f"Unknown precision: {self.cfg['precision']}")
 
         print(f"[Rank {rank}] Loading model {model_name} on CPU...")
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
+            torch_dtype=dtype,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
         self.reference_model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
+            torch_dtype=dtype,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)

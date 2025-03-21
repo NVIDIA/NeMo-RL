@@ -170,7 +170,9 @@ def main():
     args, overrides = parse_args()
 
     if not args.config:
-        args.config = os.path.join(os.path.dirname(__file__), "configs", "grpo_math_1B.yaml")
+        args.config = os.path.join(
+            os.path.dirname(__file__), "configs", "grpo_math_1B.yaml"
+        )
 
     config = load_config(args.config)
     print(f"Loaded configuration from: {args.config}")
