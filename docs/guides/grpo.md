@@ -10,8 +10,6 @@ uv run examples/run_grpo_math.py --config <PATH TO YAML CONFIG> {overrides}
 ```
 If not specified, `config` will default to [examples/configs/grpo.yaml](../../examples/configs/grpo.yaml)
 
-For details on how overrides and configuation work, check out [Configuration System](../design_docs/configuration_system.md)
-
 ## Now, for the details:
 
 In this guide, we'll walk through we handle
@@ -45,7 +43,7 @@ class DatumSpec(TypedDict):
 
 #### Data Processors
 We name all distinct "environments your model wants to optimize against" "tasks". So you might define a "math" task or a "code" task. 
-For each task, you should provide a data processor that reads from your dataset and returns a ```DatumSpec```
+For each task, you should provide a data processor that reads from your dataset and returns a [DatumSpec](../../nemo_reinforcer/data/interfaces.py)
 
 ```python
 def my_data_processor(
@@ -56,7 +54,7 @@ def my_data_processor(
     idx: int,
 ) -> DatumSpec:
 ```
-We have an example of this as ```math_data_processor``` in [run_grpo_math.py](../../examples/run_grpo_math.py)
+We have an example of this as `math_data_processor` in [run_grpo_math.py](../../examples/run_grpo_math.py)
 
 #### Putting it all together:
 GRPO expects datasets to have the following form:
@@ -87,9 +85,9 @@ Notice that you provide a mapping of tasks to their processors so the dataset kn
 ### Policy Model
 We define a [PolicyInterface]() that contains everything you need to train a Policy model.
 
-This Policy object holds a ```RayWorkerGroup``` of SPMD (1 proc/gpu) processes that run HF/MCore, all coordinated by this object so it appears to you like 1 GPU!
+This Policy object holds a [RayWorkerGroup](../../nemo_reinforcer/distributed/worker_groups.py) of SPMD (1 proc/gpu) processes that run HF/MCore, all coordinated by this object so it appears to you like 1 GPU!
 
 ### Fast Generation
-We support vLLM through the [VllmGeneration]() class right now.
+We support vLLM through the [VllmGeneration](../../nemo_reinforcer/models/generation/vllm.py) class right now.
 
 The function [grpo_train](../../nemo_reinforcer/algorithms/grpo.py) contains the core GRPO training loop.

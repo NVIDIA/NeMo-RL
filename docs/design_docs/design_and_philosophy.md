@@ -84,7 +84,7 @@ class RayWorkerGroup:
     - Support for tied worker groups where multiple workers process the same data
     """
 ```
-```RayWorkerGroup``` provides functions like ```run_all_workers_single_data``` and ```run_all_workers_multiple_data``` to control and communicate to individual worker processes.
+`RayWorkerGroup` provides functions like `run_all_workers_single_data` and `run_all_workers_multiple_data` to control and communicate to individual worker processes.
 
 
 ### Single-Controller & Execution Diagram
