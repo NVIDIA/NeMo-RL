@@ -70,7 +70,7 @@ jobs:
             docker run --rm -u root \
               -v /home/azureuser/actions-runner/_work/reinforcer/reinforcer:/home/azureuser/actions-runner/_work/reinforcer/reinforcer \
               nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \
-              chmod 755 -R /home/azureuser/actions-runner/_work/reinforcer/reinforcer 
+              bash -c "ls -lah /home/azureuser/actions-runner/_work/reinforcer/reinforcer && rm -rf /home/azureuser/actions-runner/_work/reinforcer/reinforcer/.venv"
 
         - name: Checkout repository
           uses: actions/checkout@v4
