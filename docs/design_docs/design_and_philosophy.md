@@ -9,8 +9,6 @@ Online RL requires coordinating a lot of different pieces of software/models
 
 We refer to each of these pieces of software as an **RL Actor**.
 
-[TODO @sahilj Diagram]
-
 Fundamentally, we need to be able to do 4 things between these RL Actors:
 - Resource them (provide GPUs/CPUs)
 - Isolate them
@@ -31,6 +29,8 @@ We create composable and hackable abstractions for each layer of the tasks above
     - Multiprocess Queues
 
 By creating a common interface for these 4 tasks, **RL algorithm code looks the same from 1 GPU to 1000 GPUs and does not care about the implementation of each RL Actor (Megatron, HF, Grad student with pen and paper)**
+
+![actor-wg-worker-vc](../assets/actor-wg-worker-vc.png)
 
 ### {py:class}`RayVirtualCluster <nemo_reinforcer.distributed.virtual_cluster.RayVirtualCluster>`
 VirtualCluster provides a basic abstraction on top of Ray Placement Groups that allow you to section off a part of your compute resources for WorkerGroups to run on as though they had their own cluster. They support running just one WorkerGroup on each VirtualCluster, or *colocation*, where multiple WorkerGroups share resources (i.e running policy training(hf) and generation(vllm) on the same GPUs in-turn).
@@ -84,7 +84,7 @@ class RayWorkerGroup:
     - Support for tied worker groups where multiple workers process the same data
     """
 ```
-[TODO @sahilj Diagram]
+```RayWorkerGroup``` provides functions like ```run_all_workers_single_data``` and ```run_all_workers_multiple_data``` to control and communicate to individual worker processes.
 
 
 ### Single-Controller & Execution Diagram
@@ -110,7 +110,3 @@ def grpo_train(
         policy.train(generations, logprobs, reference_logprobs, GRPOLossFn)
 ```
 For a real implementation of grpo (with valiation, checkpointing, memory movement, and the omitted data processing steps), see [grpo_train](../../nemo_reinforcer/algorithms/grpo.py)
-
-## Walking through an implementation of GRPO
-
-
