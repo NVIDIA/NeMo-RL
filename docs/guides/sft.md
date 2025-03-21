@@ -21,6 +21,7 @@ uv run examples/run_sft.py \
     cluster.gpus_per_node=1 \
     logger.wandb.name="sft-dev-1-gpu"
 ```
+**Reminder**: Don't forget to set your HUGGINGFACE_TOKEN, HF_HOME, and WANDB_API_KEY (if needed)
 
 ## Datasets
 
