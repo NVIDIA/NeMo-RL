@@ -435,5 +435,5 @@ def sft_train(
         timer.reset()
         step += 1
 
-        if step >= master_config["sft"]["num_steps"] - 1:
+        if step >= master_config["sft"]["num_steps"]:
             break
