@@ -113,7 +113,7 @@ sbatch \
 
 We have a reference GRPO experiment config set up trained for math benchmarks using the [OpenInstructMath2](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2) dataset.
 
-#### Single GPU
+#### Single Node
 
 To run GRPO on a single GPU for `Llama-3.2-1B-Instruct`:
 
@@ -122,7 +122,15 @@ To run GRPO on a single GPU for `Llama-3.2-1B-Instruct`:
 uv run python examples/run_grpo_math.py
 ```
 
-By default, this uses the configuration in `examples/configs/grpo_math_1B.yaml`. You can customize parameters with command-line overrides:
+By default, this uses the configuration in `examples/configs/grpo_math_1B.yaml`. You can customize parameters with command-line overrides. For example, to run on 8 gpus,
+
+```sh
+# Run the GRPO math example using a 1B parameter model
+uv run python examples/run_grpo_math.py \
+  cluster.gpus_per_node=8
+```
+
+You can override any of the parameters listed in the yaml configuration file. For example,
 
 ```sh
 uv run python examples/run_grpo_math.py \
@@ -130,7 +138,7 @@ uv run python examples/run_grpo_math.py \
   checkpointing.checkpoint_dir="results/qwen1_5b_math" \
   logger.wandb_enabled=True \
   logger.wandb.name="grpo-qwen1_5b_math" \
-  logger.num_val_samples_to_print=10
+  logger.num_val_samples_to_print=10 \
 ```
 
 #### Multi-node
