@@ -65,14 +65,18 @@ jobs:
           run: |
             docker pull nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }}
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
         - name: Start container
           run: |
             docker run --rm -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=64g \
               --env TRANSFORMERS_OFFLINE=0 \
               --env HYDRA_FULL_ERROR=1 \
               --env HF_HOME=/home/TestData/reinforcer/hf_home \
-              --env REINFORCER_CI_DIR=/home/TestData/reinforcer \
-              --env REINFORCER_REPO_DIR=/opt/NeMo-Reinforcer \
+              --env REINFORCER_REPO_DIR=/opt/reinforcer \
+              --volume $PWD:/opt/reinforcer \
+              --volume /mnt/datadrive/TestData/reinforcer/datasets:/opt/reinforcer/datasets:ro \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
               --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
               nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \

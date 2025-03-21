@@ -1,24 +1,53 @@
-# Testing NeMo-Reinforcer
+# Testing Reinforcer
 
 ## Unit Tests
 
+:::{important}
+Unit tests require 2 GPUs to test the full suite.
+:::
+
 ```sh
+# Install the project and the test dependencies
 uv pip install -e '.[test]'
+
+# Run the unit tests using local GPUs
 uv run bash tests/run_unit.sh 
 ```
 
-### Run Unit Tests Hermetic
+:::{note}
+Tests can also be run on SLURM with `ray.sub`, but note that some tests will be skipped
+due to no GPUs being located on the head node. To run the full suite of tests, please
+launch on a regular GPU allocation.
+:::
 
-If your local environment does not have all the necessary dependencies (e.g., `gcc`, `nvcc`)
-or there is concern that something in your environment may be misconfigured, you can also run
-the tests in docker with this script:
+### Running Unit Tests in a Hermetic Environment
+
+For environments lacking necessary dependencies (e.g., `gcc`, `nvcc`)
+or where environmental configuration may be problematic, tests can be run
+in docker with this script:
 
 ```sh
 CONTAINER=... bash tests/run_unit_in_docker.sh
 ```
 
-The `CONTAINER` can be built by following the instructions [here](docker.md).
+The required `CONTAINER` can be built by following the instructions in the [docker documentation](docker.md).
 
 ## Functional tests
 
-TBD
+:::{important}
+Functional tests may require multiple GPUs to run. See each script to understand the requirements.
+:::
+
+Functional tests are located under `tests/functional/`.
+
+```sh
+# Install the project and the test dependencies
+uv pip install -e '.[test]'
+# Run the functional test for sft
+uv run bash tests/functional/sft.sh
+```
+
+:::{warning}
+`tests/functional/grpo.sh` does not currently use an open-source dataset. This will be updated
+in the future to enable independent validation.
+:::

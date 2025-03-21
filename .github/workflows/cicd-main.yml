@@ -128,3 +128,21 @@ jobs:
         uv run bash -x ./tests/run_unit.sh
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+  functional-tests:
+    name: ${{ matrix.test_case }}
+    needs: [build-container, pre-flight]
+    uses: ./.github/workflows/_run_test.yml
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    strategy:
+      matrix:
+        test_case:
+          - sft.sh
+          - grpo.sh
+    with:
+      RUNNER: self-hosted-azure
+      TIMEOUT: 8
+      SCRIPT: |
+        uv run bash ./tests/functional/${{ matrix.test_case }}
+    secrets:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
