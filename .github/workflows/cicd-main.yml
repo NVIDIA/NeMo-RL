@@ -139,6 +139,7 @@ jobs:
       TIMEOUT: 15
       UNIT_TEST_SCRIPT: |
         cd /opt/reinforcer
+        uv venv
         uv run bash -x ./tests/run_unit.sh
       DOC_TEST_SCRIPT: |
         cd /opt/reinforcer/docs
