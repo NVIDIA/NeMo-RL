@@ -67,6 +67,7 @@ jobs:
 
         - name: Start container
           run: |
+            nvidia-smi
             docker run --rm -u root -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=64g \
               --env TRANSFORMERS_OFFLINE=0 \
               --env HYDRA_FULL_ERROR=1 \
@@ -78,12 +79,6 @@ jobs:
               --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
               nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \
               bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
-
-        - name: Setup
-          run: |
-            # Print the host driver for debugging
-            nvidia-smi
-            mkdir -p ${{ github.run_id }}
 
         - name: Run unit tests
           run: |
