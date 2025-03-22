@@ -65,24 +65,6 @@ jobs:
           run: |
             docker pull nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }}
 
-        # NOTE: under certain circumstances, the checkout action cannot clean up the workspace properly, so
-        # this workaround is needed to ensure that the workspace is clean by removing all files created by root.
-        #
-        # The error observed looked like this from the checkout action:
-        #      Run actions/checkout@v4
-        #      ...
-        #      Deleting the contents of '/home/azureuser/actions-runner/_work/reinforcer/reinforcer'
-        #      Error: File was unable to be removed Error: EACCES: permission denied, rmdir '/home/azureuser/actions-runner/_work/reinforcer/reinforcer/docs/_build/doctest'
-        - name: Forcefully clean up the repository
-          run: |
-            docker run --rm -u root \
-              -v /home/azureuser/actions-runner/_work/reinforcer/reinforcer:/home/azureuser/actions-runner/_work/reinforcer/reinforcer \
-              nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \
-              bash -x -c "ls -lah /home/azureuser/actions-runner/_work/reinforcer/reinforcer && shopt -s dotglob && rm -rf /home/azureuser/actions-runner/_work/reinforcer/reinforcer/*"
-
-        - name: Checkout repository
-          uses: actions/checkout@v4
-
         - name: Start container
           run: |
             docker run --rm -u root -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=64g \
@@ -91,8 +73,6 @@ jobs:
               --env HF_HOME=/home/TestData/reinforcer/hf_home \
               --env REINFORCER_REPO_DIR=/opt/reinforcer \
               --env HF_TOKEN \
-              --volume $PWD:/opt/reinforcer \
-              --volume /opt/reinforcer/.venv \
               --volume /mnt/datadrive/TestData/reinforcer/datasets:/opt/reinforcer/datasets:ro \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
               --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
