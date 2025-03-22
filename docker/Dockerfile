@@ -45,5 +45,5 @@ sed -i '/export PATH=\$HOME\/anaconda3\/bin:\$PATH/ s/^/# /' ~/.bashrc
 EOF
 
 COPY --chown=ray --chmod=755 . .
-COPY --from=deps --chown=ray --chmod=755 /opt/reinforcer/.venv .
+COPY --from=deps --chown=ray --chmod=755 .venv .venv
 RUN uv pip install --no-deps --editable .
