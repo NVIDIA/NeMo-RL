@@ -13,18 +13,22 @@ RUN echo "unset RAY_RUNTIME_ENV_HOOK" >> /home/ray/.bashrc
 # Users are encouraged to enable if the wish.
 ENV RAY_USAGE_STATS_ENABLED=0
 
-FROM base AS hermetic
-# hermetic creates a virtual environment with the default dependencies pre-installed for convenience
-
-COPY --chown=ray --chmod=755 pyproject.toml /opt/reinforcer/pyproject.toml
 RUN chmod 755 /home/ray/.cache
+
+FROM base AS deps
+
 WORKDIR /opt/reinforcer
+COPY pyproject.toml .
 RUN uv venv .venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
 RUN uv sync --extra test --extra dev --extra docs --no-install-project
 
+FROM base as hermetic
+# hermetic creates a virtual environment with the default dependencies pre-installed for convenience
+
 ENV VIRTUAL_ENV=/opt/reinforcer/.venv
 ENV PATH="/opt/reinforcer/.venv/bin:$PATH"
+
 # The ray images automatically activate the anaconda venv. We will
 # comment this out of the .bashrc to give the same UX between docker
 # and other clusters like slurm.
@@ -38,5 +42,7 @@ sed -i '/# >>> conda initialize >>>/,/# <<< conda initialize <<</ { /^[^#]/ s/^/
 sed -i '/export PATH=\$HOME\/anaconda3\/bin:\$PATH/ s/^/# /' ~/.bashrc
 EOF
 
-COPY --chown=ray --chmod=755 . .
+WORKDIR /opt/reinforcer
+COPY --chown=ray --chmod=755 . /opt/reinforcer
+COPY --from=deps --chown=ray --chmod=755 /opt/reinforcer/.venv /opt/reinforcer/.venv
 RUN uv pip install --no-deps --editable .
