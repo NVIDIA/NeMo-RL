@@ -129,7 +129,7 @@ jobs:
         MAX_JOBS=32
         REINFORCER_COMMIT=${{ github.sha }}
 
-  test:
+  tests:
     name: Tests
     needs: [build-container, pre-flight]
     uses: ./.github/workflows/_run_test.yml
