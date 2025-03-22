@@ -123,6 +123,7 @@ def masked_mean(values, mask, dim=None):
         return values[mask.bool()].mean()
     return as_masked_tensor(values, mask.bool()).mean(dim=dim).to_tensor(torch.nan)
 
+
 def set_seed(seed: int):
     """Sets the seed for python, numpy, and pytorch."""
     random.seed(seed)

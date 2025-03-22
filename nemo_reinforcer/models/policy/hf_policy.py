@@ -123,8 +123,7 @@ class HfPolicyWorker:
         if init_optimizer:
             optimizer_cls = import_class_from_path(self.cfg["optimizer"]["name"])
             self.optimizer = optimizer_cls(
-                self.model.parameters(),
-                **self.cfg["optimizer"]["kwargs"]
+                self.model.parameters(), **self.cfg["optimizer"]["kwargs"]
             )
         else:
             self.optimizer = None
