@@ -139,16 +139,16 @@ jobs:
       TIMEOUT: 15
       UNIT_TEST_SCRIPT: |
         cd /opt/reinforcer
-        uv run bash -x ./tests/run_unit.sh
+        uv run --no-sync bash -x ./tests/run_unit.sh
       DOC_TEST_SCRIPT: |
         cd /opt/reinforcer/docs
-        uv run sphinx-build -b doctest . _build/doctest
+        uv run --no-sync sphinx-build -b doctest . _build/doctest
       FUNCTIONAL_TEST_SCRIPT: |
         # Functional tests are currently optional, so we exit with 0 to avoid failing the workflow
         set +e
         cd /opt/reinforcer
-        uv run bash ./tests/functional/sft.sh
-        uv run bash ./tests/functional/grpo.sh
+        uv run --no-sync bash ./tests/functional/sft.sh
+        uv run --no-sync bash ./tests/functional/grpo.sh
         exit 0
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
