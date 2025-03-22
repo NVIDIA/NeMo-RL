@@ -25,9 +25,17 @@ on:
         description: Max runtime of test in minutes
         required: false
         default: 10
-      SCRIPT:
+      UNIT_TEST_SCRIPT:
         type: string
-        description: Test script to execute
+        description: Unit test script to execute
+        required: true
+      DOC_TEST_SCRIPT:
+        type: string
+        description: Doc test script to execute
+        required: true
+      FUNCTIONAL_TEST_SCRIPT:
+        type: string
+        description: Functional test script to execute
         required: true
       AFTER_SCRIPT:
         type: string
@@ -42,20 +50,12 @@ on:
     secrets:
       HF_TOKEN:
         required: true
-    outputs:
-      conclusion:
-        description: Conclusion of main test step
-        value: ${{ jobs.main.outputs.conclusion }}
-      log:
-        description: Last 2000 characters of the test step's log
-        value: ${{ jobs.main.outputs.log }} 
 jobs:
-  
   main:
-    runs-on: ${{ inputs.RUNNER }} 
-    outputs:
-      conclusion: ${{ steps.main.conclusion }}
-      log: ${{ steps.main.outputs.log }}
+    runs-on: ${{ inputs.RUNNER }}
+    timeout-minutes: ${{ inputs.TIMEOUT }}
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
         - name: Docker system cleanup
           run: |
@@ -64,7 +64,7 @@ jobs:
         - name: Docker pull image
           run: |
             docker pull nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }}
-        
+
         # NOTE: under certain circumstances, the checkout action cannot clean up the workspace properly, so
         # this workaround is needed to ensure that the workspace is clean by removing all files created by root.
         #
@@ -85,55 +85,39 @@ jobs:
 
         - name: Start container
           run: |
-            docker run --rm -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=64g \
+            docker run --rm -u root -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=64g \
               --env TRANSFORMERS_OFFLINE=0 \
               --env HYDRA_FULL_ERROR=1 \
               --env HF_HOME=/home/TestData/reinforcer/hf_home \
               --env REINFORCER_REPO_DIR=/opt/reinforcer \
+              --env HF_TOKEN \
               --volume $PWD:/opt/reinforcer \
               --volume /mnt/datadrive/TestData/reinforcer/datasets:/opt/reinforcer/datasets:ro \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
               --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
               nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \
               bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
-  
-        - id: main
-          name: Run main script
-          timeout-minutes: ${{ inputs.TIMEOUT }}
-          env:
-            HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+        - name: Setup
           run: |
             # Print the host driver for debugging
             nvidia-smi
             mkdir -p ${{ github.run_id }}
-            cd ${{ github.run_id }}/
 
-            set +e
-            (
-            set -e
+        - name: Run unit tests
+          run: |
+            docker exec -u root nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.UNIT_TEST_SCRIPT }}"
 
-            cmd=$(cat <<"RUN_TEST_EOF"
-            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
-            umask 000
+        - name: Run doc tests
+          run: |
+            docker exec -u root nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.DOC_TEST_SCRIPT }}"
 
-            nvidia-smi
-
-            # In case git commands need to be run inside Reinforcer
-            git config --global --add safe.directory $REINFORCER_REPO_DIR
-            ${{ inputs.SCRIPT }}
-            RUN_TEST_EOF
-            )
-            docker exec -u root -e HF_TOKEN nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
-            ) 2> >(tee err.log)
-
-            EXIT_CODE=$?
-
-            echo "log=$(tail -c 2000 err.log |  base64 -w 0)" >> "$GITHUB_OUTPUT"
-            
-            exit $EXIT_CODE
+        - name: Run functional tests
+          run: |
+            docker exec -u root nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
 
         - uses: "NVIDIA/NeMo/.github/actions/cancel-workflow@main"
-          if: failure() && inputs.IS_OPTIONAL == false
+          if: failure()
 
         - name: after_script
           if: always() && inputs.AFTER_SCRIPT != ':'

@@ -129,52 +129,27 @@ jobs:
         MAX_JOBS=32
         REINFORCER_COMMIT=${{ github.sha }}
 
-  sphinx-doctest:
-    name: Sphinx doctest
+  test:
+    name: Tests
     needs: [build-container, pre-flight]
     uses: ./.github/workflows/_run_test.yml
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 10
-      SCRIPT: |
-        cd ${REINFORCER_REPO_DIR}/docs
-        uv run --extra docs sphinx-build -b doctest . _build/doctest
-    secrets:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
-
-  unit-tests:
-    name: Unit tests
-    needs: [build-container, pre-flight]
-    uses: ./.github/workflows/_run_test.yml
-    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
-    with:
-      RUNNER: self-hosted-azure
-      TIMEOUT: 10
-      SCRIPT: |
+      TIMEOUT: 15
+      UNIT_TEST_SCRIPT: |
         cd ${REINFORCER_REPO_DIR}
         uv run --extra test bash -x ./tests/run_unit.sh
-    secrets:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
-
-  functional-tests:
-    name: ${{ matrix.test_case }}
-    needs: [build-container, pre-flight]
-    uses: ./.github/workflows/_run_test.yml
-    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
-    strategy:
-      matrix:
-        test_case:
-          - sft.sh
-          - grpo.sh
-    with:
-      # TODO: For now, allow these to fail since the checks are not robust.
-      IS_OPTIONAL: true
-      RUNNER: self-hosted-azure
-      TIMEOUT: 8
-      SCRIPT: |
+      DOC_TEST_SCRIPT: |
+        cd ${REINFORCER_REPO_DIR}/docs
+        uv run --extra docs sphinx-build -b doctest . _build/doctest
+      FUNCTIONAL_TEST_SCRIPT: |
+        # Functional tests are currently optional, so we exit with 0 to avoid failing the workflow
+        set +e
         cd ${REINFORCER_REPO_DIR}
-        uv run bash ./tests/functional/${{ matrix.test_case }}
+        uv run bash ./tests/functional/sft.sh
+        uv run bash ./tests/functional/grpo.sh
+        exit 0
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
@@ -184,8 +159,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - lint-check
-      - sphinx-doctest
-      - unit-tests
+      - sphinx-build
+      - tests
     steps:
       - name: main
         env:
