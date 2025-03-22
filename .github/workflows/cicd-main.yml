@@ -138,15 +138,15 @@ jobs:
       RUNNER: self-hosted-azure
       TIMEOUT: 15
       UNIT_TEST_SCRIPT: |
-        cd ${REINFORCER_REPO_DIR}
-        uv run --extra test bash -x ./tests/run_unit.sh
+        cd /opt/reinforcer
+        uv run bash -x ./tests/run_unit.sh
       DOC_TEST_SCRIPT: |
-        cd ${REINFORCER_REPO_DIR}/docs
-        uv run --extra docs sphinx-build -b doctest . _build/doctest
+        cd /opt/reinforcer/docs
+        uv run sphinx-build -b doctest . _build/doctest
       FUNCTIONAL_TEST_SCRIPT: |
         # Functional tests are currently optional, so we exit with 0 to avoid failing the workflow
         set +e
-        cd ${REINFORCER_REPO_DIR}
+        cd /opt/reinforcer
         uv run bash ./tests/functional/sft.sh
         uv run bash ./tests/functional/grpo.sh
         exit 0
