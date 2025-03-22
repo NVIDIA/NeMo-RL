@@ -180,7 +180,8 @@ def setup(
 
     # Load validation dataset if provided
     val_dataloader = None
-    if "val_dataset_name" in data_config and data_config["val_dataset_name"]:
+    # If validation is enabled, load the validation dataloader
+    if grpo_config["val_period"] > 0 or grpo_config["val_at_start"]:
         val_dataloader = StatefulDataLoader(
             val_dataset,
             batch_size=grpo_config["val_batch_size"],

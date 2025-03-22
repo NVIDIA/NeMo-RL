@@ -9,6 +9,9 @@ RUN apt-get update && sudo apt-get install -y jq
 
 RUN pip install uv
 RUN echo "unset RAY_RUNTIME_ENV_HOOK" >> /home/ray/.bashrc
+# Disable usage stats by default for users who are sensitive to sharing usage.
+# Users are encouraged to enable if the wish.
+ENV RAY_USAGE_STATS_ENABLED=0
 
 FROM base AS hermetic
 # hermetic creates a virtual environment with the default dependencies pre-installed for convenience

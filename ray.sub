@@ -9,7 +9,7 @@
 #SBATCH --gres=gpu:8
 
 
-set -eou pipefail
+set -eoux pipefail
 
 ########################################################
 # User defined variables
@@ -17,13 +17,6 @@ set -eou pipefail
 CONTAINER=$CONTAINER
 MOUNTS=$MOUNTS
 COMMAND=${COMMAND:-}  # This is a script relative to the SLURM_SUBMIT_DIR. If left empty, it will leave the cluster idle after it's brought up.
-########################################################
-
-########################################################
-# Global settings
-########################################################
-# Disable usage stats by default so that it's opt-in
-export RAY_USAGE_STATS_ENABLED=${RAY_USAGE_STATS_ENABLED:-0}
 ########################################################
 
 COMMON_SRUN_ARGS=""
@@ -70,6 +63,7 @@ head_cmd=$(cat <<EOF
 env
 cat <<EOFINNER | tee /launch-head.sh
 ray start --head \
+--disable-usage-stats \
 --num-cpus=0 \
 --num-gpus=0 \
 --node-ip-address="$head_node_ip" \
@@ -104,9 +98,11 @@ for ((i = 0; i < SLURM_JOB_NUM_NODES; i++)); do
 env
 cat <<EOFINNER | tee /launch-worker.sh
 ray start --address "$ip_head" \
+          --disable-usage-stats \
           --resources="{\"worker_units\": $gpus_per_node}" \
           --min-worker-port=$min_worker_port \
-          --max-worker-port=$max_worker_port --block
+          --max-worker-port=$max_worker_port \
+          --block
 EOFINNER
 
 count=0
@@ -163,7 +159,7 @@ echo "All workers connected!"
 # This driver process is responsible for launching a job on the Ray cluster
 CONTAINER_CWD=$(scontrol show job $SLURM_JOB_ID --json | jq -r '.jobs[].current_working_directory')
 if [[ -n "$COMMAND" ]]; then
-  srun --no-container-mount-home --gpus=0 --overlap --container-name=ray-head --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "$head_node" -o $LOG_DIR/ray-driver.log $COMMAND
+  srun --no-container-mount-home --gpus=0 --overlap --container-name=ray-head --container-workdir=$CONTAINER_CWD --nodes=1 --ntasks=1 -w "$head_node" -o $LOG_DIR/ray-driver.log bash -c "$COMMAND"
 else
   echo "[INFO]: Ray Cluster is idled, run this on the slurm head node to get a shell to the head node:"
   cat <<EOF >$SLURM_SUBMIT_DIR/${SLURM_JOB_ID}-attach.sh

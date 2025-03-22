@@ -1,3 +1,4 @@
+import os
 from nemo_reinforcer.package_info import (
     __contact_emails__,
     __contact_names__,
@@ -11,3 +12,5 @@ from nemo_reinforcer.package_info import (
     __shortversion__,
     __version__,
 )
+
+os.environ["RAY_USAGE_STATS_ENABLED"] = "0"
