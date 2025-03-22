@@ -59,7 +59,7 @@ policy:
     top_k: null
     vllm_cfg:
       tensor_parallel_size: 1
-      gpu_memory_utilization: 0.7
+      gpu_memory_utilization: 0.6
       max_model_len: ${policy.max_total_sequence_length}
 
 data:
