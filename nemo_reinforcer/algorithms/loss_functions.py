@@ -160,6 +160,10 @@ class NLLLoss(LossFunction):
 
         # Only compute loss on generated tokens (not input tokens)
         # by applying the token_loss_mask (shifted by 1 since we're predicting next tokens)
-        loss = -torch.sum(token_logprobs * mask)
+        num_unmasked_tokens = torch.sum(mask)
+        if num_unmasked_tokens == 0:
+            # prevent division by zero
+            num_unmasked_tokens = torch.tensor(1)
+        loss = -torch.sum(token_logprobs * mask) / num_unmasked_tokens
 
-        return loss, {"loss": loss.item()}
+        return loss, {"loss": loss.item(), "num_unmasked_tokens": num_unmasked_tokens.item(), "total_tokens": mask.numel()}
