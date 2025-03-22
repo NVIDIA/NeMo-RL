@@ -92,7 +92,7 @@ jobs:
               --env REINFORCER_REPO_DIR=/opt/reinforcer \
               --env HF_TOKEN \
               --volume $PWD:/opt/reinforcer \
-              --volume /opt/venv:/opt/venv \
+              --volume /opt/reinforcer/.venv \
               --volume /mnt/datadrive/TestData/reinforcer/datasets:/opt/reinforcer/datasets:ro \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
               --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
