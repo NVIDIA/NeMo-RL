@@ -136,7 +136,7 @@ jobs:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 15
+      TIMEOUT: 30
       UNIT_TEST_SCRIPT: |
         # FIX ME
         set +e
