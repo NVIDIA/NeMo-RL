@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-reinforcer"
-version = "0.0.1"
+version = "0.1.0"
 description = "Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,8 +31,8 @@ packages = ["nemo_reinforcer"]
 
 [project.optional-dependencies]
 build = [
-    "torch==2.6.0", 
-    "setuptools", 
+    "torch==2.6.0",
+    "setuptools",
     "packaging",
     "einops"
 ]
