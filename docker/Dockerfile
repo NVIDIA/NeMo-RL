@@ -17,17 +17,17 @@ RUN chmod 755 /home/ray/.cache
 
 FROM base AS deps
 
-WORKDIR /opt/reinforcer
+WORKDIR /opt
 COPY pyproject.toml .
-RUN uv venv .venv
+RUN uv venv /opt/venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
 RUN uv sync --extra test --extra dev --extra docs --no-install-project
 
 FROM base as hermetic
 # hermetic creates a virtual environment with the default dependencies pre-installed for convenience
 
-ENV VIRTUAL_ENV=/opt/reinforcer/.venv
-ENV PATH="/opt/reinforcer/.venv/bin:$PATH"
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # The ray images automatically activate the anaconda venv. We will
 # comment this out of the .bashrc to give the same UX between docker
@@ -44,5 +44,5 @@ EOF
 
 WORKDIR /opt/reinforcer
 COPY --chown=ray --chmod=755 . /opt/reinforcer
-COPY --from=deps --chown=ray --chmod=755 /opt/reinforcer/.venv /opt/reinforcer/.venv
+COPY --from=deps --chown=ray --chmod=755 /opt/venv /opt/venv
 RUN uv pip install --no-deps --editable .
