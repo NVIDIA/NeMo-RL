@@ -38,7 +38,7 @@ sed -i '/# >>> conda initialize >>>/,/# <<< conda initialize <<</ { /^[^#]/ s/^/
 sed -i '/export PATH=\$HOME\/anaconda3\/bin:\$PATH/ s/^/# /' ~/.bashrc
 EOF
 
-COPY --chown=ray --chmod=755 . /opt/reinforcer
-RUN uv pip install --no-deps --editable /opt/reinforcer
+COPY --chown=ray --chmod=755 . .
+RUN uv pip install --no-deps --editable .
 
 FROM base
