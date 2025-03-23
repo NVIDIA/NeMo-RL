@@ -166,6 +166,7 @@ class VllmGenerationWorker:
 
         self.llm = LLM(
             model=self.model_name,
+            load_format="dummy",
             tensor_parallel_size=self.tensor_parallel_size,
             gpu_memory_utilization=self.gpu_memory_utilization,
             enable_prefix_caching=True,

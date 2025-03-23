@@ -3,7 +3,7 @@ defaults: "grpo_math_1B.yaml"
 
 policy:
   model_name: "meta-llama/Llama-3.1-8B-Instruct"
-  train_global_batch_size: 32
+  train_global_batch_size: 512
   train_micro_batch_size: 1
   generation_batch_size: 32
   logprob_batch_size: 2
