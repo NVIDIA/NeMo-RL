@@ -48,6 +48,11 @@ class TensorboardConfig(TypedDict):
     log_dir: str
 
 
+class GPUMonitoringConfig(TypedDict):
+    collection_interval: int | float
+    flush_interval: int | float
+
+
 class LoggerConfig(TypedDict):
     log_dir: str
     wandb_enabled: bool
@@ -55,8 +60,7 @@ class LoggerConfig(TypedDict):
     wandb: WandbConfig
     tensorboard: TensorboardConfig
     monitor_gpus: bool
-    gpu_collection_interval: int | float
-    gpu_flush_interval: int | float
+    gpu_monitoring: GPUMonitoringConfig
 
 
 class LoggerInterface(ABC):
@@ -398,8 +402,8 @@ class Logger(LoggerInterface):
         self.gpu_monitor = None
         if cfg["monitor_gpus"]:
             self.gpu_monitor = RayGpuMonitorLogger(
-                collection_interval=cfg["gpu_collection_interval"],
-                flush_interval=cfg["gpu_flush_interval"],
+                collection_interval=cfg["gpu_monitoring"]["collection_interval"],
+                flush_interval=cfg["gpu_monitoring"]["flush_interval"],
                 parent_logger=self,
             )
             self.gpu_monitor.start()

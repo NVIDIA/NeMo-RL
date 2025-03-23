@@ -91,8 +91,9 @@ logger:
   wandb_enabled: false
   tensorboard_enabled: false
   monitor_gpus: true
-  gpu_collection_interval: 5
-  gpu_flush_interval: 10
+  gpu_monitoring:
+    collection_interval: 10
+    flush_interval: 10
 ```
 
 :::{note}

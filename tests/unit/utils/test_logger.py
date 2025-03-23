@@ -609,6 +609,7 @@ class TestLogger:
         cfg = {
             "wandb_enabled": False,
             "tensorboard_enabled": False,
+            "monitor_gpus": False,
             "log_dir": temp_dir,
         }
         logger = Logger(cfg)
@@ -624,6 +625,7 @@ class TestLogger:
         cfg = {
             "wandb_enabled": True,
             "tensorboard_enabled": False,
+            "monitor_gpus": False,
             "wandb": {"project": "test-project"},
             "log_dir": temp_dir,
         }
@@ -642,6 +644,7 @@ class TestLogger:
         cfg = {
             "wandb_enabled": False,
             "tensorboard_enabled": True,
+            "monitor_gpus": False,
             "tensorboard": {"log_dir": "test_logs"},
             "log_dir": temp_dir,
         }
@@ -660,6 +663,7 @@ class TestLogger:
         cfg = {
             "wandb_enabled": True,
             "tensorboard_enabled": True,
+            "monitor_gpus": False,
             "wandb": {"project": "test-project"},
             "tensorboard": {"log_dir": "test_logs"},
             "log_dir": temp_dir,
@@ -682,6 +686,7 @@ class TestLogger:
         cfg = {
             "wandb_enabled": True,
             "tensorboard_enabled": True,
+            "monitor_gpus": False,
             "wandb": {"project": "test-project"},
             "tensorboard": {"log_dir": "test_logs"},
             "log_dir": temp_dir,
@@ -707,6 +712,7 @@ class TestLogger:
         cfg = {
             "wandb_enabled": True,
             "tensorboard_enabled": True,
+            "monitor_gpus": False,
             "wandb": {"project": "test-project"},
             "tensorboard": {"log_dir": "test_logs"},
             "log_dir": temp_dir,
@@ -723,3 +729,38 @@ class TestLogger:
         # Check that log_hyperparams was called on both loggers
         mock_wandb_instance.log_hyperparams.assert_called_once_with(params)
         mock_tb_instance.log_hyperparams.assert_called_once_with(params)
+
+    @patch("nemo_reinforcer.utils.logger.WandbLogger")
+    @patch("nemo_reinforcer.utils.logger.TensorboardLogger")
+    @patch("nemo_reinforcer.utils.logger.RayGpuMonitorLogger")
+    def test_init_with_gpu_monitoring(
+        self, mock_gpu_monitor, mock_tb_logger, mock_wandb_logger, temp_dir
+    ):
+        """Test initialization with GPU monitoring enabled."""
+        cfg = {
+            "wandb_enabled": True,
+            "tensorboard_enabled": True,
+            "monitor_gpus": True,
+            "gpu_monitoring": {
+                "collection_interval": 15.0,
+                "flush_interval": 45.0,
+            },
+            "wandb": {"project": "test-project"},
+            "tensorboard": {"log_dir": "test_logs"},
+            "log_dir": temp_dir,
+        }
+        logger = Logger(cfg)
+
+        # Check that regular loggers were initialized
+        assert len(logger.loggers) == 2
+        mock_wandb_logger.assert_called_once()
+        mock_tb_logger.assert_called_once()
+
+        # Check that GPU monitor was initialized with correct parameters
+        mock_gpu_monitor.assert_called_once_with(
+            collection_interval=15.0, flush_interval=45.0, parent_logger=logger
+        )
+
+        # Check that GPU monitor was started
+        mock_gpu_instance = mock_gpu_monitor.return_value
+        mock_gpu_instance.start.assert_called_once()
