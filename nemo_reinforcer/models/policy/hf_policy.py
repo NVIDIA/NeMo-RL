@@ -57,7 +57,10 @@ class HfPolicyWorker:
 
         This makes it easier to identify which worker is producing specific log messages.
         """
-        return f"{self.__class__.__name__}[rank={torch.distributed.get_rank()}]"
+        if torch.distributed.is_initialized():
+            return f"{self.__class__.__name__}[rank={torch.distributed.get_rank()}]"
+        else:
+            return f"{self.__class__.__name__}"
 
     def __init__(
         self,
@@ -829,6 +832,11 @@ class HfPolicyWorker:
                 self.scheduler.load_state_dict(scheduler_state_dict)
             else:
                 print("WARNING: No scheduler checkpoint provided")
+
+    def shutdown(self):
+        """Shutdown the policy."""
+        #
+        pass
 
 
 class HfPolicy(PolicyInterface, GenerationInterface):

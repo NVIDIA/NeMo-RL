@@ -16,9 +16,12 @@
 import os
 import re
 import glob
+import time
+import threading
+import requests
 from abc import ABC, abstractmethod
 import logging
-from typing import List, Any, Dict, Optional, TypedDict
+from typing import List, Any, Dict, Optional, TypedDict, Union
 import wandb
 from rich.console import Console
 from rich.panel import Panel
@@ -27,6 +30,10 @@ from rich.logging import RichHandler
 
 from nemo_reinforcer.data.interfaces import LLMMessageLogType
 from torch.utils.tensorboard import SummaryWriter
+
+import ray
+from prometheus_client.parser import text_string_to_metric_families
+from prometheus_client.samples import Sample
 
 # Flag to track if rich logging has been configured
 _rich_logging_configured = False
@@ -47,6 +54,9 @@ class LoggerConfig(TypedDict):
     tensorboard_enabled: bool
     wandb: WandbConfig
     tensorboard: TensorboardConfig
+    monitor_gpus: bool
+    gpu_collection_interval: int | float
+    gpu_flush_interval: int | float
 
 
 class LoggerInterface(ABC):
@@ -130,6 +140,225 @@ class WandbLogger(LoggerInterface):
         self.run.config.update(params)
 
 
+class RayGpuMonitorLogger:
+    """Monitor GPU utilization across a Ray cluster and log metrics to a parent logger."""
+
+    def __init__(
+        self,
+        collection_interval: int | float,
+        flush_interval: int | float,
+        parent_logger: Optional["Logger"] = None,
+    ):
+        """Initialize the GPU monitor.
+
+        Args:
+            collection_interval: Interval in seconds to collect GPU metrics
+            flush_interval: Interval in seconds to flush metrics to parent logger
+            parent_logger: Logger to receive the collected metrics
+        """
+        self.collection_interval = collection_interval
+        self.flush_interval = flush_interval
+        self.parent_logger = parent_logger
+        self.metrics_buffer = []  # Store metrics with timestamps
+        self.last_flush_time = time.time()
+        self.is_running = False
+        self.collection_thread = None
+        self.lock = threading.Lock()
+
+    def start(self):
+        """Start the GPU monitoring thread."""
+        if not ray.is_initialized():
+            raise ValueError(
+                "Ray must be initialized with nemo_reinforcer.distributed.virtual_cluster.init_ray() before the GPU logging can begin."
+            )
+
+        if self.is_running:
+            return
+
+        self.start_time = time.time()
+        self.is_running = True
+        self.collection_thread = threading.Thread(
+            target=self._collection_loop,
+            daemon=True,  # Make this a daemon thread so it doesn't block program exit
+        )
+        self.collection_thread.start()
+        print(
+            f"GPU monitoring started with collection interval={self.collection_interval}s, flush interval={self.flush_interval}s"
+        )
+
+    def stop(self):
+        """Stop the GPU monitoring thread."""
+        self.is_running = False
+        if self.collection_thread:
+            self.collection_thread.join(timeout=self.collection_interval * 2)
+
+        # Final flush
+        self.flush()
+        print("GPU monitoring stopped")
+
+    def _collection_loop(self):
+        """Main collection loop that runs in a separate thread."""
+        while self.is_running:
+            try:
+                collection_time = time.time()
+                relative_time = collection_time - self.start_time
+
+                # Collect metrics with timing information
+                metrics = self._collect_metrics()
+                if metrics:
+                    with self.lock:
+                        self.metrics_buffer.append(
+                            {
+                                "step": int(
+                                    relative_time
+                                ),  # Store the relative time as step
+                                "metrics": metrics,
+                            }
+                        )
+
+                # Check if it's time to flush
+                current_time = time.time()
+                if current_time - self.last_flush_time >= self.flush_interval:
+                    self.flush()
+                    self.last_flush_time = current_time
+
+                time.sleep(self.collection_interval)
+            except Exception as e:
+                print(f"Error in GPU monitoring collection loop: {e}")
+                time.sleep(self.collection_interval)  # Continue despite errors
+
+    def _parse_gpu_metric(self, sample: Sample, node_idx: int) -> Dict[str, Any]:
+        """Parse a GPU metric sample into a standardized format.
+
+        Args:
+            sample: Prometheus metric sample
+            node_idx: Index of the node
+
+        Returns:
+            Dictionary with metric name and value
+        """
+        # TODO: Consider plumbing {'GpuDeviceName': 'NVIDIA H100 80GB HBM3'}
+        # Expected labels for GPU metrics
+        expected_labels = ["GpuIndex"]
+        for label in expected_labels:
+            if label not in sample.labels:
+                # This is probably a CPU node
+                return {}
+
+        metric_name = sample.name
+        # Rename known metrics to match wandb naming convention
+        if metric_name == "ray_node_gpus_utilization":
+            metric_name = "gpu"
+        elif metric_name == "ray_node_gram_used":
+            metric_name = "memory"
+        else:
+            # Skip unexpected metrics
+            return {}
+
+        labels = sample.labels
+        index = labels["GpuIndex"]
+        value = sample.value
+
+        metric_name = f"node.{node_idx}.gpu.{index}.{metric_name}"
+        return {metric_name: value}
+
+    def _collect_metrics(self) -> Dict[str, Any]:
+        """Collect GPU metrics from all Ray nodes.
+
+        Returns:
+            Dictionary of collected metrics
+        """
+        if not ray.is_initialized():
+            print("Ray is not initialized. Cannot collect GPU metrics.")
+            return {}
+
+        try:
+            nodes = ray.nodes()
+            if not nodes:
+                print("No Ray nodes found.")
+                return {}
+
+            # Use a dictionary to keep unique metric endpoints and maintain order
+            unique_metric_addresses = {}
+            for node in nodes:
+                node_ip = node["NodeManagerAddress"]
+                metrics_port = node.get("MetricsExportPort")
+                if not metrics_port:
+                    continue
+                metrics_address = f"{node_ip}:{metrics_port}"
+                unique_metric_addresses[metrics_address] = True
+
+            # Process each node's metrics
+            collected_metrics = {}
+            for node_idx, metric_address in enumerate(unique_metric_addresses):
+                gpu_metrics = self._fetch_and_parse_metrics(node_idx, metric_address)
+                collected_metrics.update(gpu_metrics)
+
+            return collected_metrics
+
+        except Exception as e:
+            print(f"Error collecting GPU metrics: {e}")
+            return {}
+
+    def _fetch_and_parse_metrics(self, node_idx, metric_address):
+        """Fetch metrics from a node and parse GPU metrics.
+
+        Args:
+            node_idx: Index of the node
+            metric_address: Address of the metrics endpoint
+
+        Returns:
+            Dictionary of GPU metrics
+        """
+        url = f"http://{metric_address}/metrics"
+
+        try:
+            response = requests.get(url, timeout=5.0)
+            if response.status_code != 200:
+                print(f"Error: Status code {response.status_code}")
+                return {}
+
+            metrics_text = response.text
+            gpu_metrics = {}
+
+            # Parse the Prometheus format
+            for family in text_string_to_metric_families(metrics_text):
+                # Skip non-GPU metrics
+                if family.name not in (
+                    "ray_node_gram_used",
+                    "ray_node_gpus_utilization",
+                ):
+                    continue
+
+                for sample in family.samples:
+                    metrics = self._parse_gpu_metric(sample, node_idx)
+                    gpu_metrics.update(metrics)
+
+            return gpu_metrics
+
+        except Exception as e:
+            print(f"Error fetching metrics from {metric_address}: {e}")
+            return {}
+
+    def flush(self):
+        """Flush collected metrics to the parent logger."""
+        if not self.parent_logger:
+            return
+
+        with self.lock:
+            if not self.metrics_buffer:
+                return
+
+            # Log each set of metrics with its original step
+            for entry in self.metrics_buffer:
+                step = entry["step"]
+                metrics = entry["metrics"]
+                self.parent_logger.log_metrics(metrics, step, prefix="ray")
+
+            # Clear buffer after logging
+            self.metrics_buffer = []
+
+
 class Logger(LoggerInterface):
     """Main logger class that delegates to multiple backend loggers."""
 
@@ -142,6 +371,9 @@ class Logger(LoggerInterface):
                 - tensorboard_enabled
                 - wandb
                 - tensorboard
+                - monitor_gpus
+                - gpu_collection_interval
+                - gpu_flush_interval
         """
         self.loggers = []
 
@@ -161,6 +393,18 @@ class Logger(LoggerInterface):
                 cfg["tensorboard"], log_dir=tensorboard_log_dir
             )
             self.loggers.append(tensorboard_logger)
+
+        # Initialize GPU monitoring if requested
+        self.gpu_monitor = None
+        if cfg["monitor_gpus"]:
+            collection_interval = cfg["gpu_collection_interval"]
+            flush_interval = cfg["gpu_flush_interval"]
+            self.gpu_monitor = RayGpuMonitorLogger(
+                collection_interval=collection_interval,
+                flush_interval=flush_interval,
+                parent_logger=self,
+            )
+            self.gpu_monitor.start()
 
         if not self.loggers:
             print("No loggers initialized")
@@ -186,6 +430,11 @@ class Logger(LoggerInterface):
         """
         for logger in self.loggers:
             logger.log_hyperparams(params)
+
+    def __del__(self):
+        """Clean up resources when the logger is destroyed."""
+        if self.gpu_monitor:
+            self.gpu_monitor.stop()
 
 
 def flatten_dict(d: Dict[str, Any], sep: str = ".") -> Dict[str, Any]:

@@ -78,3 +78,30 @@ When enabled, the pretty logging will generate formatted text similar to:
 
 ![Validation Pretty Logging Example](../assets/val-log.png)
 
+## GPU Metric Logging
+
+Reinforcer monitors GPU memory and utilization through [system metrics](https://docs.ray.io/en/latest/ray-observability/reference/system-metrics.html#system-metrics) exposed by Ray nodes. While Ray makes these metrics available for tools like Prometheus, Reinforcer directly polls GPU memory and utilization data and logs them to TensorBoard and/or Weights & Biases.
+
+This approach allows us to offer the same GPU metric tracking on all loggers (not just wandb) and simplifies the implementation greatly.
+
+This feature is enabled with the `monitor_gpus` configuration parameter and the frequency of collection and flushing to the loggers is controlled by `gpu_collection_interval` and `gpu_flush_interval` (both in seconds), respectively:
+
+```python
+logger:
+  wandb_enabled: false
+  tensorboard_enabled: false
+  monitor_gpus: true
+  gpu_collection_interval: 5
+  gpu_flush_interval: 10
+```
+
+:::{note}
+While monitoring through the remote workers is possible, it requires some delicate implementation details to make sure:
+* sending logs back to driver does not incur a large overhead
+* metrics are easily interpretable since we may be double counting due to colocated workers
+* workers gracefully flush their logs in the event of failure
+* the logging is the same for tensorboard and wandb
+* some workers which spawn other workers correctly report the total usage of the grandchild worker
+
+These reasons lead us to the simple implementation of collecting on the driver
+:::

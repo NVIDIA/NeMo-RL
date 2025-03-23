@@ -22,6 +22,7 @@ from nemo_reinforcer.utils.logger import (
     Logger,
     TensorboardLogger,
     WandbLogger,
+    RayGpuMonitorLogger,
     flatten_dict,
 )
 
@@ -197,6 +198,398 @@ class TestWandbLogger:
         # Check that config.update was called with params
         mock_run = mock_wandb.init.return_value
         mock_run.config.update.assert_called_once_with(params)
+
+
+class TestRayGpuMonitorLogger:
+    """Test the RayGpuMonitorLogger class."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory for logs."""
+        temp_dir = tempfile.mkdtemp()
+        yield temp_dir
+        shutil.rmtree(temp_dir)
+
+    @pytest.fixture
+    def mock_parent_logger(self):
+        """Create a mock parent logger."""
+
+        class MockLogger:
+            def __init__(self):
+                self.logged_metrics = []
+                self.logged_steps = []
+                self.logged_prefixes = []
+
+            def log_metrics(self, metrics, step, prefix=""):
+                self.logged_metrics.append(metrics)
+                self.logged_steps.append(step)
+                self.logged_prefixes.append(prefix)
+
+        return MockLogger()
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    def test_init(self, mock_ray):
+        """Test initialization of RayGpuMonitorLogger."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Initialize the monitor with standard settings
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+        )
+
+        # Verify initialization parameters
+        assert monitor.collection_interval == 10.0
+        assert monitor.flush_interval == 60.0
+        assert monitor.parent_logger is None
+        assert monitor.metrics_buffer == []
+        assert monitor.is_running is False
+        assert monitor.collection_thread is None
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    @patch("nemo_reinforcer.utils.logger.threading.Thread")
+    def test_start(self, mock_thread, mock_ray):
+        """Test start method of RayGpuMonitorLogger."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Initialize the monitor
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+        )
+
+        # Start the monitor
+        monitor.start()
+
+        # Verify thread was created and started
+        mock_thread.assert_called_once()
+        mock_thread.return_value.start.assert_called_once()
+
+        # Verify monitor state
+        assert monitor.is_running is True
+        assert monitor.collection_thread is mock_thread.return_value
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    def test_start_ray_not_initialized(self, mock_ray):
+        """Test start method when Ray is not initialized."""
+        # Mock ray.is_initialized to return False
+        mock_ray.is_initialized.return_value = False
+
+        # Initialize the monitor
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+        )
+
+        # Starting should raise a ValueError
+        with pytest.raises(ValueError):
+            monitor.start()
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    @patch("nemo_reinforcer.utils.logger.threading.Thread")
+    def test_stop(self, mock_thread, mock_ray):
+        """Test stop method of RayGpuMonitorLogger."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Initialize the monitor
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+        )
+
+        # Start the monitor
+        monitor.start()
+
+        # Create a spy for the flush method
+        with patch.object(monitor, "flush") as mock_flush:
+            # Stop the monitor
+            monitor.stop()
+
+            # Verify flush was called
+            mock_flush.assert_called_once()
+
+            # Verify monitor state
+            assert monitor.is_running is False
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    def test_parse_gpu_metric(self, mock_ray):
+        """Test _parse_gpu_metric method."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Initialize the monitor
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+        )
+
+        # Create a sample with GPU utilization metric
+        from prometheus_client.samples import Sample
+
+        utilization_sample = Sample(
+            name="ray_node_gpus_utilization",
+            labels={"GpuIndex": "0", "GpuDeviceName": "NVIDIA Test GPU"},
+            value=75.5,
+            timestamp=None,
+            exemplar=None,
+        )
+
+        # Parse the sample
+        result = monitor._parse_gpu_metric(utilization_sample, node_idx=1)
+
+        # Verify the result
+        assert result == {"node.1.gpu.0.gpu": 75.5}
+
+        # Create a sample with GPU memory metric
+        memory_sample = Sample(
+            name="ray_node_gram_used",
+            labels={"GpuIndex": "0", "GpuDeviceName": "NVIDIA Test GPU"},
+            value=4096.0,
+            timestamp=None,
+            exemplar=None,
+        )
+
+        # Parse the sample
+        result = monitor._parse_gpu_metric(memory_sample, node_idx=1)
+
+        # Verify the result
+        assert result == {"node.1.gpu.0.memory": 4096.0}
+
+        # Test with an unexpected metric name
+        other_sample = Sample(
+            name="ray_node_cpu_utilization",
+            labels={"GpuIndex": "0"},
+            value=50.0,
+            timestamp=None,
+            exemplar=None,
+        )
+
+        # Parse the sample
+        result = monitor._parse_gpu_metric(other_sample, node_idx=1)
+
+        # Verify the result is empty
+        assert result == {}
+
+        # Test with missing GpuIndex label
+        invalid_sample = Sample(
+            name="ray_node_gpus_utilization",
+            labels={"OtherLabel": "value"},
+            value=75.5,
+            timestamp=None,
+            exemplar=None,
+        )
+
+        # Parse the sample
+        result = monitor._parse_gpu_metric(invalid_sample, node_idx=1)
+
+        # Verify the result is empty
+        assert result == {}
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    @patch("nemo_reinforcer.utils.logger.requests.get")
+    def test_fetch_and_parse_metrics(self, mock_get, mock_ray):
+        """Test _fetch_and_parse_metrics method."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Set up mock response with Prometheus metrics
+        mock_response = mock_get.return_value
+        mock_response.status_code = 200
+        # Simplified Prometheus format text with GPU metrics
+        mock_response.text = """
+# HELP ray_node_gpus_utilization GPU utilization
+# TYPE ray_node_gpus_utilization gauge
+ray_node_gpus_utilization{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 75.5
+# HELP ray_node_gram_used GPU memory used
+# TYPE ray_node_gram_used gauge
+ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
+        """
+
+        # Initialize the monitor
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+        )
+
+        # Mock the _parse_gpu_metric method to return expected values
+        with patch.object(monitor, "_parse_gpu_metric") as mock_parse:
+            mock_parse.side_effect = [
+                {"node.2.gpu.0.gpu": 75.5},
+                {"node.2.gpu.0.memory": 4096.0},
+            ]
+
+            # Call the method
+            result = monitor._fetch_and_parse_metrics(
+                node_idx=2, metric_address="test_ip:test_port"
+            )
+
+            # Verify request was made correctly
+            mock_get.assert_called_once_with(
+                "http://test_ip:test_port/metrics", timeout=5.0
+            )
+
+            # Verify parsing was done for both metrics
+            assert mock_parse.call_count == 2
+
+            # Verify the result combines both metrics
+            assert result == {"node.2.gpu.0.gpu": 75.5, "node.2.gpu.0.memory": 4096.0}
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    def test_collect_metrics(self, mock_ray):
+        """Test _collect_metrics method."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Mock ray.nodes to return test nodes
+        mock_ray.nodes.return_value = [
+            {"NodeManagerAddress": "10.0.0.1", "MetricsExportPort": 8080},
+            {"NodeManagerAddress": "10.0.0.2", "MetricsExportPort": 8080},
+        ]
+
+        # Initialize the monitor
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+        )
+
+        # Mock the _fetch_and_parse_metrics method
+        with patch.object(monitor, "_fetch_and_parse_metrics") as mock_fetch:
+            mock_fetch.side_effect = [
+                {"node.0.gpu.0.gpu": 75.5, "node.0.gpu.0.memory": 4096.0},
+                {"node.1.gpu.0.gpu": 50.0, "node.1.gpu.0.memory": 2048.0},
+            ]
+
+            # Call the method
+            result = monitor._collect_metrics()
+
+            # Verify _fetch_and_parse_metrics was called for each node
+            assert mock_fetch.call_count == 2
+            mock_fetch.assert_any_call(0, "10.0.0.1:8080")
+            mock_fetch.assert_any_call(1, "10.0.0.2:8080")
+
+            # Verify the result combines metrics from all nodes
+            assert result == {
+                "node.0.gpu.0.gpu": 75.5,
+                "node.0.gpu.0.memory": 4096.0,
+                "node.1.gpu.0.gpu": 50.0,
+                "node.1.gpu.0.memory": 2048.0,
+            }
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    def test_flush_empty_buffer(self, mock_ray, mock_parent_logger):
+        """Test flush method with empty buffer."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Initialize the monitor with parent logger
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0,
+            flush_interval=60.0,
+            parent_logger=mock_parent_logger,
+        )
+
+        # Call flush with empty buffer
+        monitor.flush()
+
+        # Verify parent logger's log_metrics was not called
+        assert len(mock_parent_logger.logged_metrics) == 0
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    def test_flush(self, mock_ray, mock_parent_logger):
+        """Test flush method with metrics in buffer."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Initialize the monitor with parent logger
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0,
+            flush_interval=60.0,
+            parent_logger=mock_parent_logger,
+        )
+
+        # Add test metrics to buffer
+        monitor.metrics_buffer = [
+            {
+                "step": 10,
+                "metrics": {"node.0.gpu.0.gpu": 75.5, "node.0.gpu.0.memory": 4096.0},
+            },
+            {
+                "step": 20,
+                "metrics": {"node.0.gpu.0.gpu": 80.0, "node.0.gpu.0.memory": 5120.0},
+            },
+        ]
+
+        # Call flush
+        monitor.flush()
+
+        # Verify parent logger's log_metrics was called for each entry
+        assert len(mock_parent_logger.logged_metrics) == 2
+        assert mock_parent_logger.logged_metrics[0] == {
+            "node.0.gpu.0.gpu": 75.5,
+            "node.0.gpu.0.memory": 4096.0,
+        }
+        assert mock_parent_logger.logged_steps[0] == 10
+        assert mock_parent_logger.logged_prefixes[0] == "ray"
+
+        assert mock_parent_logger.logged_metrics[1] == {
+            "node.0.gpu.0.gpu": 80.0,
+            "node.0.gpu.0.memory": 5120.0,
+        }
+        assert mock_parent_logger.logged_steps[1] == 20
+        assert mock_parent_logger.logged_prefixes[1] == "ray"
+
+        # Verify buffer was cleared
+        assert monitor.metrics_buffer == []
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    @patch("nemo_reinforcer.utils.logger.time")
+    def test_collection_loop(self, mock_time, mock_ray):
+        """Test _collection_loop method (one iteration)."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Set up time mocks for a single iteration
+        mock_time.time.side_effect = [
+            100.0,
+            110.0,
+            170.0,
+            180.0,
+        ]  # start_time, collection_time, flush_check_time, sleep_until
+
+        # Initialize the monitor
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+        )
+
+        # Set start time and running flag
+        monitor.start_time = 100.0
+        monitor.is_running = True
+
+        # Create a flag to only run one iteration
+        monitor.iteration_done = False
+
+        def side_effect():
+            if not monitor.iteration_done:
+                monitor.iteration_done = True
+                return {"node.0.gpu.0.gpu": 75.5}
+            else:
+                monitor.is_running = False
+                return {}
+
+        # Mock _collect_metrics to return test metrics
+        with patch.object(monitor, "_collect_metrics", side_effect=side_effect):
+            # Mock flush method
+            with patch.object(monitor, "flush") as mock_flush:
+                # Run the collection loop (will stop after one iteration)
+                monitor._collection_loop()
+
+                # Verify monitor.metrics_buffer has the collected metrics
+                assert len(monitor.metrics_buffer) == 1
+                assert (
+                    monitor.metrics_buffer[0]["step"] == 10
+                )  # relative time (110 - 100)
+                assert monitor.metrics_buffer[0]["metrics"] == {
+                    "node.0.gpu.0.gpu": 75.5
+                }
+
+                # Verify flush was called (flush_interval elapsed)
+                mock_flush.assert_called_once()
 
 
 class TestLogger:

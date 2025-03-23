@@ -44,13 +44,16 @@ data:
 
 logger:
   log_dir: "logs"  # Base directory for all logs
-  wandb_enabled: true
+  wandb_enabled: false
   tensorboard_enabled: false
   wandb:
     project: "sft-dev"
     name: "sft-dev-logger"
   tensorboard:
     log_dir: "tb_logs"
+  monitor_gpus: false  # If true, will monitor GPU usage and log to wandb and/or tensorboard
+  gpu_collection_interval: 10  # How often to collect GPU usage metrics (in seconds)
+  gpu_flush_interval: 10  # How often to flush GPU usage metrics to the loggers (in seconds)
 
 cluster:
   gpus_per_node: 8
