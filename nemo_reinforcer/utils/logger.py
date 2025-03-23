@@ -397,11 +397,9 @@ class Logger(LoggerInterface):
         # Initialize GPU monitoring if requested
         self.gpu_monitor = None
         if cfg["monitor_gpus"]:
-            collection_interval = cfg["gpu_collection_interval"]
-            flush_interval = cfg["gpu_flush_interval"]
             self.gpu_monitor = RayGpuMonitorLogger(
-                collection_interval=collection_interval,
-                flush_interval=flush_interval,
+                collection_interval=cfg["gpu_collection_interval"],
+                flush_interval=cfg["gpu_flush_interval"],
                 parent_logger=self,
             )
             self.gpu_monitor.start()
