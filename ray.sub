@@ -59,7 +59,11 @@ ip_head=$head_node_ip:$port
 
 # First we start the head of the ray cluster on one of the physical nodes
 # Set GPU/CPU resources to 0 to avoid scheduling on the head node
+
 head_cmd=$(cat <<EOF
+# Touch a file to indicate that the head node has started
+# Overlapping srun commands will check this file to determine if we can overlap a container command
+touch $LOG_DIR/STARTED_RAY_HEAD
 env
 cat <<EOFINNER | tee /launch-head.sh
 ray start --head \
@@ -121,11 +125,12 @@ EOF
   sleep 3
 done
 
-echo "[INFO] Querying head node too early can cause pyxis to fail"
-for i in {20..1}; do
-  echo "[INFO] Waiting for $i seconds before querying head node..."
-  sleep 1
+# Then we wait here for the file to be created by the head node container
+while ! srun --overlap --nodes=1 --ntasks=1 -w $head_node test -f $LOG_DIR/STARTED_RAY_HEAD; do 
+  echo "[INFO][$(date)] Waiting for head node container to start..."
+  sleep 2
 done
+
 # At this stage the Ray cluster bringup has started on the physical nodes in the allocation
 # Before we launch a job on this cluster we need to make sure that the bringup is complete
 # We do so by querying the number of worker_units in the ray cluster and asserting = NUM_ACTORS
