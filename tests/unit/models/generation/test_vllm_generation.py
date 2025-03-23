@@ -192,6 +192,15 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         "max_new_tokens": 16,
         "do_sample": False,
         "precision": "float32",
+        "optimizer": {
+            "name": "torch.optim.AdamW",
+            "kwargs": {
+                "lr": 5e-6,
+                "weight_decay": 0.01,
+                "betas": [0.9, 0.999],
+                "eps": 1e-8,
+            },
+        },
     }
 
     vllm_policy = None
