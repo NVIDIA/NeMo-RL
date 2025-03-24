@@ -85,15 +85,32 @@ jobs:
 
         - name: Start container
           run: |
+            # TODO: disable caching (--env UV_CACHE_DIR=/uv_cache --volume /mnt/datadrive/TestData/reinforcer/uv_cache:/uv_cache)
+            #       for now since it results in
+            # 
+            # Using CPython 3.12.9 interpreter at: /home/ray/anaconda3/bin/python3
+            # Creating virtual environment at: .venv
+            #   × Failed to download and build `antlr4-python3-runtime==4.9.3`
+            #   ├─▶ Failed to create temporary virtualenv
+            #   ╰─▶ Permission denied (os error 13)
+            #   help: `antlr4-python3-runtime` (v4.9.3) was included because
+            #         `nemo-reinforcer` (v0.0.1) depends on `math-verify` (v0.7.0) which
+            #         depends on `latex2sympy2-extended==1.10.1` (v1.10.1) which depends on
+            #         `antlr4-python3-runtime>=4.9.3, <=4.13.2`
+            #
+            # Something about our CI machines causes this issue since it is not reproducible locally.
+            
             docker run --rm -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=64g \
               --env TRANSFORMERS_OFFLINE=0 \
               --env HYDRA_FULL_ERROR=1 \
               --env HF_HOME=/home/TestData/reinforcer/hf_home \
+              --env HF_DATASETS_CACHE=/home/TestData/reinforcer/hf_datasets_cache \
               --env REINFORCER_REPO_DIR=/opt/reinforcer \
               --volume $PWD:/opt/reinforcer \
               --volume /mnt/datadrive/TestData/reinforcer/datasets:/opt/reinforcer/datasets:ro \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
               --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
+              --volume /mnt/datadrive/TestData/reinforcer/hf_datasets_cache:/home/TestData/reinforcer/hf_datasets_cache \
               nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \
               bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
   
