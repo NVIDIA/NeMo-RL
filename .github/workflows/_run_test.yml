@@ -68,6 +68,8 @@ jobs:
         # NOTE: under certain circumstances, the checkout action cannot clean up the workspace properly, so
         # this workaround is needed to ensure that the workspace is clean by removing all files created by root.
         #
+        # Tracking issue: https://github.com/NVIDIA/reinforcer/issues/76
+        #
         # The error observed looked like this from the checkout action:
         #      Run actions/checkout@v4
         #      ...
