@@ -138,6 +138,12 @@ def setup(
     cluster_config = master_config["cluster"]
 
     # ==========================
+    #         Logger
+    # ==========================
+    logger = Logger(logger_config)
+    logger.log_hyperparams(master_config)
+
+    # ==========================
     #      Checkpointing
     # ==========================
     checkpointer = CheckpointManager(master_config["checkpointing"])
@@ -238,8 +244,6 @@ def setup(
     )
 
     loss_fn = ClippedPGLossFn(loss_config)
-    logger = Logger(logger_config)
-    logger.log_hyperparams(master_config)
 
     print("\n" + "=" * 60)
     print(" " * 18 + "SETUP COMPLETE")

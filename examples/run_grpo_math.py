@@ -195,7 +195,10 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
     task_data_processors["math"] = (math_task_spec, openinstructmath2_data_processor)
 
     math_env = MathEnvironment.options(
-        runtime_env={"py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE}
+        runtime_env={
+            "py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE,
+            "env_vars": dict(os.environ),  # Pass thru all user environment variables
+        }
     ).remote(env_configs["math"])
     dataset = AllTaskProcessedDataset(
         data.formatted_ds["train"],

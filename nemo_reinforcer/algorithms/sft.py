@@ -104,6 +104,12 @@ def setup(
     sft_config = master_config["sft"]
 
     # ==========================
+    #         Logger
+    # ==========================
+    logger = Logger(logger_config)
+    logger.log_hyperparams(master_config)
+
+    # ==========================
     #      Checkpointing
     # ==========================
     checkpointer = CheckpointManager(master_config["checkpointing"])
@@ -179,9 +185,6 @@ def setup(
     )
     loss_fn = NLLLoss()
     print(f"  ✓ Model initialized")
-
-    logger = Logger(logger_config)
-    logger.log_hyperparams(master_config)
 
     print("\n" + "=" * 60)
     print(" " * 18 + "SETUP COMPLETE")
