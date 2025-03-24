@@ -129,8 +129,7 @@ class HfPolicyWorker:
         if init_optimizer:
             optimizer_cls = import_class_from_path(self.cfg["optimizer"]["name"])
             self.optimizer = optimizer_cls(
-                self.model.parameters(),
-                **self.cfg["optimizer"]["kwargs"]
+                self.model.parameters(), **self.cfg["optimizer"]["kwargs"]
             )
         else:
             self.optimizer = None
@@ -692,7 +691,7 @@ class HfPolicyWorker:
         for name, param in params.items():
             # Convert parameters to the configured dtype
             dtype_params[name] = param.to(self.dtype, non_blocking=True)
-        
+
         # Replace the original params with the converted ones
         params = dtype_params
         self._held_reference_model_params = params
@@ -729,7 +728,7 @@ class HfPolicyWorker:
     @torch.no_grad()
     def offload_before_refit(self):
         """Offload the optimizer and buffers to the CPU."""
-        torch.randn(1).cuda() # wake up torch allocator
+        torch.randn(1).cuda()  # wake up torch allocator
         if hasattr(self, "optimizer") and self.optimizer is not None:
             for state in self.optimizer.state.values():
                 for k, v in state.items():
@@ -754,7 +753,7 @@ class HfPolicyWorker:
         # Offload as much as possible on the CPU
         self.model = self.move_to_cpu(self.model)
         self.model.eval()
-        torch.randn(1).cuda() # wake up torch allocator
+        torch.randn(1).cuda()  # wake up torch allocator
         self.offload_before_refit()  # rerun the old offload function
 
         if self._held_reference_model_params is not None:

@@ -166,4 +166,8 @@ class NLLLoss(LossFunction):
             num_unmasked_tokens = torch.tensor(1)
         loss = -torch.sum(token_logprobs * mask) / num_unmasked_tokens
 
-        return loss, {"loss": loss.item(), "num_unmasked_tokens": num_unmasked_tokens.item(), "total_tokens": mask.numel()}
+        return loss, {
+            "loss": loss.item(),
+            "num_unmasked_tokens": num_unmasked_tokens.item(),
+            "total_tokens": mask.numel(),
+        }

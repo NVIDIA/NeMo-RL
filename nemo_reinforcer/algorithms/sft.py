@@ -61,6 +61,7 @@ class SFTConfig(TypedDict):
     val_at_start: bool
     seed: int
 
+
 class MasterConfig(TypedDict):
     policy: PolicyConfig
     data: DataConfig
