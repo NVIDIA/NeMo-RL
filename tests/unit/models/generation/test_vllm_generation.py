@@ -23,15 +23,6 @@ from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 
 
-# Skip all tests if no CUDA or vLLM
-pytestmark = [
-    pytest.mark.skipif(
-        not torch.cuda.is_available() or torch.cuda.device_count() < 1,
-        reason="CUDA not available or insufficient GPUs",
-    )
-]
-
-
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
     "model_name": "meta-llama/Llama-3.2-1B",  # Small model for testing
@@ -65,7 +56,7 @@ def cluster():
         bundle_ct_per_node_list=[2],  # 1 node with 2 GPU bundle
         use_gpus=True,
         max_colocated_worker_groups=2,
-        num_gpus_per_node=torch.cuda.device_count(),  # Use available GPUs
+        num_gpus_per_node=2,  # Use available GPUs
         name="vllm-test-cluster",
     )
     yield virtual_cluster
@@ -358,10 +349,6 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
 def test_vllm_policy_tensor_parallel(cluster, tokenizer):
     """Test vLLM policy with tensor parallelism > 1."""
-    # Skip if less than 2 GPUs are available
-    if torch.cuda.device_count() < 2:
-        pytest.skip("Tensor parallelism test requires at least 2 GPUs")
-
     # Configure with tensor_parallel_size=2
     tp_config = basic_vllm_test_config.copy()
     tp_config["tensor_parallel_size"] = 2
@@ -420,12 +407,6 @@ def test_vllm_policy_tensor_parallel(cluster, tokenizer):
 @pytest.mark.parametrize("tensor_parallel_size", [1, 2])
 def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
     """Test that weights can be updated from HF to vLLM policy."""
-    # Skip if requesting tensor_parallel_size=2 but less than 2 GPUs are available
-    if tensor_parallel_size > 1 and torch.cuda.device_count() < 2:
-        pytest.skip(
-            f"Tensor parallelism test with tp={tensor_parallel_size} requires at least {tensor_parallel_size} GPUs"
-        )
-
     # Create HF policy
     from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 
@@ -448,6 +429,15 @@ def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
         "max_new_tokens": 16,
         "do_sample": False,
         "precision": "float32",
+        "optimizer": {
+            "name": "torch.optim.AdamW",
+            "kwargs": {
+                "lr": 5e-6,
+                "weight_decay": 0.01,
+                "betas": [0.9, 0.999],
+                "eps": 1e-8,
+            },
+        },
     }
 
     hf_policy = HfPolicy(cluster, hf_config)
