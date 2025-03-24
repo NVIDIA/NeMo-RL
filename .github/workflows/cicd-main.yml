@@ -157,9 +157,9 @@ jobs:
       FINAL_SCRIPT_EXTERNAL: |
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Unit test results
-        ```json
+        \`\`\`json
         $(cat tests/unit/unit_results.json || echo "n/a")
-        ```
+        \`\`\`
         EOF
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
