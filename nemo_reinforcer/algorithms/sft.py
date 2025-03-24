@@ -61,6 +61,7 @@ class SFTConfig(TypedDict):
     val_at_start: bool
     seed: int
 
+
 class MasterConfig(TypedDict):
     policy: PolicyConfig
     data: DataConfig
@@ -175,6 +176,7 @@ def setup(
         if last_checkpoint_path
         else None,
         init_optimizer=True,
+        init_reference_model=False,
     )
     loss_fn = NLLLoss()
     print(f"  ✓ Model initialized")

@@ -65,6 +65,7 @@ class HfPolicyWorker:
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
         init_optimizer: bool = True,
+        init_reference_model: bool = True,
     ):
         self.cfg = config
         # torch distributed init. Envars for rank, world_size, and master_addr and master_port are set from the ray remote call
@@ -85,12 +86,14 @@ class HfPolicyWorker:
             device_map="cpu",  # load weights onto CPU initially
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
-        self.reference_model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
-        )
-
+        if init_reference_model:
+            self.reference_model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                device_map="cpu",  # load weights onto CPU initially
+                torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
+            )
+        else:
+            self.reference_model = None
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         # If no pad token is defined, you might need:
         if self.tokenizer.pad_token is None:
@@ -114,17 +117,17 @@ class HfPolicyWorker:
         self.model.to("cuda")
         self.model = do_fsdp(self.model)
         self.model = self.move_to_cpu(self.model)
-        self.reference_model.to("cuda")
-        self.reference_model = do_fsdp(self.reference_model)
-        self.reference_model = self.move_to_cpu(self.reference_model)
+        if self.reference_model is not None:
+            self.reference_model.to("cuda")
+            self.reference_model = do_fsdp(self.reference_model)
+            self.reference_model = self.move_to_cpu(self.reference_model)
         self.model.to("cuda")
         self._held_reference_model_params = None
         # register_fsdp_forward_method(self.model, "generate")
         if init_optimizer:
             optimizer_cls = import_class_from_path(self.cfg["optimizer"]["name"])
             self.optimizer = optimizer_cls(
-                self.model.parameters(),
-                **self.cfg["optimizer"]["kwargs"]
+                self.model.parameters(), **self.cfg["optimizer"]["kwargs"]
             )
         else:
             self.optimizer = None
