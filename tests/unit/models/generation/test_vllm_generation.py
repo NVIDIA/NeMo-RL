@@ -231,9 +231,15 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         # Create both policies
         print("Creating vLLM policy...")
         vllm_policy = VllmGeneration(cluster, vllm_config)
+        vllm_policy.finish_generation()
 
         print("Creating HF policy...")
         hf_policy = HfPolicy(cluster, hf_config)
+
+        print(f"refitting vllm policy...")
+        ipc_handles = hf_policy.get_weights_ipc_handles()
+        vllm_policy.prepare_for_generation()
+        vllm_policy.update_weights(ipc_handles)
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
@@ -262,6 +268,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
             }
         )
         # Get logprobs from HF policy
+        hf_policy.prepare_for_lp_inference()
         fprop_results = hf_policy.get_logprobs(fprop_logprob_data)
         # Zero out logprobs for input tokens
 
@@ -327,6 +334,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         print(f"Training loss: {results['loss']}")
 
         hf_policy.finish_training()
+        hf_policy.offload_after_refit()
 
         # Step 4: Use vLLM for generation again to complete the workflow
         print("Using vLLM for generation again...")
