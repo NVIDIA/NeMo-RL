@@ -39,14 +39,13 @@ class VllmSpecificArgs(TypedDict):
     tensor_parallel_size: int
     gpu_memory_utilization: float
     max_model_len: int
-
-
-# VllmSpecificArgs are arguments provided by the user in the generation config.
-class VllmConfig(GenerationConfig):
-    vllm_cfg: VllmSpecificArgs
     # Additional arguments for vLLM inserted by reinforcer based on the context of when vllm is used
     skip_tokenizer_init: bool
     load_format: str
+
+
+class VllmConfig(GenerationConfig):
+    vllm_cfg: VllmSpecificArgs
 
 
 @ray.remote
@@ -172,10 +171,10 @@ class VllmGenerationWorker:
         self.llm = LLM(
             model=self.model_name,
             # Training pipeline will set this to "dummy" and eval will load real weights using 'auto'
-            load_format=self.cfg["load_format"],
-            skip_tokenizer_init=self.cfg["skip_tokenizer_init"],
-            tensor_parallel_size=self.tensor_parallel_size,
-            gpu_memory_utilization=self.gpu_memory_utilization,
+            load_format=self.cfg["vllm_cfg"]["load_format"],
+            skip_tokenizer_init=self.cfg["vllm_cfg"]["skip_tokenizer_init"],
+            tensor_parallel_size=self.cfg["vllm_cfg"]["tensor_parallel_size"],
+            gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
             enable_prefix_caching=True,
             dtype="auto",
             enforce_eager=True,
@@ -411,18 +410,6 @@ class VllmGeneration(GenerationInterface):
         missing_keys = [
             key for key in VllmConfig.__annotations__ if key not in self.cfg
         ]
-        # Also check VllmSpecificArgs keys
-        if "vllm_cfg" in self.cfg:
-            missing_vllm_keys = [
-                key
-                for key in VllmSpecificArgs.__annotations__
-                if key not in self.cfg["vllm_cfg"]
-            ]
-            if missing_vllm_keys:
-                missing_keys.append(f"vllm_cfg missing: {', '.join(missing_vllm_keys)}")
-        else:
-            missing_keys.append("vllm_cfg")
-
         assert not missing_keys, (
             f"VLLM Configuration Error: Missing required keys in VllmConfig.\n"
             f"Missing keys: {', '.join(missing_keys)}\n"
