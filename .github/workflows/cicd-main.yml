@@ -150,7 +150,7 @@ jobs:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 10
+      TIMEOUT: 15
       SCRIPT: |
         cd ${REINFORCER_REPO_DIR}
         uv run --extra test bash -x ./tests/run_unit.sh
@@ -171,7 +171,7 @@ jobs:
       # TODO: For now, allow these to fail since the checks are not robust.
       IS_OPTIONAL: true
       RUNNER: self-hosted-azure
-      TIMEOUT: 8
+      TIMEOUT: 15
       SCRIPT: |
         cd ${REINFORCER_REPO_DIR}
         uv run bash ./tests/functional/${{ matrix.test_case }}

@@ -61,6 +61,7 @@ class SFTConfig(TypedDict):
     val_at_start: bool
     seed: int
 
+
 class MasterConfig(TypedDict):
     policy: PolicyConfig
     data: DataConfig
@@ -101,6 +102,12 @@ def setup(
     logger_config = master_config["logger"]
     cluster_config = master_config["cluster"]
     sft_config = master_config["sft"]
+
+    # ==========================
+    #         Logger
+    # ==========================
+    logger = Logger(logger_config)
+    logger.log_hyperparams(master_config)
 
     # ==========================
     #      Checkpointing
@@ -178,9 +185,6 @@ def setup(
     )
     loss_fn = NLLLoss()
     print(f"  ✓ Model initialized")
-
-    logger = Logger(logger_config)
-    logger.log_hyperparams(master_config)
 
     print("\n" + "=" * 60)
     print(" " * 18 + "SETUP COMPLETE")
