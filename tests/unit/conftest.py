@@ -47,6 +47,7 @@ UNIT_RESULTS_FILE_DATED = os.path.join(
 
 class UnitTestData(TypedDict):
     exit_status: int | str
+    git_commit: str
     metrics: dict
     gpu_types: list[str]
     coverage: dict
@@ -60,8 +61,27 @@ def pytest_sessionstart(session):
             print(f"Deleted existing results file: {UNIT_RESULTS_FILE}")
         except Exception as e:
             print(f"Warning: Failed to delete results file: {e}")
+
+    # Get the git commit hash
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "-C", dir_path, "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        git_commit = result.stdout.strip()
+    except Exception as e:
+        git_commit = f"Error getting git commit: {str(e)}"
+
     session.config._unit_test_data = UnitTestData(
-        exit_status="was not set", metrics={}, gpu_types=[], coverage={}
+        exit_status="was not set",
+        git_commit=git_commit,
+        metrics={},
+        gpu_types=[],
+        coverage={},
     )
 
 
