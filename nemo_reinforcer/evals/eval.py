@@ -99,8 +99,11 @@ def setup(
     #           Model
     # ==========================
     print("\n▶ Setting up model...")
+    # check backend
     backend = generation_config["backend"]
     assert backend == "vllm", "Only vLLM backend is supported for evaluation"
+    # initialize vllm generation
+    generation_config["vllm_cfg"]["load_format"] = "auto"
     vllm_generation = VllmGeneration(cluster=cluster, config=generation_config)
     print(
         f"  ✓ Using vLLM backend for generation with {generation_config['model_name']}"
