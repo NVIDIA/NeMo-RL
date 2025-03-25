@@ -27,6 +27,7 @@ from examples.run_grpo_math import math_data_processor
 from nemo_reinforcer.data import DataConfig
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
 from nemo_reinforcer.data.interfaces import TaskDataSpec
+from nemo_reinforcer.data.llm_message_utils import remap_problem_solution
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from nemo_reinforcer.environments.math_environment import MathEnvironment
 from nemo_reinforcer.evals.eval import MasterConfig, run_env_eval, setup
@@ -49,7 +50,9 @@ def parse_args():
     return args, overrides
 
 
-def setup_data(data_config: DataConfig, generation_config: GenerationConfig, env_configs):
+def setup_data(
+    data_config: DataConfig, generation_config: GenerationConfig, env_configs
+):
     print("\n▶ Setting up data...")
     math_task_spec = TaskDataSpec(
         task_name="math",
@@ -57,9 +60,17 @@ def setup_data(data_config: DataConfig, generation_config: GenerationConfig, env
         system_prompt_file=data_config["system_prompt_file"],
     )
 
+    # load dataset
     base_dataset = load_dataset(data_config["dataset_name"])
     if data_config["dataset_key"] is not None:
         base_dataset = base_dataset[data_config["dataset_key"]]
+    # remap problem and solution keys
+    remapped_dataset = remap_problem_solution(
+        base_dataset,
+        problem_key=data_config["problem_key"],
+        solution_key=data_config["solution_key"],
+    )
+
     tokenizer = AutoTokenizer.from_pretrained(generation_config["model_name"])
 
     math_env = MathEnvironment.options(
@@ -67,11 +78,11 @@ def setup_data(data_config: DataConfig, generation_config: GenerationConfig, env
     ).remote(env_configs["math"])
 
     dataset = AllTaskProcessedDataset(
-        dataset=base_dataset,
-        config=data_config,
+        dataset=remapped_dataset,
         tokenizer=tokenizer,
         default_task_data_spec=math_task_spec,
         task_data_processors=math_data_processor,
+        max_seq_length=data_config["max_input_seq_length"],
     )
 
     return dataset, math_env
@@ -104,9 +115,7 @@ def main():
     init_ray()
 
     # Setup data
-    dataset, math_env = setup_data(
-        config["data"], config["generation"], config["env"]
-    )
+    dataset, math_env = setup_data(config["data"], config["generation"], config["env"])
 
     # Setup
     (

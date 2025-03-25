@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List, Union
-
+from typing import Dict, List
 
 import torch
+from datasets import Dataset
 
 from nemo_reinforcer.data.interfaces import (
     LLMMessageLogType,
@@ -390,3 +390,29 @@ def get_formatted_message_log(
         prev_formatted_message = formatted_message
 
     return message_log
+
+
+def remap_problem_solution(
+    dataset: Dataset,
+    problem_key: str,
+    solution_key: str,
+) -> Dataset:
+    """Remap the problem and solution keys in a dataset.
+
+    Args:
+        dataset: The input dataset to remap keys in
+        problem_key: The key to map problem data to
+        solution_key: The key to map solution data to
+
+    Returns:
+        Dataset: A new dataset with remapped keys
+    """
+    # no need to remap if the keys are already correct
+    if problem_key == "problem" and solution_key == "expected_answer":
+        return dataset
+
+    # return the remapped dataset
+    return dataset.map(
+        lambda x: {"problem": x[problem_key], "expected_answer": x[solution_key]},
+        remove_columns=[problem_key, solution_key],
+    )
