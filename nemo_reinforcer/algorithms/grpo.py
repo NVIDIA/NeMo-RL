@@ -224,6 +224,7 @@ def setup(
     # When https://github.com/NVIDIA/reinforcer/issues/57 is fixed, we should update stop_token_ids below.
     generation_config["stop_token_ids"] = [tokenizer.eos_token_id]
     generation_config["pad_token"] = tokenizer.pad_token_id
+    generation_config["load_format"] = "dummy"
 
     if backend == "hf":
         policy_generation = None

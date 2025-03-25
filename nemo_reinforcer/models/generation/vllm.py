@@ -53,6 +53,7 @@ class VllmConfig(GenerationConfig):
     stop_token_ids: List[int]
     pad_token: int
     skip_tokenizer_init: bool
+    load_format: str
 
 
 @ray.remote
@@ -177,7 +178,8 @@ class VllmGenerationWorker:
 
         self.llm = LLM(
             model=self.model_name,
-            load_format="dummy",
+            # Training pipeline will set this to "dummy" and eval will load real weights using 'auto'
+            load_format=self.cfg["load_format"],
             skip_tokenizer_init=self.cfg["skip_tokenizer_init"],
             tensor_parallel_size=self.tensor_parallel_size,
             gpu_memory_utilization=self.gpu_memory_utilization,

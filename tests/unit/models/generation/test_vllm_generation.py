@@ -43,6 +43,7 @@ basic_vllm_test_config: VllmConfig = {
 def configure_vllm_with_tokenizer(vllm_config, tokenizer):
     """Apply tokenizer-specific configurations to vLLM config."""
     vllm_config["skip_tokenizer_init"] = True
+    vllm_config["load_format"] = "auto"
     vllm_config["pad_token"] = tokenizer.pad_token_id
     vllm_config["stop_token_ids"] = [tokenizer.eos_token_id]
     return vllm_config
