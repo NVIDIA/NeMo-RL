@@ -21,3 +21,5 @@ class DataConfig(TypedDict):
     system_prompt_file: Optional[str]
     dataset_name: str
     val_dataset_name: Optional[str]
+    problem_key: str
+    solution_key: str
