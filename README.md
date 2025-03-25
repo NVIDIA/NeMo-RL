@@ -1,4 +1,4 @@
-# Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters
+# Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to >100B Parameters, scaling from 1 GPU to 100s
 
 <!-- markdown all in one -->
 - [Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to \>100B Parameters](#nemo-reinforcer-a-scalable-and-efficient-post-training-library-for-models-ranging-from-1-gpu-to-1000s-and-from-tiny-to-100b-parameters)
@@ -143,8 +143,6 @@ uv run python examples/run_grpo_math.py \
 
 #### Multi-node
 
-For the general multi-node setup, refer to the [SFT multi-node](#multi-node) documentation. The only thing that differs from SFT is the `COMMAND`:
-
 ```sh
 # Run from the root of NeMo-Reinforcer repo
 NUM_ACTOR_NODES=2
@@ -152,7 +150,7 @@ NUM_ACTOR_NODES=2
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # grpo_math_8b uses Llama-3.1-8B-Instruct model
-COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml cluster.num_nodes=2 checkpointing.checkpoint_dir='results/llama8b_2nodes' policy.train_global_batch_size=64 logger.wandb_enabled=True logger.wandb.name='grpo-llama8b_math'" \
+COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml cluster.num_nodes=2 checkpointing.checkpoint_dir='results/llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='grpo-llama8b_math'" \
 RAY_DEDUP_LOGS=0 \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \
