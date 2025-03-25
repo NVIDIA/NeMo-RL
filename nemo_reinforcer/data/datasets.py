@@ -136,14 +136,13 @@ def eval_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
     """Collate function for evaluation.
 
     Takes a list of data samples and combines them into a single batched dictionary
-    for model evaluation. Each sample's message content is concatenated into a single
-    prompt string.
+    for model evaluation.
 
     Args:
         data_batch: List of data samples with message_log, extra_env_info, and idx fields.
 
     Returns:
-        BatchedDataDict with prompts, message_log, extra_env_info, and idx fields.
+        BatchedDataDict with message_log, extra_env_info, and idx fields.
 
     Examples:
     ```{doctest}
@@ -163,8 +162,6 @@ def eval_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
     ...     ),
     ... ]
     >>> output = eval_collate_fn(data_batch)
-    >>> output['prompts']
-    ['Hello', 'Hi there']
     >>> output['message_log'][0]
     [{'role': 'user', 'content': 'Hello', 'token_ids': tensor([1, 2, 3])}]
     >>> output['message_log'][1]
@@ -174,18 +171,11 @@ def eval_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
     >>> output['idx']
     [0, 1]
     """
-    prompts = []
-    for datum_spec in data_batch:
-        content = [message["content"] for message in datum_spec["message_log"]]
-        content = "\n".join(content)
-        prompts.append(content)
-
     message_log = [datum_spec["message_log"] for datum_spec in data_batch]
     extra_env_info = [datum_spec["extra_env_info"] for datum_spec in data_batch]
     idx = [datum_spec["idx"] for datum_spec in data_batch]
 
     output = BatchedDataDict(
-        prompts=prompts,
         message_log=message_log,
         extra_env_info=extra_env_info,
         idx=idx,

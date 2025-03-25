@@ -139,7 +139,14 @@ def run_env_eval(vllm_generation, dataloader, env, master_config):
     # Run evaluation loop
     score, count = 0.0, 0
     for batch in dataloader:
-        inputs = BatchedDataDict({"prompts": batch["prompts"]})
+        # get input prompt from message_log
+        prompts = []
+        for message_log in batch["message_log"]:
+            content = [message["content"] for message in message_log]
+            content = "\n".join(content)
+            prompts.append(content)
+        # generate by vllm
+        inputs = BatchedDataDict({"prompts": prompts})
         outputs = vllm_generation.generate_text(inputs)["texts"]
 
         # append to message_log
