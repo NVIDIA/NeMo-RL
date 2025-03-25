@@ -196,3 +196,50 @@ def test_interpolation(temp_config_dir):
     config = load_config(child_path)
     assert config.base_value == 43
     assert config.derived.value == 43  # Interpolation uses child's base_value
+
+
+def test_parse_hydra_overrides():
+    """Test parsing and applying Hydra overrides."""
+    from omegaconf import OmegaConf
+
+    from nemo_reinforcer.utils.config import OverridesError, parse_hydra_overrides
+
+    # Create initial config
+    cfg = OmegaConf.create(
+        {
+            "model": {"type": "default", "hidden_size": 768},
+            "training": {"batch_size": 32, "learning_rate": 1e-4},
+        }
+    )
+
+    # Test basic override
+    overrides = ["model.type=transformer"]
+    updated_cfg = parse_hydra_overrides(cfg, overrides)
+    assert updated_cfg.model.type == "transformer"
+    assert updated_cfg.model.hidden_size == 768  # Unchanged
+
+    # Test nested override
+    overrides = ["model.hidden_size=1024"]
+    updated_cfg = parse_hydra_overrides(cfg, overrides)
+    assert updated_cfg.model.hidden_size == 1024
+
+    # Test multiple overrides
+    overrides = ["training.batch_size=64", "training.learning_rate=2e-4"]
+    updated_cfg = parse_hydra_overrides(cfg, overrides)
+    assert updated_cfg.training.batch_size == 64
+    assert updated_cfg.training.learning_rate == 2e-4
+
+    # Test invalid override
+    overrides = ["nonexistent.key=value"]
+    with pytest.raises(OverridesError):
+        parse_hydra_overrides(cfg, overrides)
+
+    # Test invalid syntax
+    overrides = ["invalid.syntax"]
+    with pytest.raises(OverridesError):
+        parse_hydra_overrides(cfg, overrides)
+
+    # Test empty overrides
+    overrides = []
+    updated_cfg = parse_hydra_overrides(cfg, overrides)
+    assert updated_cfg == cfg  # Config should be unchanged

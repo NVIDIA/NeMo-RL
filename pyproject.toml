@@ -27,6 +27,7 @@ dependencies = [
     "torchdata",
     "vllm==0.8.0",
     "nvidia-ml-py",
+    "hydra-core",
 ]
 
 [tool.setuptools]
@@ -38,8 +39,8 @@ readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.optional-dependencies]
 build = [
-    "torch==2.6.0", 
-    "setuptools", 
+    "torch==2.6.0",
+    "setuptools",
     "packaging",
     "einops"
 ]
