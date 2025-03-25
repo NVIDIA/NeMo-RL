@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional, Union
 import ray
 import torch
 from torch.distributed.device_mesh import init_device_mesh
+from torch.distributed.fsdp.api import CPUOffload
+from torch.distributed.fsdp._runtime_utils import _lazy_init
 from torch.distributed.fsdp import (
     FullyShardedDataParallel,
     FullStateDictConfig,
@@ -46,7 +48,163 @@ from nemo_reinforcer.models.policy.utils import import_class_from_path
 from nemo_reinforcer.distributed.virtual_cluster import (
     PY_EXECUTABLES,
 )
+# def move_to_cpu(model):
+#     return model.to("cpu")
 
+# def move_to_cpu(model):
+#     for param in model.parameters():
+#         param.data = param.data.to("cpu")
+#     for buffer in model.buffers():
+#         buffer.data = buffer.data.to("cpu")
+#     if hasattr(model, "_fsdp_wrapped_module"):
+#         model._fsdp_wrapped_module.to("cpu")
+
+#     return model
+
+# def move_to_gpu(model):
+#     return model.to("cuda")
+
+def move_to_cpu(model):
+    # offload2
+    # if not isinstance(model, FullyShardedDataParallel):
+    #     return model.to("cpu")
+
+    for _, param in model.named_parameters():
+        param.data = param.data.to("cpu", non_blocking=True)
+        if hasattr(param, "_local_shard"):
+            # param._local_shard = param._local_shard.to("cpu", non_blocking=True)
+            param._local_shard = param.data
+        # param.data = param.data.to("cpu", non_blocking=True)
+        if param.grad is not None:
+            param.grad = param.grad.to("cpu", non_blocking=True)
+
+    # for buffer in model.buffers():
+    #     buffer.data = buffer.data.to("cpu")
+    # if torch.distributed.get_rank() == 0:
+    #     import pdb; pdb.set_trace()
+    if hasattr(model, "_fsdp_wrapped_module"):
+        move_to_cpu(model._fsdp_wrapped_module)
+        # model._fsdp_wrapped_module.to("cpu")
+
+    return model
+
+def move_to_gpu(model):
+    # offload2
+    # if not isinstance(model, FullyShardedDataParallel):
+    #     return model.to("cuda")
+
+    for _, param in model.named_parameters():
+        param.data = param.data.to("cuda", non_blocking=True)
+        if hasattr(param, "_local_shard"):
+            # param._local_shard = param._local_shard.to("cuda", non_blocking=True)
+            param._local_shard = param.data
+        # param.data = param.data.to("cuda", non_blocking=True)
+        if param.grad is not None:
+            param.grad = param.grad.to("cuda", non_blocking=True)
+
+    # for buffer in model.buffers():
+    #     buffer.data = buffer.data.to("cuda")
+    if hasattr(model, "_fsdp_wrapped_module"):
+        move_to_gpu(model._fsdp_wrapped_module)
+
+    return model
+
+
+# def move_to_cpu(model):
+#     if not isinstance(model, FullyShardedDataParallel):
+#         model = model.to("cpu")
+#         return model
+#     # lazy init FSDP model
+#     _lazy_init(model, model)
+#     # assert model._is_root, f"Only support root model offloading to CPU"
+#     # # if torch.distributed.get_rank() == 0:
+#     #     # import ipdb; ipdb.set_trace()
+#     for handle in model._all_handles:
+#         if handle._offload_params:
+#             continue
+#         flat_param = handle.flat_param
+#         # assert flat_param.data.data_ptr() == flat_param._local_shard.data_ptr() and \
+#         #     id(flat_param.data) != id(flat_param._local_shard) and \
+#         #     flat_param.data.size() == flat_param._local_shard.size()
+#         handle.flat_param_to(torch.device("cpu"), non_blocking=True)
+#         # the following still keeps id(._local_shard) != id(.data)
+#         flat_param._local_shard = flat_param.data
+#         # assert id(flat_param._local_shard) != id(flat_param.data)
+#     return model
+
+# def move_to_gpu(model):
+#     if not isinstance(model, FullyShardedDataParallel):
+#         model = model.to("cuda")
+#         return model
+#     # lazy init FSDP model
+#     _lazy_init(model, model)
+#     # assert model._is_root, f"Only support root model loading to GPU"
+#     device_id = torch.cuda.current_device()
+#     for handle in model._all_handles:
+#         if handle._offload_params:
+#             continue
+#         flat_param = handle.flat_param
+#         handle.flat_param_to(torch.device(f"cuda:{device_id}"), non_blocking=True)
+#         # the following still keeps id(._local_shard) != id(.data)
+#         flat_param._local_shard = flat_param.data
+#     return model
+
+
+# def move_to_cpu(model):
+#     if not isinstance(model, FullyShardedDataParallel):
+#         model = model.to("cpu")
+#         return model
+#     # lazy init FSDP model
+#     _lazy_init(model, model)
+#     assert model._is_root, f"Only support root model offloading to CPU"
+#     # if torch.distributed.get_rank() == 0:
+#         # import ipdb; ipdb.set_trace()
+#     for handle in model._all_handles:
+#         if handle._offload_params:
+#             continue
+#         flat_param = handle.flat_param
+#         assert flat_param.data.data_ptr() == flat_param._local_shard.data_ptr() and \
+#             id(flat_param.data) != id(flat_param._local_shard) and \
+#             flat_param.data.size() == flat_param._local_shard.size()
+#         handle.flat_param_to(torch.device("cpu"), non_blocking=True)
+#         # the following still keeps id(._local_shard) != id(.data)
+#         flat_param._local_shard = flat_param.data
+#         assert id(flat_param._local_shard) != id(flat_param.data)
+
+#     for param in model.parameters():
+#         param.data = param.data.to("cpu")
+#     for buffer in model.buffers():
+#         buffer.data = buffer.data.to("cpu")
+#     if hasattr(model, "_fsdp_wrapped_module"):
+#         move_to_cpu(model._fsdp_wrapped_module)
+#         # model._fsdp_wrapped_module.to("cpu")
+
+#     return model
+
+# def move_to_gpu(model):
+#     if not isinstance(model, FullyShardedDataParallel):
+#         model = model.to("cuda")
+#         return model
+#     # lazy init FSDP model
+#     _lazy_init(model, model)
+#     assert model._is_root, f"Only support root model loading to GPU"
+#     device_id = torch.cuda.current_device()
+#     for handle in model._all_handles:
+#         if handle._offload_params:
+#             continue
+#         flat_param = handle.flat_param
+#         handle.flat_param_to(torch.device(f"cuda:{device_id}"), non_blocking=True)
+#         # the following still keeps id(._local_shard) != id(.data)
+#         flat_param._local_shard = flat_param.data
+
+#     for param in model.parameters():
+#         param.data = param.data.to("cuda")
+#     for buffer in model.buffers():
+#         buffer.data = buffer.data.to("cuda")
+#     if hasattr(model, "_fsdp_wrapped_module"):
+#         move_to_gpu(model._fsdp_wrapped_module)
+
+#     return model
 
 @ray.remote
 class HfPolicyWorker:
@@ -104,6 +262,15 @@ class HfPolicyWorker:
         #    (Initialize device mesh, shard submodules, then shard entire model)
         # ------------------------------------------------
 
+        @staticmethod
+        def configure_worker(
+            num_gpus: int | float, bundle_indices: Optional[list] = None
+        ) -> tuple[dict, dict, dict]:
+            env_vars = {
+                "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
+            }
+            return None, env_vars, None
+
         def do_fsdp(model):
             # Create a device mesh with 'world_size' GPUs in a 1D arrangement.
             mesh = init_device_mesh("cuda", (world_size,))
@@ -113,20 +280,31 @@ class HfPolicyWorker:
                 buffer_dtype=torch.float32,
             )
 
+            # return FullyShardedDataParallel(
+            #     model,
+            #     device_mesh=mesh,
+            #     auto_wrap_policy=size_based_auto_wrap_policy,
+            # )
             return FullyShardedDataParallel(
                 model,
                 device_mesh=mesh,
                 auto_wrap_policy=size_based_auto_wrap_policy,
                 mixed_precision=mp_policy,
+                # cpu_offload=CPUOffload(offload_params=True),
             )
 
-        self.model.to("cuda")
+        # self.model.to("cuda")
+        self.model = move_to_gpu(self.model)
         self.model = do_fsdp(self.model)
-        self.model = self.move_to_cpu(self.model)
-        self.reference_model.to("cuda")
+        self.model = move_to_cpu(self.model)
+        # self.reference_model.to("cuda")
+
+        self.reference_model = move_to_gpu(self.reference_model)
         self.reference_model = do_fsdp(self.reference_model)
-        self.reference_model = self.move_to_cpu(self.reference_model)
-        self.model.to("cuda")
+        self.reference_model = move_to_cpu(self.reference_model)
+
+        # self.model.to("cuda")
+        self.model = move_to_gpu(self.model)
         self._held_reference_model_params = None
         # register_fsdp_forward_method(self.model, "generate")
         if init_optimizer:
@@ -422,8 +600,9 @@ class HfPolicyWorker:
             original_model = self.model
             original_reference_model = self.reference_model
 
-            self.model = self.move_to_cpu(self.model)
-            self.reference_model = self.reference_model.to("cuda")
+            self.model = move_to_cpu(self.model)
+            # self.reference_model = self.reference_model.to("cuda")
+            self.reference_model = move_to_gpu(self.reference_model)
 
             # Swap the references
             self.model, self.reference_model = self.reference_model, self.model
@@ -436,8 +615,9 @@ class HfPolicyWorker:
 
         finally:
             # Restore original references and device placement
-            self.reference_model = self.move_to_cpu(original_reference_model)
-            self.model = original_model.to("cuda")
+            self.reference_model = move_to_cpu(original_reference_model)
+            # self.model = original_model.to("cuda")
+            self.model = move_to_gpu(original_model)
             gc.collect()
             torch.cuda.empty_cache()
 
@@ -704,19 +884,21 @@ class HfPolicyWorker:
             data[name] = reduce_tensor(p.detach())
 
         if offload_model:
-            self.model = self.move_to_cpu(self.model)
+            self.model = move_to_cpu(self.model)
             gc.collect()
             torch.cuda.empty_cache()
         return {self.device_uuid: data}
 
     def prepare_for_lp_inference(self):
-        self.model.to("cuda")
+        # self.model.to("cuda")
+        self.model = move_to_gpu(self.model)
         self.model.eval()
         self.offload_before_refit()
 
     def prepare_for_training(self, *args, **kwargs):
         # onload models and optimizer state to cuda
-        self.model.to("cuda")
+        # self.model.to("cuda")
+        self.model = move_to_gpu(self.model)
         self.model.train()
 
         # Move optimizer state to CUDA if it exists
@@ -754,7 +936,7 @@ class HfPolicyWorker:
     @torch.no_grad()
     def offload_after_refit(self):
         # Offload as much as possible on the CPU
-        self.model = self.move_to_cpu(self.model)
+        self.model = move_to_cpu(self.model)
         self.model.eval()
         torch.randn(1).cuda()  # wake up torch allocator
         self.offload_before_refit()  # rerun the old offload function
@@ -771,8 +953,8 @@ class HfPolicyWorker:
         print(
             f"GPU Memory after refit complete: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved"
         )
-
-    def move_to_cpu(self, model):
+    
+    def move_to_cpu_old1(self, model):
         for param in model.parameters():
             param.data = param.data.to("cpu")
 

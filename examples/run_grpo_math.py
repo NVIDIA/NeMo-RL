@@ -23,7 +23,7 @@ from datasets import load_dataset
 from transformers import AutoTokenizer
 from collections import defaultdict
 
-from nemo_reinforcer.algorithms.grpo import MasterConfig, grpo_train, setup
+from nemo_reinforcer.algorithms.grpo import MasterConfig, grpo_train, setup, refit_policy_generation
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from nemo_reinforcer.utils.config import load_config
 from nemo_reinforcer.utils.logger import get_next_experiment_dir
@@ -271,6 +271,7 @@ def main():
         grpo_state,
         master_config,
     ) = setup(config, dataset, val_dataset)
+    # refit_policy_generation(policy, policy_generation)
     grpo_train(
         policy,
         policy_generation,

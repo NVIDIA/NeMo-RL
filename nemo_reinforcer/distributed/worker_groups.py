@@ -125,6 +125,7 @@ class RayWorkerBuilder:
                 num_gpus=num_gpus,
                 bundle_indices=bundle_indices,
             )
+            print("HERE worker_class", worker_class, "env_vars", env_vars)
 
             # Apply resource configuration
             if resources and "num_gpus" in resources:
