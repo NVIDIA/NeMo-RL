@@ -44,14 +44,7 @@ class VllmSpecificArgs(TypedDict):
 # VllmSpecificArgs are arguments provided by the user in the generation config.
 class VllmConfig(GenerationConfig):
     vllm_cfg: VllmSpecificArgs
-    model_name: str
-    max_new_tokens: int
-    temperature: float
-    top_p: float
-    top_k: Optional[int]
     # Additional arguments for vLLM inserted by reinforcer based on the context of when vllm is used
-    stop_token_ids: List[int]
-    pad_token: int
     skip_tokenizer_init: bool
     load_format: str
 
@@ -418,10 +411,21 @@ class VllmGeneration(GenerationInterface):
         missing_keys = [
             key for key in VllmConfig.__annotations__ if key not in self.cfg
         ]
+        # Also check VllmSpecificArgs keys
+        if "vllm_cfg" in self.cfg:
+            missing_vllm_keys = [
+                key
+                for key in VllmSpecificArgs.__annotations__
+                if key not in self.cfg["vllm_cfg"]
+            ]
+            if missing_vllm_keys:
+                missing_keys.append(f"vllm_cfg missing: {', '.join(missing_vllm_keys)}")
+        else:
+            missing_keys.append("vllm_cfg")
+
         assert not missing_keys, (
             f"VLLM Configuration Error: Missing required keys in VllmConfig.\n"
             f"Missing keys: {', '.join(missing_keys)}\n"
-            f"Required keys: {', '.join(VllmConfig.__annotations__.keys())}\n"
             f"Provided keys: {', '.join(self.cfg.keys())}\n"
             f"Please update your configuration to include all required VLLM parameters."
         )

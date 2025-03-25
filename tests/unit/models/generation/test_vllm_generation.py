@@ -134,6 +134,30 @@ def test_input_data(tokenizer):
     )
 
 
+def test_vllm_missing_required_config_key(cluster, check_vllm_available):
+    """Test that an assertion error is raised when a required config key is missing."""
+    # Create a config missing a required key by removing 'model_name'
+    incomplete_config = basic_vllm_test_config.copy()
+    del incomplete_config["model_name"]  # Remove a required key
+
+    # Also need to ensure skip_tokenizer_init and load_format are there
+    # since these are checked in VllmConfig.__annotations__
+    incomplete_config["skip_tokenizer_init"] = True
+    incomplete_config["load_format"] = "auto"
+
+    # Attempt to initialize VllmGeneration with incomplete config - should raise AssertionError
+    with pytest.raises(AssertionError) as excinfo:
+        VllmGeneration(cluster, incomplete_config)
+
+    # Verify the error message contains information about the missing key
+    error_message = str(excinfo.value)
+    assert "Missing required keys in VllmConfig" in error_message
+    assert "model_name" in error_message, (
+        "Error should mention the missing 'model_name' key"
+    )
+    print(f"Successfully caught missing config key with error: {error_message}")
+
+
 def test_vllm_policy_generation(policy, test_input_data, tokenizer):
     """Test vLLM policy generation capabilities."""
     # Test generation
