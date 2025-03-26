@@ -68,7 +68,7 @@ uv run python examples/run_sft.py
 
 This trains `Llama3.2-1B` on one GPU.
 
-If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration. We also switch to an 8B Llama base model and increase the bacth size:
+If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration. We also switch to an 8B Llama base model and increase the batch size:
 
 ```sh
 uv run python examples/run_sft.py \
