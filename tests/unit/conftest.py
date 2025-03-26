@@ -51,7 +51,7 @@ class UnitTestData(TypedDict):
     start_time: str
     metrics: dict
     gpu_types: list[str]
-    coverage: dict
+    coverage: str
 
 
 def pytest_sessionstart(session):
@@ -83,7 +83,7 @@ def pytest_sessionstart(session):
         start_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         metrics={},
         gpu_types=[],
-        coverage={},
+        coverage="[n/a] run with --cov=nemo_reinforcer",
     )
 
 
@@ -122,10 +122,16 @@ def session_data(request, init_ray_cluster):
     ############################################################
     # We directly access the coverage controller from the plugin manager
     # so we can access the coverage total before the pytest session finishes.
+    cov_controller = None
     if request.config.pluginmanager.hasplugin("_cov"):
         plugin = request.config.pluginmanager.getplugin("_cov")
         if plugin.cov_controller:
             cov_controller = plugin.cov_controller
+
+    if not cov_controller:
+        # Means the user didn't run with --cov=...
+        return
+
     # We currently don't use the cov_report since we can always access the coverage.json later, but
     # in the future if we want to report the coverage more granularly as part of the session finish,
     # we can access it here.
