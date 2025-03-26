@@ -68,7 +68,11 @@ class LoggerInterface(ABC):
 
     @abstractmethod
     def log_metrics(
-        self, metrics: Dict[str, Any], step: int, prefix: Optional[str] = ""
+        self,
+        metrics: Dict[str, Any],
+        step: int,
+        prefix: Optional[str] = "",
+        step_metric: Optional[str] = None
     ) -> None:
         """Log a dictionary of metrics."""
         pass
@@ -87,7 +91,11 @@ class TensorboardLogger(LoggerInterface):
         print(f"Initialized TensorboardLogger at {log_dir}")
 
     def log_metrics(
-        self, metrics: Dict[str, Any], step: int, prefix: Optional[str] = ""
+        self,
+        metrics: Dict[str, Any],
+        step: int,
+        prefix: Optional[str] = "",
+        step_metric: Optional[str] = None  # ignored in TensorBoard
     ) -> None:
         """Log metrics to Tensorboard.
 
@@ -95,6 +103,7 @@ class TensorboardLogger(LoggerInterface):
             metrics: Dict of metrics to log
             step: Global step value
             prefix: Optional prefix for metric names
+            step_metric: Optional step metric name (ignored in TensorBoard)
         """
         for name, value in metrics.items():
             if prefix:
@@ -120,8 +129,25 @@ class WandbLogger(LoggerInterface):
             f"Initialized WandbLogger for project {cfg.get('project')}, run {cfg.get('name')} at {log_dir}"
         )
 
+    def define_metric(
+        self,
+        name: str,
+        step_metric: Optional[str] = None,
+    ) -> None:
+        """Define a metric with custom step metric.
+
+        Args:
+            name: Name of the metric or pattern (e.g. 'ray/*')
+            step_metric: Optional name of the step metric to use
+        """
+        self.run.define_metric(name, step_metric=step_metric)
+
     def log_metrics(
-        self, metrics: Dict[str, Any], step: int, prefix: Optional[str] = ""
+        self,
+        metrics: Dict[str, Any],
+        step: int,
+        prefix: Optional[str] = "",
+        step_metric: Optional[str] = None
     ) -> None:
         """Log metrics to wandb.
 
@@ -129,11 +155,18 @@ class WandbLogger(LoggerInterface):
             metrics: Dict of metrics to log
             step: Global step value
             prefix: Optional prefix for metric names
+            step_metric: Optional name of a field in metrics to use as step instead
+                         of the provided step value
         """
         if prefix:
-            metrics = {f"{prefix}/{k}": v for k, v in metrics.items()}
+            metrics = {f"{prefix}/{k}" if k != step_metric else k: v for k, v in metrics.items()}
 
-        self.run.log(metrics, step=step)
+        # If step_metric is provided, use the corresponding value from metrics as step
+        if step_metric and step_metric in metrics:
+            # commit=False so the step does not get incremented
+            self.run.log(metrics, commit=False)
+        else:
+            self.run.log(metrics, step=step)
 
     def log_hyperparams(self, params: Dict[str, Any]) -> None:
         """Log hyperparameters to wandb.
@@ -151,6 +184,8 @@ class RayGpuMonitorLogger:
         self,
         collection_interval: int | float,
         flush_interval: int | float,
+        metric_prefix: str,
+        step_metric: str,
         parent_logger: Optional["Logger"] = None,
     ):
         """Initialize the GPU monitor.
@@ -158,10 +193,13 @@ class RayGpuMonitorLogger:
         Args:
             collection_interval: Interval in seconds to collect GPU metrics
             flush_interval: Interval in seconds to flush metrics to parent logger
+            step_metric: Name of the field to use as the step metric
             parent_logger: Logger to receive the collected metrics
         """
         self.collection_interval = collection_interval
         self.flush_interval = flush_interval
+        self.metric_prefix = metric_prefix
+        self.step_metric = step_metric
         self.parent_logger = parent_logger
         self.metrics_buffer = []  # Store metrics with timestamps
         self.last_flush_time = time.time()
@@ -357,7 +395,17 @@ class RayGpuMonitorLogger:
             for entry in self.metrics_buffer:
                 step = entry["step"]
                 metrics = entry["metrics"]
-                self.parent_logger.log_metrics(metrics, step, prefix="ray")
+
+                # Add the step metric directly to metrics for use as step_metric
+                metrics[self.step_metric] = step
+
+                # Pass step_metric as the step_metric to use it as the step value in WandB
+                self.parent_logger.log_metrics(
+                    metrics,
+                    step=step,
+                    prefix=self.metric_prefix,
+                    step_metric=self.step_metric
+                )
 
             # Clear buffer after logging
             self.metrics_buffer = []
@@ -380,6 +428,7 @@ class Logger(LoggerInterface):
                 - gpu_flush_interval
         """
         self.loggers = []
+        self.wandb_logger = None
 
         self.base_log_dir = cfg["log_dir"]
         os.makedirs(self.base_log_dir, exist_ok=True)
@@ -387,8 +436,8 @@ class Logger(LoggerInterface):
         if cfg["wandb_enabled"]:
             wandb_log_dir = os.path.join(self.base_log_dir, "wandb")
             os.makedirs(wandb_log_dir, exist_ok=True)
-            wandb_logger = WandbLogger(cfg["wandb"], log_dir=wandb_log_dir)
-            self.loggers.append(wandb_logger)
+            self.wandb_logger = WandbLogger(cfg["wandb"], log_dir=wandb_log_dir)
+            self.loggers.append(self.wandb_logger)
 
         if cfg["tensorboard_enabled"]:
             tensorboard_log_dir = os.path.join(self.base_log_dir, "tensorboard")
@@ -401,9 +450,17 @@ class Logger(LoggerInterface):
         # Initialize GPU monitoring if requested
         self.gpu_monitor = None
         if cfg["monitor_gpus"]:
+            # Define ray metrics to use ray_step as step metric - only if monitoring is enabled
+            metric_prefix = "ray"
+            step_metric = f"{metric_prefix}/ray_step"
+            if cfg["wandb_enabled"] and self.wandb_logger:
+                self.wandb_logger.define_metric(f"{metric_prefix}/*", step_metric=step_metric)
+
             self.gpu_monitor = RayGpuMonitorLogger(
                 collection_interval=cfg["gpu_monitoring"]["collection_interval"],
                 flush_interval=cfg["gpu_monitoring"]["flush_interval"],
+                metric_prefix=metric_prefix,
+                step_metric=step_metric,
                 parent_logger=self,
             )
             self.gpu_monitor.start()
@@ -412,7 +469,11 @@ class Logger(LoggerInterface):
             print("No loggers initialized")
 
     def log_metrics(
-        self, metrics: Dict[str, Any], step: int, prefix: Optional[str] = ""
+        self,
+        metrics: Dict[str, Any],
+        step: int,
+        prefix: Optional[str] = "",
+        step_metric: Optional[str] = None
     ) -> None:
         """Log metrics to all enabled backends.
 
@@ -420,9 +481,11 @@ class Logger(LoggerInterface):
             metrics: Dict of metrics to log
             step: Global step value
             prefix: Optional prefix for metric names
+            step_metric: Optional name of a field in metrics to use as step instead
+                         of the provided step value (currently only needed for wandb)
         """
         for logger in self.loggers:
-            logger.log_metrics(metrics, step, prefix)
+            logger.log_metrics(metrics, step, prefix, step_metric)
 
     def log_hyperparams(self, params: Dict[str, Any]) -> None:
         """Log hyperparameters to all enabled backends.
