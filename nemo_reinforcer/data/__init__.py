@@ -23,13 +23,6 @@ class DataConfig(TypedDict):
     val_dataset_name: Optional[str]
 
 
-class MathDataConfig(TypedDict):
-    # all fields from DataConfig
-    max_input_seq_length: int
-    prompt_file: str
-    system_prompt_file: Optional[str]
-    dataset_name: str
-    val_dataset_name: Optional[str]
-    # additional fields specific to math data
+class MathDataConfig(DataConfig):
     problem_key: str
     solution_key: str
