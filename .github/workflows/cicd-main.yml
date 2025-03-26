@@ -28,9 +28,10 @@ on:
         default: all
         type: string
         description: Comma-separated list of tests to run. Use "all" to run the full test suite.
-  push:
-    branches:
-      - 'main'
+  # TODO: Due to limited compute, disabling pushes to main. This is okay to do since we force PRs to be up to date and the CI tests on pull/$PR_NUM/merge
+  #push:
+  #  branches:
+  #    - 'main'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.label.name || 'main' }}
