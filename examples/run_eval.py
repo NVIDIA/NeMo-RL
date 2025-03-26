@@ -24,10 +24,10 @@ from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
 from examples.run_grpo_math import math_data_processor
-from nemo_reinforcer.data import DataConfig
+from nemo_reinforcer.data import MathDataConfig
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
 from nemo_reinforcer.data.interfaces import TaskDataSpec
-from nemo_reinforcer.data.llm_message_utils import remap_problem_solution
+from nemo_reinforcer.data.llm_message_utils import remap_dataset_keys
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from nemo_reinforcer.environments.math_environment import MathEnvironment
 from nemo_reinforcer.evals.eval import MasterConfig, run_env_eval, setup
@@ -51,7 +51,7 @@ def parse_args():
 
 
 def setup_data(
-    data_config: DataConfig, generation_config: GenerationConfig, env_configs
+    data_config: MathDataConfig, generation_config: GenerationConfig, env_configs
 ):
     print("\n▶ Setting up data...")
     math_task_spec = TaskDataSpec(
@@ -65,13 +65,19 @@ def setup_data(
     if data_config["dataset_key"] is not None:
         base_dataset = base_dataset[data_config["dataset_key"]]
     # remap problem and solution keys
-    remapped_dataset = remap_problem_solution(
+    remapped_dataset = remap_dataset_keys(
         base_dataset,
-        problem_key=data_config["problem_key"],
-        solution_key=data_config["solution_key"],
+        mapping_dict={
+            data_config["problem_key"]: "problem",
+            data_config["solution_key"]: "expected_answer",
+        },
     )
 
     tokenizer = AutoTokenizer.from_pretrained(generation_config["model_name"])
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
 
     math_env = MathEnvironment.options(
         runtime_env={"py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE}
@@ -85,7 +91,7 @@ def setup_data(
         max_seq_length=data_config["max_input_seq_length"],
     )
 
-    return dataset, math_env
+    return dataset, math_env, tokenizer
 
 
 def main():
@@ -115,14 +121,18 @@ def main():
     init_ray()
 
     # Setup data
-    dataset, math_env = setup_data(config["data"], config["generation"], config["env"])
+    (
+        dataset,
+        math_env,
+        tokenizer,
+    ) = setup_data(config["data"], config["generation"], config["env"])
 
     # Setup
     (
         vllm_generation,
         dataloader,
         master_config,
-    ) = setup(config, dataset)
+    ) = setup(config, tokenizer, dataset)
 
     # Run evaluation
     run_env_eval(
