@@ -64,12 +64,13 @@ Which would produce this file in `tests/unit/unit_results.json`:
 ```json
 {
   "exit_status": 0,
+  "git_commit": "f1062bd3fd95fc64443e2d9ee4a35fc654ba897e",
+  "start_time": "2025-03-24 23:34:12",
   "metrics": {
-    "test_logger::test_exponentiate": {
-      "result": 16,
-      "memory_after_exponentiating": 551.0,
-      "change_in_mem": 0.0,
-      "_elapsed": 0.1190798282623291
+    "test_hf_ray_policy::test_hf_policy_generation": {
+      "avg_prob_mult_error": 1.0000039339065552,
+      "mean_lps": -1.5399343967437744,
+      "_elapsed": 17.323044061660767
     }
   },
   "gpu_types": [
@@ -78,6 +79,23 @@ Which would produce this file in `tests/unit/unit_results.json`:
   "coverage": 24.55897613282601
 }
 ```
+
+:::{tip}
+Past unit test results are logged in `tests/unit/unit_results/`. These are helpful to view trends over time and commits.
+
+Here's an example `jq` command to view trends:
+
+```sh
+jq -r '[.start_time, .git_commit, .metrics["test_hf_ray_policy::test_hf_policy_generation"].avg_prob_mult_error] | @tsv' tests/unit/unit_results/*
+
+# Example output:
+#2025-03-24 23:35:39     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+#2025-03-24 23:36:37     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+#2025-03-24 23:37:37     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+#2025-03-24 23:38:14     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+#2025-03-24 23:38:50     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+```
+:::
 
 ## Functional tests
 

@@ -48,6 +48,7 @@ UNIT_RESULTS_FILE_DATED = os.path.join(
 class UnitTestData(TypedDict):
     exit_status: int | str
     git_commit: str
+    start_time: str
     metrics: dict
     gpu_types: list[str]
     coverage: dict
@@ -79,6 +80,7 @@ def pytest_sessionstart(session):
     session.config._unit_test_data = UnitTestData(
         exit_status="was not set",
         git_commit=git_commit,
+        start_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         metrics={},
         gpu_types=[],
         coverage={},
