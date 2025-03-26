@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from typing import Any, TypedDict, Union, Tuple
+from typing import Any, TypedDict, Union, Tuple, List
 
 import torch
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
@@ -101,6 +101,8 @@ class GenerationConfig(TypedDict):
     top_p: float
     top_k: int
     model_name: str
+    stop_token_ids: List[int]
+    pad_token: int
 
 
 class GenerationDatumSpec(TypedDict):

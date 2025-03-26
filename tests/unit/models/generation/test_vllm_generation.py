@@ -25,6 +25,7 @@ from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
+    "backend": "vllm",
     "model_name": "meta-llama/Llama-3.2-1B",  # Small model for testing
     "dtype": "bfloat16",
     "max_new_tokens": 10,
@@ -37,6 +38,15 @@ basic_vllm_test_config: VllmConfig = {
         "max_model_len": 1024,
     },
 }
+
+
+def configure_vllm_with_tokenizer(vllm_config, tokenizer):
+    """Apply tokenizer-specific configurations to vLLM config."""
+    vllm_config["vllm_cfg"]["skip_tokenizer_init"] = True
+    vllm_config["vllm_cfg"]["load_format"] = "dummy"
+    vllm_config["pad_token"] = tokenizer.pad_token_id
+    vllm_config["stop_token_ids"] = [tokenizer.eos_token_id]
+    return vllm_config
 
 
 @pytest.fixture(scope="module")
@@ -74,9 +84,12 @@ def tokenizer():
 
 
 @pytest.fixture(scope="function")
-def policy(cluster, check_vllm_available):
+def policy(cluster, tokenizer, check_vllm_available):
     """Initialize the vLLM policy."""
-    policy = VllmGeneration(cluster, basic_vllm_test_config)
+    # Create separate configs for each policy
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
+    policy = VllmGeneration(cluster, vllm_config)
     yield policy
 
     # Ensure policy is properly shutdown
@@ -119,6 +132,30 @@ def test_input_data(tokenizer):
             "input_lengths": input_lengths,
         }
     )
+
+
+def test_vllm_missing_required_config_key(cluster, check_vllm_available):
+    """Test that an assertion error is raised when a required config key is missing."""
+    # Create a config missing a required key by removing 'model_name'
+    incomplete_config = basic_vllm_test_config.copy()
+    del incomplete_config["model_name"]  # Remove a required key
+
+    # Also need to ensure skip_tokenizer_init and load_format are there
+    # since these are checked in VllmConfig.__annotations__
+    incomplete_config["skip_tokenizer_init"] = True
+    incomplete_config["load_format"] = "auto"
+
+    # Attempt to initialize VllmGeneration with incomplete config - should raise AssertionError
+    with pytest.raises(AssertionError) as excinfo:
+        VllmGeneration(cluster, incomplete_config)
+
+    # Verify the error message contains information about the missing key
+    error_message = str(excinfo.value)
+    assert "Missing required keys in VllmConfig" in error_message
+    assert "model_name" in error_message, (
+        "Error should mention the missing 'model_name' key"
+    )
+    print(f"Successfully caught missing config key with error: {error_message}")
 
 
 def test_vllm_policy_generation(policy, test_input_data, tokenizer):
@@ -171,6 +208,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
 
     # Create HF-specific config with required parameters
     hf_config = {
@@ -359,6 +397,7 @@ def test_vllm_policy_tensor_parallel(cluster, tokenizer):
     """Test vLLM policy with tensor parallelism > 1."""
     # Configure with tensor_parallel_size=2
     tp_config = basic_vllm_test_config.copy()
+    tp_config = configure_vllm_with_tokenizer(tp_config, tokenizer)
     tp_config["tensor_parallel_size"] = 2
 
     # Ensure we specify the distributed executor backend
@@ -420,6 +459,7 @@ def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
     vllm_config["tensor_parallel_size"] = tensor_parallel_size
 
     # Add vllm_kwargs only if using tensor parallelism

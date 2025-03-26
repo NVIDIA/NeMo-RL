@@ -39,6 +39,9 @@ class VllmSpecificArgs(TypedDict):
     tensor_parallel_size: int
     gpu_memory_utilization: float
     max_model_len: int
+    # Additional arguments for vLLM inserted by reinforcer based on the context of when vllm is used
+    skip_tokenizer_init: bool
+    load_format: str
 
 
 class VllmConfig(GenerationConfig):
@@ -110,6 +113,7 @@ class VllmGenerationWorker:
                           Only needed for the first worker in each tied worker group.
         """
         self.cfg = config
+
         self.model_name = self.cfg["model_name"]
         self.tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
         self.gpu_memory_utilization = self.cfg["vllm_cfg"]["gpu_memory_utilization"]
@@ -166,9 +170,11 @@ class VllmGenerationWorker:
 
         self.llm = LLM(
             model=self.model_name,
-            load_format="dummy",
-            tensor_parallel_size=self.tensor_parallel_size,
-            gpu_memory_utilization=self.gpu_memory_utilization,
+            # Training pipeline will set this to "dummy" and eval will load real weights using 'auto'
+            load_format=self.cfg["vllm_cfg"]["load_format"],
+            skip_tokenizer_init=self.cfg["vllm_cfg"]["skip_tokenizer_init"],
+            tensor_parallel_size=self.cfg["vllm_cfg"]["tensor_parallel_size"],
+            gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
             enable_prefix_caching=True,
             dtype="auto",
             enforce_eager=True,
@@ -176,12 +182,9 @@ class VllmGenerationWorker:
             trust_remote_code=True,
             worker_cls=UpdatableVllmInternalWorker,
             enable_sleep_mode=True,
+            disable_log_stats=True,
             **vllm_kwargs,
         )
-
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
 
     def llm(self):
         return self.llm
@@ -213,7 +216,7 @@ class VllmGenerationWorker:
             f"input_ids and input_lengths must be present in the BatchedDataDict, got keys: {data.keys()}"
         )
         is_right_padded, error_msg = verify_right_padding(
-            data, pad_value=self.tokenizer.pad_token_id
+            data, pad_value=self.cfg["pad_token"]
         )
         if not is_right_padded:
             warnings.warn(
@@ -251,6 +254,7 @@ class VllmGenerationWorker:
             max_tokens=self.cfg["max_new_tokens"],
             logprobs=0,  # Return logprobs for the generated tokens
             stop=None,
+            stop_token_ids=self.cfg["stop_token_ids"],
         )
 
         # Generate outputs
@@ -276,7 +280,7 @@ class VllmGenerationWorker:
 
             # Create a new tensor with the right size and fill with padding token
             full_output = torch.full(
-                (total_length,), self.tokenizer.pad_token_id, dtype=input_ids.dtype
+                (total_length,), self.cfg["pad_token"], dtype=input_ids.dtype
             )
 
             # Copy original input (with padding) into the beginning
@@ -402,6 +406,17 @@ class VllmGeneration(GenerationInterface):
         """Initialize a vLLM policy with distributed workers."""
         # Store config
         self.cfg = config
+        # Ensure all required VllmConfig fields are present
+        missing_keys = [
+            key for key in VllmConfig.__annotations__ if key not in self.cfg
+        ]
+        assert not missing_keys, (
+            f"VLLM Configuration Error: Missing required keys in VllmConfig.\n"
+            f"Missing keys: {', '.join(missing_keys)}\n"
+            f"Provided keys: {', '.join(self.cfg.keys())}\n"
+            f"Please update your configuration to include all required VLLM parameters."
+        )
+
         self.tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
 
         # Create worker builder for VllmGenerationWorker
