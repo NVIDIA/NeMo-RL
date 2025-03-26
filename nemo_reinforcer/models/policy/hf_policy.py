@@ -844,6 +844,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         init_optimizer: bool = True,
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
+        init_reference_model: bool = True,
     ):
         if weights_path:
             weights_path = os.path.abspath(weights_path)
@@ -856,6 +857,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             init_optimizer=init_optimizer,
             weights_path=weights_path,
             optimizer_path=optimizer_path,
+            init_reference_model=init_reference_model,
         )
         self.worker_group = RayWorkerGroup(
             cluster,
