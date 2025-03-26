@@ -76,8 +76,6 @@ def setup_data(
     tokenizer = AutoTokenizer.from_pretrained(generation_config["model_name"])
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token_id = tokenizer.eos_token_id
 
     math_env = MathEnvironment.options(
         runtime_env={"py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE}
