@@ -399,7 +399,7 @@ class RayGpuMonitorLogger:
                 # Add the step metric directly to metrics for use as step_metric
                 metrics[self.step_metric] = step
 
-                # Pass step_metric as the step_metric to use it as the step value in WandB
+                # Pass step_metric as the step_metric to use it as the step value in wandb
                 self.parent_logger.log_metrics(
                     metrics,
                     step=step,
@@ -450,7 +450,6 @@ class Logger(LoggerInterface):
         # Initialize GPU monitoring if requested
         self.gpu_monitor = None
         if cfg["monitor_gpus"]:
-            # Define ray metrics to use ray_step as step metric - only if monitoring is enabled
             metric_prefix = "ray"
             step_metric = f"{metric_prefix}/ray_step"
             if cfg["wandb_enabled"] and self.wandb_logger:
