@@ -60,20 +60,22 @@ We provide a sample SFT experiment that uses the [SQuAD dataset](https://rajpurk
 
 #### Single Node
 
-The experiment is set up to run on 8 GPUs. If using a machine that has access to 8 GPUs, you can launch the experiment as follows:
+The default SFT experiment is configured to run on a single GPU. To launch the experiment,
 
 ```sh
 uv run python examples/run_sft.py
 ```
 
-This trains `Llama3.1-8B` on 8 GPUs. To run on a single GPU, we'll have to override a few of the experiment settings. We replace the 8B model with a smaller 1B model, decrease the batch size, and update the cluster configuration to use a single gpu:
+This trains `Llama3.2-1B` on one GPU.
+
+If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration. We also switch to an 8B Llama base model and increase the bacth size:
 
 ```sh
 uv run python examples/run_sft.py \
-  policy.model_name="meta-llama/Llama-3.2-1B" \
-  policy.train_global_batch_size=16 \
-  sft.val_global_batch_size=16 \
-  cluster.gpus_per_node=1
+  policy.model_name="meta-llama/Meta-Llama-3-8B" \
+  policy.train_global_batch_size=128 \
+  sft.val_global_batch_size=128 \
+  cluster.gpus_per_node=8
 ```
 
 Refer to [sft.yaml](examples/configs/sft.yaml) for a full list of parameters that can be overridden.

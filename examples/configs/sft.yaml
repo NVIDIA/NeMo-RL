@@ -3,7 +3,7 @@ sft:
   max_num_steps: 1000
   val_period: 10
   val_batches: 8
-  val_global_batch_size: 128
+  val_global_batch_size: 32
   val_micro_batch_size: 1
   val_at_start: true
   seed: 42
@@ -17,8 +17,8 @@ checkpointing:
   save_period: 10
 
 policy:
-  model_name: "meta-llama/Meta-Llama-3-8B"
-  train_global_batch_size: 128
+  model_name: "meta-llama/Llama-3.2-1B"
+  train_global_batch_size: 32
   train_micro_batch_size: 1
   max_total_sequence_length: 2048
   precision: "float32"
@@ -57,5 +57,5 @@ logger:
     flush_interval: 10  # How often to flush GPU usage metrics to the loggers (in seconds)
 
 cluster:
-  gpus_per_node: 8
+  gpus_per_node: 1
   num_nodes: 1
