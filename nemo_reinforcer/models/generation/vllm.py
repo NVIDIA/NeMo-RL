@@ -247,7 +247,7 @@ class VllmGenerationWorker:
         # Read generation parameters from config
         top_k = self.cfg["top_k"] if self.cfg["top_k"] is not None else -1
         sampling_params = self.SamplingParams(
-            temperature=self.cfg["temperature"],
+            temperature=self.cfg["temperature"] if not greedy else 0,
             top_p=self.cfg["top_p"],
             top_k=top_k
             if not greedy
@@ -347,7 +347,7 @@ class VllmGenerationWorker:
         # Read generation parameters from config
         top_k = self.cfg["top_k"] if self.cfg["top_k"] is not None else -1
         sampling_params = self.SamplingParams(
-            temperature=self.cfg["temperature"],
+            temperature=self.cfg["temperature"] if not greedy else 0,
             top_p=self.cfg["top_p"],
             top_k=top_k if not greedy else 1,
             max_tokens=self.cfg["max_new_tokens"],

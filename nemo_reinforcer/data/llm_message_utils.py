@@ -396,7 +396,7 @@ def remap_dataset_keys(
     dataset: Dataset,
     mapping_dict: Dict[str, str],
 ) -> Dataset:
-    """Remap dataset keys as per mapping
+    """Remap dataset keys as per mapping.
 
     Args:
         dataset: The input dataset to remap keys in
@@ -405,7 +405,6 @@ def remap_dataset_keys(
     Returns:
         Dataset: A new dataset with remapped keys
     """
-
     # no need to remap if the keys are already correct
     if all(k == v for k, v in mapping_dict.items()):
         return dataset
