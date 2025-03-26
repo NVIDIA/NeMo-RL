@@ -506,7 +506,9 @@ ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
 
             # Call the method
             result = monitor._fetch_and_parse_metrics(
-                node_idx=2, metric_address="test_ip:test_port"
+                node_idx=2,
+                metric_address="test_ip:test_port",
+                parser_fn=monitor._parse_gpu_metric,
             )
 
             # Verify request was made correctly
@@ -553,8 +555,8 @@ ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
 
             # Verify _fetch_and_parse_metrics was called for each node
             assert mock_fetch.call_count == 2
-            mock_fetch.assert_any_call(0, "10.0.0.1:8080")
-            mock_fetch.assert_any_call(1, "10.0.0.2:8080")
+            mock_fetch.assert_any_call(0, "10.0.0.1:8080", monitor._parse_gpu_metric)
+            mock_fetch.assert_any_call(1, "10.0.0.2:8080", monitor._parse_gpu_metric)
 
             # Verify the result combines metrics from all nodes
             assert result == {

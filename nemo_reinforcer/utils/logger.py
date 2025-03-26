@@ -177,6 +177,11 @@ class WandbLogger(LoggerInterface):
         self.run.config.update(params)
 
 
+class GpuMetricSnapshot(TypedDict):
+    step: int
+    metrics: Dict[str, Any]
+
+
 class RayGpuMonitorLogger:
     """Monitor GPU utilization across a Ray cluster and log metrics to a parent logger."""
 
@@ -201,7 +206,9 @@ class RayGpuMonitorLogger:
         self.metric_prefix = metric_prefix
         self.step_metric = step_metric
         self.parent_logger = parent_logger
-        self.metrics_buffer = []  # Store metrics with timestamps
+        self.metrics_buffer: list[
+            GpuMetricSnapshot
+        ] = []  # Store metrics with timestamps
         self.last_flush_time = time.time()
         self.is_running = False
         self.collection_thread = None
@@ -266,7 +273,9 @@ class RayGpuMonitorLogger:
 
                 time.sleep(self.collection_interval)
             except Exception as e:
-                print(f"Error in GPU monitoring collection loop: {e}")
+                print(
+                    f"Error in GPU monitoring collection loop or stopped abruptly: {e}"
+                )
                 time.sleep(self.collection_interval)  # Continue despite errors
 
     def _parse_gpu_metric(self, sample: Sample, node_idx: int) -> Dict[str, Any]:
@@ -279,7 +288,6 @@ class RayGpuMonitorLogger:
         Returns:
             Dictionary with metric name and value
         """
-        # TODO: Consider plumbing {'GpuDeviceName': 'NVIDIA H100 80GB HBM3'}
         # Expected labels for GPU metrics
         expected_labels = ["GpuIndex"]
         for label in expected_labels:
@@ -304,12 +312,72 @@ class RayGpuMonitorLogger:
         metric_name = f"node.{node_idx}.gpu.{index}.{metric_name}"
         return {metric_name: value}
 
+    def _parse_gpu_sku(self, sample: Sample, node_idx: int) -> Dict[str, str]:
+        """Parse a GPU metric sample into a standardized format.
+
+        Args:
+            sample: Prometheus metric sample
+            node_idx: Index of the node
+
+        Returns:
+            Dictionary with metric name and value
+        """
+        # TODO: Consider plumbing {'GpuDeviceName': 'NVIDIA H100 80GB HBM3'}
+        # Expected labels for GPU metrics
+        expected_labels = ["GpuIndex", "GpuDeviceName"]
+        for label in expected_labels:
+            if label not in sample.labels:
+                # This is probably a CPU node
+                return {}
+
+        metric_name = sample.name
+        # Only return SKU if the metric is one of these which publish these metrics
+        if (
+            metric_name != "ray_node_gpus_utilization"
+            and metric_name != "ray_node_gram_used"
+        ):
+            # Skip unexpected metrics
+            return {}
+
+        labels = sample.labels
+        index = labels["GpuIndex"]
+        value = labels["GpuDeviceName"]
+
+        metric_name = f"node.{node_idx}.gpu.{index}.type"
+        return {metric_name: value}
+
+    def _collect_gpu_sku(self) -> Dict[str, str]:
+        """Collect GPU SKU from all Ray nodes.
+
+        Note: This is an internal API and users are not expected to call this.
+
+        Returns:
+            Dictionary of SKU types on all Ray nodes
+        """
+        # TODO: We can re-use the same path for metrics because even though both utilization and memory metrics duplicate
+        #       the GPU metadata information; since the metadata is the same for each node, we can overwrite it and expect them to
+        #       be the same
+        return self._collect(sku=True)
+
     def _collect_metrics(self) -> Dict[str, Any]:
         """Collect GPU metrics from all Ray nodes.
 
         Returns:
             Dictionary of collected metrics
         """
+        return self._collect(metrics=True)
+
+    def _collect(self, metrics: bool = False, sku: bool = False) -> Dict[str, Any]:
+        """Collect GPU metrics from all Ray nodes.
+
+        Returns:
+            Dictionary of collected metrics
+        """
+        assert metrics ^ sku, (
+            f"Must collect either metrics or sku, not both: {metrics=}, {sku=}"
+        )
+        parser_fn = self._parse_gpu_metric if metrics else self._parse_gpu_sku
+
         if not ray.is_initialized():
             print("Ray is not initialized. Cannot collect GPU metrics.")
             return {}
@@ -333,7 +401,9 @@ class RayGpuMonitorLogger:
             # Process each node's metrics
             collected_metrics = {}
             for node_idx, metric_address in enumerate(unique_metric_addresses):
-                gpu_metrics = self._fetch_and_parse_metrics(node_idx, metric_address)
+                gpu_metrics = self._fetch_and_parse_metrics(
+                    node_idx, metric_address, parser_fn
+                )
                 collected_metrics.update(gpu_metrics)
 
             return collected_metrics
@@ -342,7 +412,7 @@ class RayGpuMonitorLogger:
             print(f"Error collecting GPU metrics: {e}")
             return {}
 
-    def _fetch_and_parse_metrics(self, node_idx, metric_address):
+    def _fetch_and_parse_metrics(self, node_idx, metric_address, parser_fn):
         """Fetch metrics from a node and parse GPU metrics.
 
         Args:
@@ -373,7 +443,7 @@ class RayGpuMonitorLogger:
                     continue
 
                 for sample in family.samples:
-                    metrics = self._parse_gpu_metric(sample, node_idx)
+                    metrics = parser_fn(sample, node_idx)
                     gpu_metrics.update(metrics)
 
             return gpu_metrics
@@ -384,28 +454,26 @@ class RayGpuMonitorLogger:
 
     def flush(self):
         """Flush collected metrics to the parent logger."""
-        if not self.parent_logger:
-            return
-
         with self.lock:
             if not self.metrics_buffer:
                 return
 
-            # Log each set of metrics with its original step
-            for entry in self.metrics_buffer:
-                step = entry["step"]
-                metrics = entry["metrics"]
+            if self.parent_logger:
+                # Log each set of metrics with its original step
+                for entry in self.metrics_buffer:
+                    step = entry["step"]
+                    metrics = entry["metrics"]
 
-                # Add the step metric directly to metrics for use as step_metric
-                metrics[self.step_metric] = step
+                    # Add the step metric directly to metrics for use as step_metric
+                    metrics[self.step_metric] = step
 
-                # Pass step_metric as the step_metric to use it as the step value in wandb
-                self.parent_logger.log_metrics(
-                    metrics,
-                    step=step,
-                    prefix=self.metric_prefix,
-                    step_metric=self.step_metric
-                )
+                    # Pass step_metric as the step_metric to use it as the step value in wandb
+                    self.parent_logger.log_metrics(
+                        metrics,
+                        step=step,
+                        prefix=self.metric_prefix,
+                        step_metric=self.step_metric
+                    )
 
             # Clear buffer after logging
             self.metrics_buffer = []

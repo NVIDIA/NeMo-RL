@@ -33,7 +33,7 @@ export RAY_DEDUP_LOGS=0
 
 # Run unit tests
 echo "Running unit tests..."
-if ! pytest unit/ -s -rA "$@"; then
+if ! pytest unit/ --cov=nemo_reinforcer --cov-report=term --cov-report=json -s -rA "$@"; then
     echo "[ERROR]: Unit tests failed."
     exit 1
 fi

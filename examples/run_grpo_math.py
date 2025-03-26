@@ -188,6 +188,8 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
         raise ValueError(f"No processor for dataset {data_config['dataset_name']}.")
 
     tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     task_data_processors = defaultdict(
         lambda: (math_task_spec, openinstructmath2_data_processor)
@@ -270,7 +272,7 @@ def main():
         checkpointer,
         grpo_state,
         master_config,
-    ) = setup(config, dataset, val_dataset)
+    ) = setup(config, tokenizer, dataset, val_dataset)
     grpo_train(
         policy,
         policy_generation,

@@ -95,20 +95,30 @@ The {py:class}`UpdatableVllmInternalWorker <nemo_reinforcer.models.generation.vl
 To use a generation backend:
 
 ```python
+from transformers import AutoTokenizer
+
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 
 # Set up the configuration
+tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+
 config = VllmConfig(
-    backend="vllm",
     model_name="Qwen/Qwen2.5-1.5B",
     max_new_tokens=100,
     temperature=0.7,
     top_p=1,
+    top_k=None,
+    stop_token_ids=[tokenizer.eos_token_id]
+    pad_token=tokenizer.pad_token_id,
+    skip_tokenizer_init=True,
     vllm_cfg={
         "tensor_parallel_size": 1,
-        "gpu_memory_utilization": 0.8
+        "gpu_memory_utilization": 0.8,
+        "max_model_len": 2048,
     }
 )
 
