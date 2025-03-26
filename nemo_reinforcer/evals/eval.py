@@ -17,8 +17,9 @@ from typing import Tuple, TypedDict
 
 import ray
 from torch.utils.data import DataLoader
+from transformers import AutoTokenizer
 
-from nemo_reinforcer.data import DataConfig
+from nemo_reinforcer.data import MathDataConfig
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, eval_collate_fn
 from nemo_reinforcer.data.llm_message_utils import get_keys_from_message_log
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
@@ -35,8 +36,8 @@ from nemo_reinforcer.models.generation.vllm import VllmGeneration
 
 class MasterConfig(TypedDict):
     generate: GenerationConfig
-    data: DataConfig
-    math_env: MathEnvConfig
+    data: MathDataConfig
+    env: MathEnvConfig
     cluster: ClusterConfig
 
 
@@ -47,6 +48,7 @@ class MasterConfig(TypedDict):
 
 def setup(
     master_config: MasterConfig,
+    tokenizer: AutoTokenizer,
     dataset: AllTaskProcessedDataset,
 ) -> Tuple[
     VllmGeneration,
@@ -102,8 +104,14 @@ def setup(
     # check backend
     backend = generation_config["backend"]
     assert backend == "vllm", "Only vLLM backend is supported for evaluation"
-    # initialize vllm generation
+
+    # set vllm config
     generation_config["vllm_cfg"]["load_format"] = "auto"
+    generation_config["vllm_cfg"]["skip_tokenizer_init"] = False
+    generation_config["stop_token_ids"] = [tokenizer.eos_token_id]
+    generation_config["pad_token"] = tokenizer.pad_token_id
+
+    # initialize vllm generation
     vllm_generation = VllmGeneration(cluster=cluster, config=generation_config)
     print(
         f"  ✓ Using vLLM backend for generation with {generation_config['model_name']}"
