@@ -125,7 +125,6 @@ class RayWorkerBuilder:
                 num_gpus=num_gpus,
                 bundle_indices=bundle_indices,
             )
-            print("HERE worker_class", worker_class, "env_vars", env_vars)
 
             # Apply resource configuration
             if resources and "num_gpus" in resources:
@@ -135,7 +134,8 @@ class RayWorkerBuilder:
             if env_vars:
                 if "runtime_env" not in options:
                     options["runtime_env"] = {}
-                options["runtime_env"]["env_vars"] = env_vars
+                for k, v in env_vars.items():
+                    options["runtime_env"]["env_vars"][k] = v
 
             # Apply initialization parameters
             if init_kwargs:
