@@ -66,7 +66,7 @@ The default SFT experiment is configured to run on a single GPU. To launch the e
 uv run python examples/run_sft.py
 ```
 
-This trains `Llama3.2-1B` on one GPU.
+This trains `Llama3.2-1B` on one GPU using SQUAD dataset.
 
 If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration. We also switch to an 8B Llama base model and increase the batch size:
 
