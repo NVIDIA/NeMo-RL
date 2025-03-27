@@ -49,7 +49,7 @@ from nemo_reinforcer.distributed.virtual_cluster import (
 
 
 def move_to_cpu(model):
-    for _, param in model.named_parameters():
+    for param in model.parameters():
         param.data = param.data.to("cpu", non_blocking=True)
         if hasattr(param, "_local_shard"):
             param._local_shard = param.data
@@ -63,7 +63,7 @@ def move_to_cpu(model):
 
 
 def move_to_gpu(model):
-    for _, param in model.named_parameters():
+    for param in model.parameters():
         param.data = param.data.to("cuda", non_blocking=True)
         if hasattr(param, "_local_shard"):
             param._local_shard = param.data

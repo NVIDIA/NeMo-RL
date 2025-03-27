@@ -5,7 +5,7 @@ grpo:
   max_num_steps: 1000000
   normalize_rewards: true
   use_leave_one_out_baseline: true
-  val_period: -1
+  val_period: 10
   val_at_start: false
   max_val_samples: 256
   val_batch_size: 256
@@ -15,7 +15,7 @@ loss_fn:
   ratio_eps: 0.2
 
 checkpointing:
-  enabled: false
+  enabled: true
   checkpoint_dir: "results/grpo"
   metric_name: "val_reward"
   higher_is_better: true
@@ -29,8 +29,7 @@ policy:
   generation_batch_size: 32
   logprob_batch_size: 4
   max_total_sequence_length: 512
-  # precision: "bfloat16"
-  precision: "float32"
+  precision: "bfloat16"
 
   optimizer:
     name: "torch.optim.AdamW"
@@ -76,17 +75,17 @@ env:
 logger:
   log_dir: "logs"  # Base directory for all logs
   num_val_samples_to_print: 0 # Number of validation samples to pretty print on terminal
-  wandb_enabled: true
+  wandb_enabled: false
   tensorboard_enabled: false
   monitor_gpus: false  # If true, will monitor GPU usage and log to wandb and/or tensorboard
   wandb:
-    project: "grpo-dev-yifu"
-    name: "grpo-dev-offload2"
+    project: "grpo-dev"
+    name: "grpo-dev-logger"
   tensorboard: {}
   gpu_monitoring:
     collection_interval: 10  # How often to collect GPU usage metrics (in seconds)
     flush_interval: 10  # How often to flush GPU usage metrics to the loggers (in seconds)
 
 cluster:
-  gpus_per_node: 2
+  gpus_per_node: 1
   num_nodes: 1
