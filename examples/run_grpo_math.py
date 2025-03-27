@@ -122,6 +122,8 @@ def math_data_processor(
 
     template = task_data_spec.custom_template
     message_log: LLMMessageLogType = []
+
+    # system prompt
     if task_data_spec.system_prompt:
         sys_message = {"role": "system", "content": task_data_spec.system_prompt}
         message = tokenizer.apply_chat_template(
@@ -135,10 +137,11 @@ def math_data_processor(
             0
         ]
         message_log.append(sys_message)
-    user_message = {
-        "role": "user",
-        "content": task_data_spec.prompt.format(problem),
-    }
+
+    # user prompt
+    if task_data_spec.prompt:
+        problem = task_data_spec.prompt.format(problem)
+    user_message = {"role": "user", "content": problem}
     message = tokenizer.apply_chat_template(
         [user_message],
         chat_template=template,
@@ -167,8 +170,9 @@ def math_data_processor(
         "extra_env_info": extra_env_info,
         "loss_multiplier": loss_multiplier,
         "idx": idx,
-        "task_name": datum_dict["task_name"],
     }
+    if "task_name" in datum_dict:
+        output["task_name"] = datum_dict["task_name"]
     return output
 
 
