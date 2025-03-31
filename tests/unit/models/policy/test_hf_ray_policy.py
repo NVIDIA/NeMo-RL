@@ -268,8 +268,7 @@ def test_hf_policy_training(training_setup):
     assert losses[0] > losses[-1], "Loss should decrease over training iterations"
 
 
-@pytest.fixture
-def generation_setup():
+def generation_setup(init_reference_model=True):
     """Setup and teardown specifically for generation tests."""
     policy = None
     cluster = None
@@ -354,9 +353,21 @@ def generation_setup():
         policy.worker_group.shutdown()
 
 
+@pytest.fixture
+def generation_setup_no_ref_model():
+    return generation_setup(init_reference_model=False)
+
+
+@pytest.fixture
+def generation_setup_with_ref_model():
+    return generation_setup(init_reference_model=True)
+
+
 @pytest.mark.timeout(180)
-def test_hf_policy_generation(generation_setup):
-    policy, cluster, data, tokenizer, prompts, expected_generations = generation_setup
+def test_hf_policy_generation(generation_setup_no_ref_model):
+    policy, cluster, data, tokenizer, prompts, expected_generations = (
+        generation_setup_no_ref_model
+    )
 
     # Verify resources were created properly
     assert policy is not None, "Generation policy was not created properly"
@@ -439,8 +450,10 @@ def test_hf_policy_generation(generation_setup):
 
 
 @pytest.mark.timeout(180)
-def test_all_hf_policy_generation_lps_ref_training(generation_setup):
-    policy, cluster, data, tokenizer, prompts, expected_generations = generation_setup
+def test_all_hf_policy_generation_lps_ref_training(generation_setup_with_ref_model):
+    policy, cluster, data, tokenizer, prompts, expected_generations = (
+        generation_setup_with_ref_model
+    )
 
     # Verify resources were created properly
     assert policy is not None, "Generation policy was not created properly"
