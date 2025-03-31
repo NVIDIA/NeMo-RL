@@ -97,6 +97,7 @@ class VllmGenerationWorker:
 
         # Force vllm to use v0 runtime (will be enabled by default in #51)
         env_vars["VLLM_USE_V1"] = "0"
+
         return resources, env_vars, init_kwargs
 
     def __init__(
@@ -379,9 +380,6 @@ class VllmGenerationWorker:
             return False
 
     def report_device_id(self) -> str:
-        # from vllm.platforms import current_platform
-        # self.device_uuid = current_platform.get_device_uuid(self.rank)
-        # return self.device_uuid
         return self.llm.collective_rpc("report_device_id", args=tuple())[0]
 
     def update_weights_from_ipc_handles(self, ipc_handles):
