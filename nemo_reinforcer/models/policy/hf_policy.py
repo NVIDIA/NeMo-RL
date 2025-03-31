@@ -22,6 +22,7 @@ import ray
 import torch
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import (
+    CPUOffload,
     FullyShardedDataParallel,
     FullStateDictConfig,
     MixedPrecision,
@@ -49,6 +50,7 @@ from nemo_reinforcer.distributed.virtual_cluster import (
 
 
 def move_to_cpu(model):
+    return model
     for param in model.parameters():
         param.data = param.data.to("cpu", non_blocking=True)
         if hasattr(param, "_local_shard"):
@@ -63,6 +65,7 @@ def move_to_cpu(model):
 
 
 def move_to_gpu(model):
+    return model
     for param in model.parameters():
         param.data = param.data.to("cuda", non_blocking=True)
         if hasattr(param, "_local_shard"):
@@ -146,6 +149,7 @@ class HfPolicyWorker:
                 device_mesh=mesh,
                 auto_wrap_policy=size_based_auto_wrap_policy,
                 mixed_precision=mp_policy,
+                cpu_offload=CPUOffload(offload_params=True),
             )
 
         self.model.to("cuda")
@@ -761,7 +765,8 @@ class HfPolicyWorker:
             for state in self.optimizer.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v) and not v.is_cuda:
-                        state[k] = v.to("cuda")
+                        ...
+                        # state[k] = v.to("cuda")
 
         torch.cuda.empty_cache()
 
@@ -773,10 +778,11 @@ class HfPolicyWorker:
             for state in self.optimizer.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v):
-                        state[k] = v.to("cpu")
+                        ...
+                        # state[k] = v.to("cpu")
 
-        for buffer in self.model.buffers():
-            buffer.data = buffer.data.to("cpu")
+        # for buffer in self.model.buffers():
+        #     buffer.data = buffer.data.to("cpu")
 
         gc.collect()
         torch.cuda.empty_cache()
