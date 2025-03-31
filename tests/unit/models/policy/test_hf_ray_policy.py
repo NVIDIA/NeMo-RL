@@ -374,7 +374,9 @@ def generation_setup_with_ref_model():
 
 @pytest.mark.timeout(180)
 def test_hf_policy_generation(generation_setup_no_ref_model, tracker):
-    policy, cluster, data, tokenizer, prompts, expected_generations = generation_setup
+    policy, cluster, data, tokenizer, prompts, expected_generations = (
+        generation_setup_no_ref_model
+    )
 
     # Verify resources were created properly
     assert policy is not None, "Generation policy was not created properly"
