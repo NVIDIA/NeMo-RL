@@ -118,8 +118,8 @@ def configure_generation_config(
     """Apply specific configurations to generation config."""
     # tokenizer setting
     config["pad_token_id"] = tokenizer.pad_token_id
-    # When https://github.com/NVIDIA/reinforcer/issues/57 is fixed, we should update stop_token_ids below.
-    config["stop_token_ids"] = [tokenizer.eos_token_id]
+    if config["stop_token_ids"] is None:
+        config["stop_token_ids"] = [tokenizer.eos_token_id]
 
     # vllm setting
     if config["backend"] == "vllm":
