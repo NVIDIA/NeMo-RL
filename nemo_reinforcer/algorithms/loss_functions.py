@@ -58,7 +58,8 @@ class ClippedPGLossFn(LossFunction):
     - r_t(θ) = π_θ(a_t|s_t) / π_θ_old(a_t|s_t) is the probability ratio
     - A_t is the advantage estimate
     - ε is the clip parameter (ratio_eps)
-        - As proposed in the DAPO paper (https://arxiv.org/pdf/2503.14476), we allow setting a minimum and maximum value for the clip parameter
+        - As proposed in the DAPO paper (https://arxiv.org/pdf/2503.14476), 
+          we allow setting a distinct minimum and maximum value for the clip parameter (set to the same value for PPO/GRPO/etc.)
             - ratio_eps_min: minimum value for the clip parameter
             - ratio_eps_max: maximum value for the clip parameter
     - β is the KL penalty coefficient (reference_policy_kl_penalty)
