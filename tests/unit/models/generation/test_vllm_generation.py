@@ -40,10 +40,14 @@ basic_vllm_test_config: VllmConfig = {
 }
 
 
-def configure_vllm_with_tokenizer(vllm_config, tokenizer):
+def configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=False):
     """Apply tokenizer-specific configurations to vLLM config."""
-    vllm_config["vllm_cfg"]["skip_tokenizer_init"] = True
-    vllm_config["vllm_cfg"]["load_format"] = "dummy"
+    if is_eval:
+        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = False
+        vllm_config["vllm_cfg"]["load_format"] = "auto"
+    else:
+        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = True
+        vllm_config["vllm_cfg"]["load_format"] = "dummy"
     vllm_config["pad_token"] = tokenizer.pad_token_id
     vllm_config["stop_token_ids"] = [tokenizer.eos_token_id]
     return vllm_config
@@ -532,3 +536,38 @@ def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
 
     # Clean up
     vllm_policy.shutdown()
+
+
+def test_vllm_generate_text(cluster, tokenizer):
+    """Test that vLLM can generate text."""
+    # Prepare test data
+    test_prompts = [
+        "Hello, my name is",
+        "The capital of France is",
+    ]
+    test_prompts = BatchedDataDict({"prompts": test_prompts})
+
+    # Create separate configs for each policy
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+
+    # Ensure we can get same output
+    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
+        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    )
+    assert vllm_config["vllm_cfg"]["tensor_parallel_size"] == 1, (
+        "Tensor parallel size should be 1 to get expected output"
+    )
+
+    # Create vLLM generation
+    vllm_generation = VllmGeneration(cluster, vllm_config)
+
+    # Generate and check result
+    output = vllm_generation.generate_text(test_prompts, greedy=True)
+    assert output["texts"] == [
+        " Kelsey and I am a 2018 graduate",
+        " Paris. The city is located in the north of",
+    ], "Output should be the same as the expected output"
+
+    # Clean up
+    vllm_generation.shutdown()
