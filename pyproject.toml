@@ -25,6 +25,10 @@ dependencies = [
     "tensorboard",
     "omegaconf",
     "torchdata",
+    # TODO: for convenience we include vllm in the base set of dependencies, but eventually
+    #  this should be exclusively present in an extra once we have more than one inference
+    #  backend. Also, this issue https://github.com/NVIDIA/reinforcer/issues/101, must be
+    #  completed before we can remove vllm here.
     "vllm==0.8.0",
     "nvidia-ml-py",
     "hydra-core",
@@ -36,6 +40,11 @@ packages = ["nemo_reinforcer"]
 [tool.setuptools.dynamic]
 version = {attr = "nemo_reinforcer.__version__"}  # any module attribute compatible with ast.literal_eval
 readme = {file = "README.md", content-type = "text/markdown"}
+
+[project.optional-dependencies]
+vllm = [
+    "vllm==0.8.0",
+]
 
 [dependency-groups]
 build = [
@@ -97,3 +106,10 @@ convention = "google"
 "tests/**" = ["D"]
 # Ignore all files that end in `_test.py`.
 "*_test.py" = ["D"]
+
+[tool.uv]
+# We set the link-mode to symlink since ray's tempdir `/tmp/ray` is on a different
+# file-system than the uv-cache and the default of hardlink always triggers a copy.
+# Since the venv is cheap and can be considered ephemeral, we can always symlink for
+# now.
+link-mode = "symlink"
