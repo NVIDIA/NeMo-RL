@@ -1,0 +1,30 @@
+# Evaluation Configuration
+generation:
+  backend: "vllm" # only vllm is supported for evaluation
+  max_new_tokens: ${generation.vllm_cfg.max_model_len}
+  temperature: 0.0
+  top_p: 1.0
+  top_k: -1 # disable
+  num_prompts_per_step: -1 # -1 means pass all prompts at once
+  model_name: "Qwen/Qwen2.5-Math-1.5B-Instruct"
+  vllm_cfg:
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.9
+    max_model_len: 2048
+
+data:
+  max_input_seq_length: ${generation.vllm_cfg.max_model_len} # useless since we directly use prompts in evaluation
+  prompt_file: null
+  system_prompt_file: null
+  dataset_name: "HuggingFaceH4/aime_2024"
+  dataset_key: "train"
+  problem_key: "problem"
+  solution_key: "answer"
+
+env:
+  math:
+    num_workers: 8
+
+cluster:
+  gpus_per_node: 1
+  num_nodes: 1

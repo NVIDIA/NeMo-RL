@@ -187,6 +187,67 @@ class TestWandbLogger:
         mock_run.log.assert_called_once_with(expected_metrics, step=step)
 
     @patch("nemo_reinforcer.utils.logger.wandb")
+    def test_log_metrics_with_step_metric(self, mock_wandb):
+        """Test logging metrics with a step metric to WandbLogger."""
+        cfg = {}
+        logger = WandbLogger(cfg)
+
+        # Define step metric
+        step_metric = "iteration"
+
+        # Include the step metric in the metrics
+        metrics = {"loss": 0.5, "accuracy": 0.8, "iteration": 15}
+        step = 10  # This should be ignored when step_metric is provided
+
+        logger.log_metrics(metrics, step, step_metric=step_metric)
+
+        # Check that log was called with metrics and commit=False
+        # When using step_metric, step should be ignored and commit=False should be used
+        mock_run = mock_wandb.init.return_value
+        mock_run.log.assert_called_once_with(metrics, commit=False)
+
+    @patch("nemo_reinforcer.utils.logger.wandb")
+    def test_log_metrics_with_prefix_and_step_metric(self, mock_wandb):
+        """Test logging metrics with both prefix and step metric."""
+        cfg = {}
+        logger = WandbLogger(cfg)
+
+        # Define prefix and step metric
+        prefix = "train"
+        step_metric = "train/iteration"
+
+        # Include the step metric in the metrics
+        metrics = {"loss": 0.5, "accuracy": 0.8, "iteration": 15}
+        step = 10  # This should be ignored when step_metric is provided
+
+        logger.log_metrics(metrics, step, prefix=prefix, step_metric=step_metric)
+
+        # Check that log was called with prefixed metrics and commit=False
+        # The step_metric key gets prefixed based on the current implementation
+        mock_run = mock_wandb.init.return_value
+        expected_metrics = {
+            "train/loss": 0.5,
+            "train/accuracy": 0.8,
+            "train/iteration": 15,
+        }
+        mock_run.log.assert_called_once_with(expected_metrics, commit=False)
+
+    @patch("nemo_reinforcer.utils.logger.wandb")
+    def test_define_metric(self, mock_wandb):
+        """Test defining a metric with a custom step metric."""
+        cfg = {}
+        logger = WandbLogger(cfg)
+
+        # Define metric pattern and step metric
+        logger.define_metric("ray/*", step_metric="ray/ray_step")
+
+        # Check that define_metric was called
+        mock_run = mock_wandb.init.return_value
+        mock_run.define_metric.assert_called_once_with(
+            "ray/*", step_metric="ray/ray_step"
+        )
+
+    @patch("nemo_reinforcer.utils.logger.wandb")
     def test_log_hyperparams(self, mock_wandb):
         """Test logging hyperparameters to WandbLogger."""
         cfg = {}
@@ -219,11 +280,13 @@ class TestRayGpuMonitorLogger:
                 self.logged_metrics = []
                 self.logged_steps = []
                 self.logged_prefixes = []
+                self.logged_step_metrics = []
 
-            def log_metrics(self, metrics, step, prefix=""):
+            def log_metrics(self, metrics, step, prefix="", step_metric=None):
                 self.logged_metrics.append(metrics)
                 self.logged_steps.append(step)
                 self.logged_prefixes.append(prefix)
+                self.logged_step_metrics.append(step_metric)
 
         return MockLogger()
 
@@ -235,12 +298,18 @@ class TestRayGpuMonitorLogger:
 
         # Initialize the monitor with standard settings
         monitor = RayGpuMonitorLogger(
-            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+            collection_interval=10.0,
+            flush_interval=60.0,
+            metric_prefix="test",
+            step_metric="test/step",
+            parent_logger=None,
         )
 
         # Verify initialization parameters
         assert monitor.collection_interval == 10.0
         assert monitor.flush_interval == 60.0
+        assert monitor.metric_prefix == "test"
+        assert monitor.step_metric == "test/step"
         assert monitor.parent_logger is None
         assert monitor.metrics_buffer == []
         assert monitor.is_running is False
@@ -255,7 +324,11 @@ class TestRayGpuMonitorLogger:
 
         # Initialize the monitor
         monitor = RayGpuMonitorLogger(
-            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+            collection_interval=10.0,
+            flush_interval=60.0,
+            metric_prefix="test",
+            step_metric="test/step",
+            parent_logger=None,
         )
 
         # Start the monitor
@@ -277,7 +350,11 @@ class TestRayGpuMonitorLogger:
 
         # Initialize the monitor
         monitor = RayGpuMonitorLogger(
-            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+            collection_interval=10.0,
+            flush_interval=60.0,
+            metric_prefix="test",
+            step_metric="test/step",
+            parent_logger=None,
         )
 
         # Starting should raise a ValueError
@@ -293,7 +370,11 @@ class TestRayGpuMonitorLogger:
 
         # Initialize the monitor
         monitor = RayGpuMonitorLogger(
-            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+            collection_interval=10.0,
+            flush_interval=60.0,
+            metric_prefix="test",
+            step_metric="test/step",
+            parent_logger=None,
         )
 
         # Start the monitor
@@ -318,7 +399,11 @@ class TestRayGpuMonitorLogger:
 
         # Initialize the monitor
         monitor = RayGpuMonitorLogger(
-            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+            collection_interval=10.0,
+            flush_interval=60.0,
+            metric_prefix="test",
+            step_metric="test/step",
+            parent_logger=None,
         )
 
         # Create a sample with GPU utilization metric
@@ -405,7 +490,11 @@ ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
 
         # Initialize the monitor
         monitor = RayGpuMonitorLogger(
-            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+            collection_interval=10.0,
+            flush_interval=60.0,
+            metric_prefix="test",
+            step_metric="test/step",
+            parent_logger=None,
         )
 
         # Mock the _parse_gpu_metric method to return expected values
@@ -447,7 +536,11 @@ ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
 
         # Initialize the monitor
         monitor = RayGpuMonitorLogger(
-            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+            collection_interval=10.0,
+            flush_interval=60.0,
+            metric_prefix="test",
+            step_metric="test/step",
+            parent_logger=None,
         )
 
         # Mock the _fetch_and_parse_metrics method
@@ -483,6 +576,8 @@ ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
         monitor = RayGpuMonitorLogger(
             collection_interval=10.0,
             flush_interval=60.0,
+            metric_prefix="ray",
+            step_metric="ray/ray_step",
             parent_logger=mock_parent_logger,
         )
 
@@ -502,6 +597,8 @@ ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
         monitor = RayGpuMonitorLogger(
             collection_interval=10.0,
             flush_interval=60.0,
+            metric_prefix="ray",
+            step_metric="ray/ray_step",
             parent_logger=mock_parent_logger,
         )
 
@@ -522,22 +619,67 @@ ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
 
         # Verify parent logger's log_metrics was called for each entry
         assert len(mock_parent_logger.logged_metrics) == 2
-        assert mock_parent_logger.logged_metrics[0] == {
+
+        # First metrics entry should include the step metric
+        expected_first_metrics = {
             "node.0.gpu.0.gpu": 75.5,
             "node.0.gpu.0.memory": 4096.0,
+            "ray/ray_step": 10,  # Step metric added
         }
+        assert mock_parent_logger.logged_metrics[0] == expected_first_metrics
         assert mock_parent_logger.logged_steps[0] == 10
         assert mock_parent_logger.logged_prefixes[0] == "ray"
+        assert mock_parent_logger.logged_step_metrics[0] == "ray/ray_step"
 
-        assert mock_parent_logger.logged_metrics[1] == {
+        # Second metrics entry should include the step metric
+        expected_second_metrics = {
             "node.0.gpu.0.gpu": 80.0,
             "node.0.gpu.0.memory": 5120.0,
+            "ray/ray_step": 20,  # Step metric added
         }
+        assert mock_parent_logger.logged_metrics[1] == expected_second_metrics
         assert mock_parent_logger.logged_steps[1] == 20
         assert mock_parent_logger.logged_prefixes[1] == "ray"
+        assert mock_parent_logger.logged_step_metrics[1] == "ray/ray_step"
 
         # Verify buffer was cleared
         assert monitor.metrics_buffer == []
+
+    @patch("nemo_reinforcer.utils.logger.ray")
+    def test_flush_with_custom_prefix(self, mock_ray, mock_parent_logger):
+        """Test flush method with custom metric prefix."""
+        # Mock ray.is_initialized to return True
+        mock_ray.is_initialized.return_value = True
+
+        # Initialize the monitor with parent logger and custom prefix
+        custom_prefix = "custom_metrics"
+        custom_step_metric = "custom_metrics/step"
+        monitor = RayGpuMonitorLogger(
+            collection_interval=10.0,
+            flush_interval=60.0,
+            metric_prefix=custom_prefix,
+            step_metric=custom_step_metric,
+            parent_logger=mock_parent_logger,
+        )
+
+        # Add test metrics to buffer
+        monitor.metrics_buffer = [
+            {
+                "step": 15,
+                "metrics": {"node.0.gpu.0.gpu": 60.0},
+            }
+        ]
+
+        # Call flush
+        monitor.flush()
+
+        # Verify parent logger's log_metrics was called with the custom prefix
+        assert len(mock_parent_logger.logged_metrics) == 1
+        expected_metrics = {"node.0.gpu.0.gpu": 60.0, "custom_metrics/step": 15}
+        assert mock_parent_logger.logged_metrics[0] == expected_metrics
+        assert mock_parent_logger.logged_steps[0] == 15
+        assert mock_parent_logger.logged_prefixes[0] == custom_prefix
+        assert mock_parent_logger.logged_step_metrics[0] == custom_step_metric
 
     @patch("nemo_reinforcer.utils.logger.ray")
     @patch("nemo_reinforcer.utils.logger.time")
@@ -556,7 +698,11 @@ ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
 
         # Initialize the monitor
         monitor = RayGpuMonitorLogger(
-            collection_interval=10.0, flush_interval=60.0, parent_logger=None
+            collection_interval=10.0,
+            flush_interval=60.0,
+            metric_prefix="test",
+            step_metric="test/step",
+            parent_logger=None,
         )
 
         # Set start time and running flag
@@ -592,6 +738,89 @@ ray_node_gram_used{GpuIndex="0",GpuDeviceName="NVIDIA Test GPU"} 4096.0
 
                 # Verify flush was called (flush_interval elapsed)
                 mock_flush.assert_called_once()
+
+    @patch("nemo_reinforcer.utils.logger.WandbLogger")
+    @patch("nemo_reinforcer.utils.logger.TensorboardLogger")
+    @patch("nemo_reinforcer.utils.logger.RayGpuMonitorLogger")
+    def test_init_with_gpu_monitoring(
+        self, mock_gpu_monitor, mock_tb_logger, mock_wandb_logger, temp_dir
+    ):
+        """Test initialization with GPU monitoring enabled."""
+        cfg = {
+            "wandb_enabled": True,
+            "tensorboard_enabled": True,
+            "monitor_gpus": True,
+            "gpu_monitoring": {
+                "collection_interval": 15.0,
+                "flush_interval": 45.0,
+            },
+            "wandb": {"project": "test-project"},
+            "tensorboard": {"log_dir": "test_logs"},
+            "log_dir": temp_dir,
+        }
+        logger = Logger(cfg)
+
+        # Check that regular loggers were initialized
+        assert len(logger.loggers) == 2
+        mock_wandb_logger.assert_called_once()
+        mock_tb_logger.assert_called_once()
+
+        # Check that GPU monitor was initialized with correct parameters
+        mock_gpu_monitor.assert_called_once_with(
+            collection_interval=15.0,
+            flush_interval=45.0,
+            metric_prefix="ray",
+            step_metric="ray/ray_step",
+            parent_logger=logger,
+        )
+
+        # Check that GPU monitor was started
+        mock_gpu_instance = mock_gpu_monitor.return_value
+        mock_gpu_instance.start.assert_called_once()
+
+        # Check that wandb metrics are defined with the step metric
+        mock_wandb_instance = mock_wandb_logger.return_value
+        mock_wandb_instance.define_metric.assert_called_once_with(
+            "ray/*", step_metric="ray/ray_step"
+        )
+
+    @patch("nemo_reinforcer.utils.logger.WandbLogger")
+    @patch("nemo_reinforcer.utils.logger.TensorboardLogger")
+    @patch("nemo_reinforcer.utils.logger.RayGpuMonitorLogger")
+    def test_gpu_monitoring_without_wandb(
+        self, mock_gpu_monitor, mock_tb_logger, mock_wandb_logger, temp_dir
+    ):
+        """Test GPU monitoring initialization when wandb is disabled."""
+        cfg = {
+            "wandb_enabled": False,
+            "tensorboard_enabled": True,
+            "monitor_gpus": True,
+            "gpu_monitoring": {
+                "collection_interval": 15.0,
+                "flush_interval": 45.0,
+            },
+            "tensorboard": {"log_dir": "test_logs"},
+            "log_dir": temp_dir,
+        }
+        logger = Logger(cfg)
+
+        # Check that only tensorboard logger was initialized
+        assert len(logger.loggers) == 1
+        mock_wandb_logger.assert_not_called()
+        mock_tb_logger.assert_called_once()
+
+        # Check that GPU monitor was initialized with correct parameters
+        mock_gpu_monitor.assert_called_once_with(
+            collection_interval=15.0,
+            flush_interval=45.0,
+            metric_prefix="ray",
+            step_metric="ray/ray_step",
+            parent_logger=logger,
+        )
+
+        # Since wandb is disabled, define_metric should not be called
+        mock_wandb_instance = mock_wandb_logger.return_value
+        assert not mock_wandb_instance.define_metric.called
 
 
 class TestLogger:
@@ -704,8 +933,8 @@ class TestLogger:
         logger.log_metrics(metrics, step)
 
         # Check that log_metrics was called on both loggers
-        mock_wandb_instance.log_metrics.assert_called_once_with(metrics, step, "")
-        mock_tb_instance.log_metrics.assert_called_once_with(metrics, step, "")
+        mock_wandb_instance.log_metrics.assert_called_once_with(metrics, step, "", None)
+        mock_tb_instance.log_metrics.assert_called_once_with(metrics, step, "", None)
 
     @patch("nemo_reinforcer.utils.logger.WandbLogger")
     @patch("nemo_reinforcer.utils.logger.TensorboardLogger")
@@ -760,9 +989,56 @@ class TestLogger:
 
         # Check that GPU monitor was initialized with correct parameters
         mock_gpu_monitor.assert_called_once_with(
-            collection_interval=15.0, flush_interval=45.0, parent_logger=logger
+            collection_interval=15.0,
+            flush_interval=45.0,
+            metric_prefix="ray",
+            step_metric="ray/ray_step",
+            parent_logger=logger,
         )
 
         # Check that GPU monitor was started
         mock_gpu_instance = mock_gpu_monitor.return_value
         mock_gpu_instance.start.assert_called_once()
+
+        # Check that wandb metrics are defined with the step metric
+        mock_wandb_instance = mock_wandb_logger.return_value
+        mock_wandb_instance.define_metric.assert_called_once_with(
+            "ray/*", step_metric="ray/ray_step"
+        )
+
+    @patch("nemo_reinforcer.utils.logger.WandbLogger")
+    @patch("nemo_reinforcer.utils.logger.TensorboardLogger")
+    def test_log_metrics_with_prefix_and_step_metric(
+        self, mock_tb_logger, mock_wandb_logger, temp_dir
+    ):
+        """Test logging metrics with prefix and step_metric."""
+        cfg = {
+            "wandb_enabled": True,
+            "tensorboard_enabled": True,
+            "monitor_gpus": False,
+            "wandb": {"project": "test-project"},
+            "tensorboard": {"log_dir": "test_logs"},
+            "log_dir": temp_dir,
+        }
+        logger = Logger(cfg)
+
+        # Create mock logger instances
+        mock_wandb_instance = mock_wandb_logger.return_value
+        mock_tb_instance = mock_tb_logger.return_value
+
+        # Create metrics with a step metric field
+        metrics = {"loss": 0.5, "accuracy": 0.8, "iteration": 15}
+        step = 10
+        prefix = "train"
+        step_metric = "iteration"
+
+        # Log metrics with prefix and step_metric
+        logger.log_metrics(metrics, step, prefix=prefix, step_metric=step_metric)
+
+        # Check that log_metrics was called on both loggers with correct parameters
+        mock_wandb_instance.log_metrics.assert_called_once_with(
+            metrics, step, prefix, step_metric
+        )
+        mock_tb_instance.log_metrics.assert_called_once_with(
+            metrics, step, prefix, step_metric
+        )

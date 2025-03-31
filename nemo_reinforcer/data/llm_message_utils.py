@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List, Union
-
+from typing import Dict, List
 
 import torch
+from datasets import Dataset
 
 from nemo_reinforcer.data.interfaces import (
     LLMMessageLogType,
@@ -390,3 +390,27 @@ def get_formatted_message_log(
         prev_formatted_message = formatted_message
 
     return message_log
+
+
+def remap_dataset_keys(
+    dataset: Dataset,
+    mapping_dict: Dict[str, str],
+) -> Dataset:
+    """Remap dataset keys as per mapping.
+
+    Args:
+        dataset: The input dataset to remap keys in
+        mapping_dict: A dictionary mapping input keys to output keys
+
+    Returns:
+        Dataset: A new dataset with remapped keys
+    """
+    # no need to remap if the keys are already correct
+    if all(k == v for k, v in mapping_dict.items()):
+        return dataset
+
+    # return the remapped dataset
+    return dataset.map(
+        lambda x: {v: x[k] for k, v in mapping_dict.items()},
+        remove_columns=list(mapping_dict.keys()),
+    )
