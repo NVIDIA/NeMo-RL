@@ -113,6 +113,8 @@ def session_data(request, init_ray_cluster):
     logger = RayGpuMonitorLogger(
         collection_interval=float("inf"),
         flush_interval=float("inf"),
+        metric_prefix="test",
+        step_metric="test/step",
         parent_logger=None,
     )
     unit_test_data["gpu_types"] = list(set(logger._collect_gpu_sku().values()))
@@ -209,6 +211,8 @@ def ray_gpu_monitor(init_ray_cluster):
     gpu_monitor = RayGpuMonitorLogger(
         collection_interval=1,
         flush_interval=float("inf"),  # Disabling flushing since we will do it manually
+        metric_prefix="test",
+        step_metric="test/step",
         parent_logger=None,
     )
     gpu_monitor.start()
