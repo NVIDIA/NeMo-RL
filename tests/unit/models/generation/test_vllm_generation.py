@@ -35,6 +35,8 @@ basic_vllm_test_config: VllmConfig = {
     "temperature": 1.0,
     "top_p": 1.0,
     "top_k": None,
+    "stop_token_ids": None,
+    "stop_strings": None,
     "vllm_cfg": {
         "tensor_parallel_size": 1,
         "gpu_memory_utilization": 0.3,
@@ -601,3 +603,49 @@ def test_vllm_weight_update_and_prefix_cache_reset(
 
         gc.collect()
         torch.cuda.empty_cache()
+
+
+def test_vllm_generation_with_stop(cluster, test_input_data, tokenizer):
+    """Test vLLM generation with stop."""
+
+    # Create separate configs for each policy
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
+    # Add stop strings for testing
+    vllm_config["stop_token_ids"] = [3363]
+    vllm_config["stop_strings"] = ["I am a"]
+
+    # Ensure we can get same output
+    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
+        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    )
+    assert vllm_config["vllm_cfg"]["tensor_parallel_size"] == 1, (
+        "Tensor parallel size should be 1 to get expected output"
+    )
+
+    # Create vLLM generation
+    vllm_generation = VllmGeneration(cluster, vllm_config)
+
+    # test generate
+    outputs = vllm_generation.generate(test_input_data, greedy=True)
+    output_ids = outputs["output_ids"]
+    generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    assert generated_texts == [
+        "Hello, my name is Kelsey and I am a",
+        "The capital of France is Paris. The city",
+    ], "Output should be the same as the expected output"
+
+    # test generate_text
+    test_prompts = [
+        "Hello, my name is",
+        "The capital of France is",
+    ]
+    test_prompts = BatchedDataDict({"prompts": test_prompts})
+    output = vllm_generation.generate_text(test_prompts, greedy=True)
+    assert output["texts"] == [
+        " Kelsey and I am a",
+        " Paris. The city",
+    ], "Output should be the same as the expected output"
+
+    # Clean up
+    vllm_generation.shutdown()
