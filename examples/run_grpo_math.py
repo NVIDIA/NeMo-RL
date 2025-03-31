@@ -122,6 +122,8 @@ def math_data_processor(
 
     template = task_data_spec.custom_template
     message_log: LLMMessageLogType = []
+
+    # system prompt
     if task_data_spec.system_prompt:
         sys_message = {"role": "system", "content": task_data_spec.system_prompt}
         message = tokenizer.apply_chat_template(
@@ -135,10 +137,11 @@ def math_data_processor(
             0
         ]
         message_log.append(sys_message)
-    user_message = {
-        "role": "user",
-        "content": task_data_spec.prompt.format(problem),
-    }
+
+    # user prompt
+    if task_data_spec.prompt:
+        problem = task_data_spec.prompt.format(problem)
+    user_message = {"role": "user", "content": problem}
     message = tokenizer.apply_chat_template(
         [user_message],
         chat_template=template,
@@ -167,8 +170,9 @@ def math_data_processor(
         "extra_env_info": extra_env_info,
         "loss_multiplier": loss_multiplier,
         "idx": idx,
-        "task_name": datum_dict["task_name"],
     }
+    if "task_name" in datum_dict:
+        output["task_name"] = datum_dict["task_name"]
     return output
 
 
@@ -188,6 +192,8 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
         raise ValueError(f"No processor for dataset {data_config['dataset_name']}.")
 
     tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     task_data_processors = defaultdict(
         lambda: (math_task_spec, openinstructmath2_data_processor)
@@ -195,7 +201,10 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
     task_data_processors["math"] = (math_task_spec, openinstructmath2_data_processor)
 
     math_env = MathEnvironment.options(
-        runtime_env={"py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE}
+        runtime_env={
+            "py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE,
+            "env_vars": dict(os.environ),  # Pass thru all user environment variables
+        }
     ).remote(env_configs["math"])
     dataset = AllTaskProcessedDataset(
         data.formatted_ds["train"],
@@ -267,7 +276,7 @@ def main():
         checkpointer,
         grpo_state,
         master_config,
-    ) = setup(config, dataset, val_dataset)
+    ) = setup(config, tokenizer, dataset, val_dataset)
     grpo_train(
         policy,
         policy_generation,

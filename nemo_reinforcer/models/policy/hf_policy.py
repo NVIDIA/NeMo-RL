@@ -57,7 +57,10 @@ class HfPolicyWorker:
 
         This makes it easier to identify which worker is producing specific log messages.
         """
-        return f"{self.__class__.__name__}[rank={torch.distributed.get_rank()}]"
+        if torch.distributed.is_initialized():
+            return f"{self.__class__.__name__}[rank={torch.distributed.get_rank()}]"
+        else:
+            return f"{self.__class__.__name__}"
 
     def __init__(
         self,
@@ -107,11 +110,17 @@ class HfPolicyWorker:
         def do_fsdp(model):
             # Create a device mesh with 'world_size' GPUs in a 1D arrangement.
             mesh = init_device_mesh("cuda", (world_size,))
+            mp_policy = MixedPrecision(
+                param_dtype=self.dtype,
+                reduce_dtype=torch.float32,
+                buffer_dtype=torch.float32,
+            )
 
             return FullyShardedDataParallel(
                 model,
                 device_mesh=mesh,
                 auto_wrap_policy=size_based_auto_wrap_policy,
+                mixed_precision=mp_policy,
             )
 
         self.model.to("cuda")
@@ -263,6 +272,12 @@ class HfPolicyWorker:
         for gb_start in range(0, dataset_size, local_gbs):
             self.optimizer.zero_grad()
             mb_losses = []
+
+            # Calculate number of microbatches to process
+            # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
+            # so its safe to not check for the case where the last data slice is smaller than mbs
+            num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
+
             for mb in data.slice(
                 gb_start, gb_start + local_gbs
             ).make_microbatch_iterator(mbs):
@@ -293,6 +308,9 @@ class HfPolicyWorker:
                 loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
 
                 # Backward pass
+
+                # Loss is accumulated across microbatches, so we need to scale by the number of microbatches
+                loss = loss / num_microbatches
                 if not eval_mode:
                     loss.backward()
                 mb_losses.append(loss.item())
@@ -305,7 +323,7 @@ class HfPolicyWorker:
                 # Update parameters
                 self.optimizer.step()
                 self.scheduler.step()
-            losses.append(torch.tensor(mb_losses).mean().item())
+            losses.append(torch.tensor(mb_losses).sum().item())
 
         # Compute global loss across all ranks
         with torch.no_grad():
@@ -677,16 +695,31 @@ class HfPolicyWorker:
         self.device_uuid = current_platform.get_device_uuid(torch.cuda.current_device())
         return self.device_uuid
 
-    def get_weight_ipc_handles(self):
+    @torch.no_grad()
+    def get_weight_ipc_handles(self, offload_model=True):
         from torch.multiprocessing.reductions import reduce_tensor
 
         # TODO @sahilj: do this without an allgather (maybe FSDP2)
         params = self.model.state_dict()
+
+        # Create a copy of parameters in the desired dtype (bfloat16 or float32)
+        dtype_params = {}
+        for name, param in params.items():
+            # Convert parameters to the configured dtype
+            dtype_params[name] = param.to(self.dtype, non_blocking=True)
+
+        # Replace the original params with the converted ones
+        params = dtype_params
         self._held_reference_model_params = params
         data = {}
         self.device_uuid = self.report_device_id()
         for name, p in params.items():
             data[name] = reduce_tensor(p.detach())
+
+        if offload_model:
+            self.model = self.move_to_cpu(self.model)
+            gc.collect()
+            torch.cuda.empty_cache()
         return {self.device_uuid: data}
 
     def prepare_for_lp_inference(self):
@@ -708,13 +741,19 @@ class HfPolicyWorker:
 
         torch.cuda.empty_cache()
 
+    @torch.no_grad()
     def offload_before_refit(self):
         """Offload the optimizer and buffers to the CPU."""
+        torch.randn(1).cuda()  # wake up torch allocator
         if hasattr(self, "optimizer") and self.optimizer is not None:
             for state in self.optimizer.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v):
                         state[k] = v.to("cpu")
+
+        for buffer in self.model.buffers():
+            buffer.data = buffer.data.to("cpu")
+
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -725,10 +764,12 @@ class HfPolicyWorker:
             f"GPU Memory after optimizer offload: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved"
         )
 
+    @torch.no_grad()
     def offload_after_refit(self):
         # Offload as much as possible on the CPU
         self.model = self.move_to_cpu(self.model)
         self.model.eval()
+        torch.randn(1).cuda()  # wake up torch allocator
         self.offload_before_refit()  # rerun the old offload function
 
         if self._held_reference_model_params is not None:
@@ -832,6 +873,11 @@ class HfPolicyWorker:
                 self.scheduler.load_state_dict(scheduler_state_dict)
             else:
                 print("WARNING: No scheduler checkpoint provided")
+
+    def shutdown(self):
+        """Shutdown the policy."""
+        #
+        pass
 
 
 class HfPolicy(PolicyInterface, GenerationInterface):

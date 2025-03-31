@@ -25,7 +25,8 @@ from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 
 class ClippedPGLossConfig(TypedDict):
     reference_policy_kl_penalty: float
-    ratio_eps: float
+    ratio_eps_min: float
+    ratio_eps_max: float
 
 
 class ClippedPGLossDataDict(TypedDict):
@@ -57,6 +58,10 @@ class ClippedPGLossFn(LossFunction):
     - r_t(θ) = π_θ(a_t|s_t) / π_θ_old(a_t|s_t) is the probability ratio
     - A_t is the advantage estimate
     - ε is the clip parameter (ratio_eps)
+        - As proposed in the DAPO paper (https://arxiv.org/pdf/2503.14476),
+          we allow setting a distinct minimum and maximum value for the clip parameter (set to the same value for PPO/GRPO/etc.)
+            - ratio_eps_min: minimum value for the clip parameter
+            - ratio_eps_max: maximum value for the clip parameter
     - β is the KL penalty coefficient (reference_policy_kl_penalty)
     - KL(π_θ || π_ref) is the KL divergence between the current policy and reference policy (Schulman Approx.)
 
@@ -65,7 +70,8 @@ class ClippedPGLossFn(LossFunction):
     """
 
     def __init__(self, cfg: ClippedPGLossConfig):
-        self.ratio_eps = cfg["ratio_eps"]
+        self.ratio_eps_min = cfg["ratio_eps_min"]
+        self.ratio_eps_max = cfg["ratio_eps_max"]
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.disable_ppo_ratio = cfg.get("disable_ppo_ratio", False)
 
@@ -108,7 +114,9 @@ class ClippedPGLossFn(LossFunction):
         # Calculate clipped loss function if ppo ratio is enabled.
         if not self.disable_ppo_ratio:
             ratios = (curr_logprobs - prev_logprobs).exp()
-            ratios_clamped = ratios.clamp(1.0 - self.ratio_eps, 1.0 + self.ratio_eps)
+            ratios_clamped = ratios.clamp(
+                1.0 - self.ratio_eps_min, 1.0 + self.ratio_eps_max
+            )
         else:
             ratios = curr_logprobs
             ratios_clamped = curr_logprobs
@@ -166,4 +174,8 @@ class NLLLoss(LossFunction):
             num_unmasked_tokens = torch.tensor(1)
         loss = -torch.sum(token_logprobs * mask) / num_unmasked_tokens
 
-        return loss, {"loss": loss.item(), "num_unmasked_tokens": num_unmasked_tokens.item(), "total_tokens": mask.numel()}
+        return loss, {
+            "loss": loss.item(),
+            "num_unmasked_tokens": num_unmasked_tokens.item(),
+            "total_tokens": mask.numel(),
+        }

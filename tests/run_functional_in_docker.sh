@@ -27,7 +27,11 @@ TEST_SCRIPT=$(realpath $1)
 CONTAINER=${CONTAINER}
 
 export HF_HOME=${HF_HOME:-$(realpath $SCRIPT_DIR/../hf_home)}
+export HF_DATASETS_CACHE=${HF_DATASETS_CACHE:-$(realpath $SCRIPT_DIR/../hf_datasets_cache)}
+export UV_CACHE_DIR=${UV_CACHE_DIR:-$(realpath $SCRIPT_DIR/../uv_cache)}
 mkdir -p $HF_HOME
+mkdir -p $HF_DATASETS_CACHE
+mkdir -p $UV_CACHE_DIR
 
 # Check if running in GitLab CI
 INTERACTIVE_FLAG=""
@@ -44,4 +48,17 @@ fi
 # We have found that 111 does not always work and can leave the filesystem permissions in a bad state.
 
 # Run the script inside the Docker container with GPU support
-docker run -u root $INTERACTIVE_FLAG --ulimit memlock=-1 --ulimit stack=67108864 --rm --gpus '"device=0,1"' -v "$PROJECT_ROOT:$PROJECT_ROOT" -v $HF_HOME:/hf_home -e WANDB_API_KEY -e HF_TOKEN -e HF_HOME=/hf_home -e HOME=/tmp/ -w $SCRIPT_DIR "$CONTAINER" -- bash -x -c "umask 000 && uv run bash -x $TEST_SCRIPT"
+docker run -u root $INTERACTIVE_FLAG --ulimit memlock=-1 --ulimit stack=67108864 --rm --gpus '"device=0,1"' \
+  -v "$PROJECT_ROOT:$PROJECT_ROOT" \
+  -v $HF_HOME:/hf_home \
+  -v $HF_DATASETS_CACHE:/hf_datasets_cache \
+  -v $UV_CACHE_DIR:/uv_cache \
+  -e WANDB_API_KEY \
+  -e HF_TOKEN \
+  -e HF_HOME=/hf_home \
+  -e HF_DATASETS_CACHE=/hf_datasets_cache \
+  -e UV_CACHE_DIR=/uv_cache \
+  -e HOME=/tmp/ \
+  -w $SCRIPT_DIR \
+  "$CONTAINER" -- \
+  bash -x -c "umask 000 && uv run bash -x $TEST_SCRIPT"

@@ -32,6 +32,71 @@ CONTAINER=... bash tests/run_unit_in_docker.sh
 
 The required `CONTAINER` can be built by following the instructions in the [docker documentation](docker.md).
 
+### Tracking metrics in unit tests
+
+Unit tests may also log metrics to a fixture. The fixture is called `tracker` and has the following API:
+```python
+# Track an arbitrary metric (must be json serializable)
+tracker.track(metric_name, metric_value)
+# Log the maximum memory across the entire cluster. Okay for tests since they are run serially.
+tracker.log_max_mem(metric_name)
+# Returns the maximum memory. Useful if you are measuring changes in memory.
+tracker.get_max_mem()
+```
+
+Including the `tracker` fixture also tracks the elapsed time for the test implicitly.
+
+Here is an example test:
+```python
+def test_exponentiate(tracker):
+    starting_mem = tracker.get_max_mem()
+    base = 2
+    exponent = 4
+    result = base ** exponent
+    tracker.track("result", result)
+    tracker.log_max_mem("memory_after_exponentiating")
+    change_in_mem = tracker.get_max_mem() - starting_mem
+    tracker.track("change_in_mem", change_in_mem)
+    assert result == 16
+```
+
+Which would produce this file in `tests/unit/unit_results.json`:
+```json
+{
+  "exit_status": 0,
+  "git_commit": "f1062bd3fd95fc64443e2d9ee4a35fc654ba897e",
+  "start_time": "2025-03-24 23:34:12",
+  "metrics": {
+    "test_hf_ray_policy::test_hf_policy_generation": {
+      "avg_prob_mult_error": 1.0000039339065552,
+      "mean_lps": -1.5399343967437744,
+      "_elapsed": 17.323044061660767
+    }
+  },
+  "gpu_types": [
+    "NVIDIA H100 80GB HBM3"
+  ],
+  "coverage": 24.55897613282601
+}
+```
+
+:::{tip}
+Past unit test results are logged in `tests/unit/unit_results/`. These are helpful to view trends over time and commits.
+
+Here's an example `jq` command to view trends:
+
+```sh
+jq -r '[.start_time, .git_commit, .metrics["test_hf_ray_policy::test_hf_policy_generation"].avg_prob_mult_error] | @tsv' tests/unit/unit_results/*
+
+# Example output:
+#2025-03-24 23:35:39     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+#2025-03-24 23:36:37     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+#2025-03-24 23:37:37     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+#2025-03-24 23:38:14     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+#2025-03-24 23:38:50     778d288bb5d2edfd3eec4d07bb7dffffad5ef21b        1.0000039339065552
+```
+:::
+
 ## Functional tests
 
 :::{important}

@@ -28,9 +28,10 @@ on:
         default: all
         type: string
         description: Comma-separated list of tests to run. Use "all" to run the full test suite.
-  push:
-    branches:
-      - 'main'
+  # TODO: Due to limited compute, disabling pushes to main. This is okay to do since we force PRs to be up to date and the CI tests on pull/$PR_NUM/merge
+  #push:
+  #  branches:
+  #    - 'main'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.label.name || 'main' }}
@@ -150,30 +151,39 @@ jobs:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 10
+      TIMEOUT: 15
       SCRIPT: |
         cd ${REINFORCER_REPO_DIR}
         uv run --extra test bash -x ./tests/run_unit.sh
+      FINAL_SCRIPT_EXTERNAL: |
+        cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
+        # Unit test results
+        \`\`\`json
+        $(cat tests/unit/unit_results.json || echo "n/a")
+        \`\`\`
+        EOF
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
-  functional-tests:
-    name: ${{ matrix.test_case }}
-    needs: [build-container, pre-flight]
-    uses: ./.github/workflows/_run_test.yml
-    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
-    strategy:
-      matrix:
-        test_case:
-          - sft.sh
-          - grpo.sh
-    with:
-      # TODO: For now, allow these to fail since the checks are not robust.
-      IS_OPTIONAL: true
-      RUNNER: self-hosted-azure
-      TIMEOUT: 8
-      SCRIPT: |
-        cd ${REINFORCER_REPO_DIR}
-        uv run bash ./tests/functional/${{ matrix.test_case }}
-    secrets:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  # TODO: Temporarily disable functional tests until we have more capacity and tests run quicker
+  #       Related: https://github.com/NVIDIA/reinforcer/pull/27
+  #functional-tests:
+  #  name: ${{ matrix.test_case }}
+  #  needs: [build-container, pre-flight]
+  #  uses: ./.github/workflows/_run_test.yml
+  #  if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+  #  strategy:
+  #    matrix:
+  #      test_case:
+  #        - sft.sh
+  #        - grpo.sh
+  #  with:
+  #    # TODO: For now, allow these to fail since the checks are not robust.
+  #    IS_OPTIONAL: true
+  #    RUNNER: self-hosted-azure
+  #    TIMEOUT: 15
+  #    SCRIPT: |
+  #      cd ${REINFORCER_REPO_DIR}
+  #      uv run bash ./tests/functional/${{ matrix.test_case }}
+  #  secrets:
+  #    HF_TOKEN: ${{ secrets.HF_TOKEN }}

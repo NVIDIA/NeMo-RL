@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List, Union
-
+from typing import Dict, List
 
 import torch
+from datasets import Dataset
 
 from nemo_reinforcer.data.interfaces import (
     LLMMessageLogType,
@@ -353,14 +353,13 @@ def get_formatted_message_log(
     Returns:
         The message log with updated 'token_ids' and 'content' fields.
     """
-    cu_message = []
+    new_message_log = []
     prev_formatted_message = ""
     template = task_data_spec.custom_template
 
     for i, message in enumerate(message_log):
-        cu_message.append(message.copy())
         formatted_message = tokenizer.apply_chat_template(
-            cu_message,
+            message_log[: i + 1],
             chat_template=template,
             add_generation_prompt=False,
             tokenize=False,
@@ -383,10 +382,38 @@ def get_formatted_message_log(
             message_chunk = message_chunk.rstrip("\n")
             if not message_chunk.endswith(tokenizer.eos_token):
                 message_chunk += tokenizer.eos_token
-        message["token_ids"] = tokenizer(
+
+        new_message = message.copy()
+        new_message["token_ids"] = tokenizer(
             message_chunk, return_tensors="pt", add_special_tokens=False
         )["input_ids"][0]
-        message["content"] = message_chunk
+        new_message["content"] = message_chunk
+        new_message_log.append(new_message)
+
         prev_formatted_message = formatted_message
 
-    return message_log
+    return new_message_log
+
+
+def remap_dataset_keys(
+    dataset: Dataset,
+    mapping_dict: Dict[str, str],
+) -> Dataset:
+    """Remap dataset keys as per mapping.
+
+    Args:
+        dataset: The input dataset to remap keys in
+        mapping_dict: A dictionary mapping input keys to output keys
+
+    Returns:
+        Dataset: A new dataset with remapped keys
+    """
+    # no need to remap if the keys are already correct
+    if all(k == v for k, v in mapping_dict.items()):
+        return dataset
+
+    # return the remapped dataset
+    return dataset.map(
+        lambda x: {v: x[k] for k, v in mapping_dict.items()},
+        remove_columns=list(mapping_dict.keys()),
+    )
