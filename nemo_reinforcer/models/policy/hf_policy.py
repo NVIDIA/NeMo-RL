@@ -519,7 +519,7 @@ class HfPolicyWorker:
                 batch_size, seq_len = input_ids.shape
 
                 # Convert right padding to left padding
-                left_padded_input_ids = torch.zeros_like(input_ids)
+                left_padded_input_ids = torch.full_like(input_ids, gen_cfg["pad_token"])
                 left_padded_attention_mask = torch.zeros(
                     (batch_size, seq_len), dtype=torch.long, device=input_ids.device
                 )
@@ -569,7 +569,12 @@ class HfPolicyWorker:
                 micro_batches.append(mb)
 
             # Get lengths, pad, and concatenate all batches
-            return_data = BatchedDataDict.from_batches(micro_batches)
+            return_data = BatchedDataDict.from_batches(
+                micro_batches,
+                pad_value_dict={
+                    "left_padded_output_ids": self.cfg["generation"]["pad_token"]
+                },
+            )
 
             # Calculate the lengths of generations for each sequence by finding stop tokens
             generation_lengths = []
@@ -581,8 +586,9 @@ class HfPolicyWorker:
             max_seq_len = max(
                 [seq.size(0) for seq in return_data["left_padded_output_ids"]]
             )
-            right_padded_output_ids = torch.zeros(
+            right_padded_output_ids = torch.full(
                 (batch_size, max_seq_len),
+                self.cfg["generation"]["pad_token"],
                 dtype=return_data["left_padded_output_ids"][0].dtype,
                 device=return_data["left_padded_output_ids"][0].device,
             )
@@ -1017,7 +1023,8 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             "generate", sharded_data, common_kwargs={"greedy": greedy}
         )
         result = BatchedDataDict.from_batches(
-            self.worker_group.get_all_worker_results(futures)
+            self.worker_group.get_all_worker_results(futures),
+            pad_value_dict={"output_ids": self.cfg["generation"]["pad_token"]},
         )
 
         # Verify the output has all required fields

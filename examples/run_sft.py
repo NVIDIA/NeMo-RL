@@ -20,6 +20,7 @@ from typing import Dict, Any
 from omegaconf import OmegaConf
 
 from nemo_reinforcer.algorithms.sft import MasterConfig, sft_train, setup
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from nemo_reinforcer.utils.config import load_config
 from nemo_reinforcer.utils.logger import get_next_experiment_dir
@@ -27,7 +28,6 @@ from nemo_reinforcer.data import DataConfig, hf_datasets
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
 from nemo_reinforcer.data.interfaces import TaskDataSpec, DatumSpec
 from nemo_reinforcer.data.llm_message_utils import get_formatted_message_log
-from transformers import AutoTokenizer
 from nemo_reinforcer.models.policy import PolicyConfig
 
 
@@ -100,7 +100,7 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig):
     val_dataset = data.formatted_ds["validation"]
     sft_task_spec = data.task_spec
 
-    tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
+    tokenizer = get_tokenizer(policy_config["model_name"])
 
     train_dataset = AllTaskProcessedDataset(
         train_dataset,

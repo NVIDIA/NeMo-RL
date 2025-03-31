@@ -17,8 +17,7 @@ import torch
 import ray
 import numpy as np
 
-from transformers import AutoTokenizer
-
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
@@ -82,9 +81,7 @@ def cluster():
 def tokenizer():
     """Initialize tokenizer for the test model."""
     model_name = basic_vllm_test_config["model_name"]
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = get_tokenizer(model_name)
     return tokenizer
 
 

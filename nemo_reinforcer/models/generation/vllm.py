@@ -516,7 +516,9 @@ class VllmGeneration(GenerationInterface):
         results = self.worker_group.get_all_worker_results(future_bundle)
 
         # Combine results from all tied worker groups
-        combined = BatchedDataDict.from_batches(results)
+        combined = BatchedDataDict.from_batches(
+            results, pad_value_dict={"output_ids": self.cfg["pad_token"]}
+        )
 
         # Verify the output has all required fields
         required_keys = [
@@ -557,7 +559,9 @@ class VllmGeneration(GenerationInterface):
         results = self.worker_group.get_all_worker_results(future_bundle)
 
         # Combine results from all tied worker groups
-        combined = BatchedDataDict.from_batches(results)
+        combined = BatchedDataDict.from_batches(
+            results, pad_value_dict={"output_ids": self.cfg["pad_token"]}
+        )
 
         # Verify the output has all required fields
         required_keys = ["texts"]

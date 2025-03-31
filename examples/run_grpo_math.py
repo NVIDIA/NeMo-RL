@@ -23,6 +23,7 @@ from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
 from nemo_reinforcer.algorithms.grpo import MasterConfig, grpo_train, setup
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.data import DataConfig
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, rl_collate_fn
 from nemo_reinforcer.data.hf_datasets.openmathinstruct2 import OpenMathInstruct2Dataset
@@ -187,9 +188,7 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
     else:
         raise ValueError(f"No processor for dataset {data_config['dataset_name']}.")
 
-    tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = get_tokenizer(policy_config["model_name"])
 
     task_data_processors = defaultdict(
         lambda: (math_task_spec, openinstructmath2_data_processor)
