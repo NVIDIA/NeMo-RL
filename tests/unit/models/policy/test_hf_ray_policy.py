@@ -192,7 +192,7 @@ def training_setup():
         config = basic_llama_test_config
 
         print("Creating training HfPolicy...")
-        policy = HfPolicy(cluster=cluster, config=config)
+        policy = HfPolicy(cluster=cluster, config=config, init_reference_model=False)
 
         # Create a test batch
         print("Creating test batch...")
