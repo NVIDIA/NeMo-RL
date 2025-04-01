@@ -27,6 +27,7 @@ dependencies = [
     "torchdata",
     "vllm==0.8.0",
     "nvidia-ml-py",
+    "hydra-core",
 ]
 
 [tool.setuptools]

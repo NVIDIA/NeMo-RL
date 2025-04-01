@@ -15,6 +15,8 @@
 from pathlib import Path
 from typing import Optional, Union
 
+from hydra._internal.config_loader_impl import ConfigLoaderImpl
+from hydra.core.override_parser.overrides_parser import OverridesParser
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 
@@ -130,3 +132,32 @@ def load_config(config_path: Union[str, Path]) -> DictConfig:
         Merged config dictionary
     """
     return load_config_with_inheritance(config_path)
+
+
+class OverridesError(Exception):
+    """Custom exception for Hydra override parsing errors."""
+
+    pass
+
+
+def parse_hydra_overrides(cfg: DictConfig, overrides: list[str]) -> DictConfig:
+    """Parse and apply Hydra overrides to an OmegaConf config.
+
+    Args:
+        cfg: OmegaConf config to apply overrides to
+        overrides: List of Hydra override strings
+
+    Returns:
+        Updated config with overrides applied
+
+    Raises:
+        OverridesError: If there's an error parsing or applying overrides
+    """
+    try:
+        OmegaConf.set_struct(cfg, True)
+        parser = OverridesParser.create()
+        parsed = parser.parse_overrides(overrides=overrides)
+        ConfigLoaderImpl._apply_overrides_to_config(overrides=parsed, cfg=cfg)
+        return cfg
+    except Exception as e:
+        raise OverridesError(f"Failed to parse Hydra overrides: {str(e)}") from e
