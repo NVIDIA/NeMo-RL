@@ -4,9 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-reinforcer"
-version = "0.0.1"
+dynamic = [
+    "version",
+    "readme",
+]
 description = "Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
-readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache 2.0"}
 dependencies = [
@@ -24,10 +26,15 @@ dependencies = [
     "omegaconf",
     "torchdata",
     "vllm==0.8.0",
+    "nvidia-ml-py",
 ]
 
 [tool.setuptools]
 packages = ["nemo_reinforcer"]
+
+[tool.setuptools.dynamic]
+version = {attr = "nemo_reinforcer.__version__"}  # any module attribute compatible with ast.literal_eval
+readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.optional-dependencies]
 build = [

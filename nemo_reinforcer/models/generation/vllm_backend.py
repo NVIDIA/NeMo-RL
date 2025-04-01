@@ -25,10 +25,9 @@ except ImportError:
 
 class UpdatableVllmInternalWorker(Worker):
     def report_device_id(self) -> str:
-        from vllm.platforms import current_platform
+        from nemo_reinforcer.utils.nvml import get_device_uuid
 
-        self.device_uuid = current_platform.get_device_uuid(self.device.index)
-        return self.device_uuid
+        return get_device_uuid(self.device.index)
 
     def update_weights_from_ipc_handles(self, ipc_handles):
         """Update weights from IPC handles.
