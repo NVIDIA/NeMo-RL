@@ -277,7 +277,8 @@ def test_hf_policy_training(training_setup):
     assert losses[0] > losses[-1], "Loss should decrease over training iterations"
 
 
-def generation_setup(init_reference_model=True):
+@pytest.fixture
+def generation_setup(request):
     """Setup and teardown specifically for generation tests."""
     policy = None
     cluster = None
@@ -299,7 +300,9 @@ def generation_setup(init_reference_model=True):
         config = basic_llama_test_config
 
         print("Creating generation HfPolicy...")
-        policy = HfPolicy(cluster=cluster, config=config)
+        policy = HfPolicy(
+            cluster=cluster, config=config, init_reference_model=request.param
+        )
 
         # Create a test batch
         print("Creating test batch...")
@@ -362,23 +365,10 @@ def generation_setup(init_reference_model=True):
         policy.worker_group.shutdown()
 
 
-@pytest.fixture
-def generation_setup_no_ref_model():
-    for item in generation_setup(init_reference_model=False):
-        yield item
-
-
-@pytest.fixture
-def generation_setup_with_ref_model():
-    for item in generation_setup(init_reference_model=False):
-        yield item
-
-
 @pytest.mark.timeout(180)
-def test_hf_policy_generation(generation_setup_no_ref_model, tracker):
-    policy, cluster, data, tokenizer, prompts, expected_generations = (
-        generation_setup_no_ref_model
-    )
+@pytest.mark.parametrize("generation_setup", [False], indirect=True)
+def test_hf_policy_generation(generation_setup, tracker):
+    policy, cluster, data, tokenizer, prompts, expected_generations = generation_setup
 
     # Verify resources were created properly
     assert policy is not None, "Generation policy was not created properly"
@@ -463,10 +453,9 @@ def test_hf_policy_generation(generation_setup_no_ref_model, tracker):
 
 
 @pytest.mark.timeout(180)
-def test_all_hf_policy_generation_lps_ref_training(generation_setup_with_ref_model):
-    policy, cluster, data, tokenizer, prompts, expected_generations = (
-        generation_setup_with_ref_model
-    )
+@pytest.mark.parametrize("generation_setup", [True], indirect=True)
+def test_all_hf_policy_generation_lps_ref_training(generation_setup):
+    policy, cluster, data, tokenizer, prompts, expected_generations = generation_setup
 
     # Verify resources were created properly
     assert policy is not None, "Generation policy was not created properly"
