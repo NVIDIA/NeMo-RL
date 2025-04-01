@@ -27,6 +27,7 @@ dependencies = [
     "torchdata",
     "vllm==0.8.0",
     "nvidia-ml-py",
+    "hydra-core",
 ]
 
 [tool.setuptools]
@@ -36,10 +37,10 @@ packages = ["nemo_reinforcer"]
 version = {attr = "nemo_reinforcer.__version__"}  # any module attribute compatible with ast.literal_eval
 readme = {file = "README.md", content-type = "text/markdown"}
 
-[project.optional-dependencies]
+[dependency-groups]
 build = [
-    "torch==2.6.0", 
-    "setuptools", 
+    "torch==2.6.0",
+    "setuptools",
     "packaging",
     "einops"
 ]
