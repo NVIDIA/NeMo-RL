@@ -37,7 +37,7 @@ packages = ["nemo_reinforcer"]
 version = {attr = "nemo_reinforcer.__version__"}  # any module attribute compatible with ast.literal_eval
 readme = {file = "README.md", content-type = "text/markdown"}
 
-[project.optional-dependencies]
+[dependency-groups]
 build = [
     "torch==2.6.0",
     "setuptools",
