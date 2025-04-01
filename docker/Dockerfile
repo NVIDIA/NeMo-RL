@@ -21,7 +21,7 @@ RUN chmod 755 /home/ray/.cache
 WORKDIR /opt/reinforcer
 RUN uv venv .venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
-RUN uv sync --extra test --extra dev --extra docs --no-install-project
+RUN uv sync --group test --group dev --group docs --no-install-project
 
 ENV VIRTUAL_ENV=/opt/reinforcer/.venv
 ENV PATH="/opt/reinforcer/.venv/bin:$PATH"

@@ -28,3 +28,4 @@ docker/
 wandb/
 checkpoints/
 results/
+code_snapshots/

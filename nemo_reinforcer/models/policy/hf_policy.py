@@ -70,6 +70,7 @@ class HfPolicyWorker:
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
         init_optimizer: bool = True,
+        init_reference_model: bool = True,
     ):
         self.cfg = config
         # torch distributed init. Envars for rank, world_size, and master_addr and master_port are set from the ray remote call
@@ -91,12 +92,14 @@ class HfPolicyWorker:
             device_map="cpu",  # load weights onto CPU initially
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
-        self.reference_model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
-        )
-
+        if init_reference_model:
+            self.reference_model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                device_map="cpu",  # load weights onto CPU initially
+                torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
+            )
+        else:
+            self.reference_model = None
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         # If no pad token is defined, you might need:
         if self.tokenizer.pad_token is None:
@@ -126,9 +129,10 @@ class HfPolicyWorker:
         self.model.to("cuda")
         self.model = do_fsdp(self.model)
         self.model = self.move_to_cpu(self.model)
-        self.reference_model.to("cuda")
-        self.reference_model = do_fsdp(self.reference_model)
-        self.reference_model = self.move_to_cpu(self.reference_model)
+        if self.reference_model is not None:
+            self.reference_model.to("cuda")
+            self.reference_model = do_fsdp(self.reference_model)
+            self.reference_model = self.move_to_cpu(self.reference_model)
         self.model.to("cuda")
         self._held_reference_model_params = None
         # register_fsdp_forward_method(self.model, "generate")
@@ -274,6 +278,12 @@ class HfPolicyWorker:
         for gb_start in range(0, dataset_size, local_gbs):
             self.optimizer.zero_grad()
             mb_losses = []
+
+            # Calculate number of microbatches to process
+            # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
+            # so its safe to not check for the case where the last data slice is smaller than mbs
+            num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
+
             for mb in data.slice(
                 gb_start, gb_start + local_gbs
             ).make_microbatch_iterator(mbs):
@@ -304,6 +314,9 @@ class HfPolicyWorker:
                 loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
 
                 # Backward pass
+
+                # Loss is accumulated across microbatches, so we need to scale by the number of microbatches
+                loss = loss / num_microbatches
                 if not eval_mode:
                     loss.backward()
                 mb_losses.append(loss.item())
@@ -316,7 +329,7 @@ class HfPolicyWorker:
                 # Update parameters
                 self.optimizer.step()
                 self.scheduler.step()
-            losses.append(torch.tensor(mb_losses).mean().item())
+            losses.append(torch.tensor(mb_losses).sum().item())
 
         # Compute global loss across all ranks
         with torch.no_grad():
@@ -683,10 +696,17 @@ class HfPolicyWorker:
         torch.cuda.synchronize()
 
     def report_device_id(self) -> str:
-        from vllm.platforms import current_platform
+        """Report the UUID of the current CUDA device using NVML.
 
-        self.device_uuid = current_platform.get_device_uuid(torch.cuda.current_device())
-        return self.device_uuid
+        Returns:
+            str: UUID of the device in the format "GPU-xxxxx"
+        """
+        from nemo_reinforcer.utils.nvml import get_device_uuid
+
+        # Get current device index from torch
+        device_idx = torch.cuda.current_device()
+        # Get device UUID using NVML
+        return get_device_uuid(device_idx)
 
     @torch.no_grad()
     def get_weight_ipc_handles(self, offload_model=True):
@@ -705,7 +725,7 @@ class HfPolicyWorker:
         params = dtype_params
         self._held_reference_model_params = params
         data = {}
-        self.device_uuid = self.report_device_id()
+        device_uuid = self.report_device_id()
         for name, p in params.items():
             data[name] = reduce_tensor(p.detach())
 
@@ -713,7 +733,7 @@ class HfPolicyWorker:
             self.model = self.move_to_cpu(self.model)
             gc.collect()
             torch.cuda.empty_cache()
-        return {self.device_uuid: data}
+        return {device_uuid: data}
 
     def prepare_for_lp_inference(self):
         self.model.to("cuda")
@@ -834,6 +854,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         init_optimizer: bool = True,
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
+        init_reference_model: bool = True,
     ):
         if weights_path:
             weights_path = os.path.abspath(weights_path)
@@ -846,6 +867,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             init_optimizer=init_optimizer,
             weights_path=weights_path,
             optimizer_path=optimizer_path,
+            init_reference_model=init_reference_model,
         )
         self.worker_group = RayWorkerGroup(
             cluster,
