@@ -178,7 +178,8 @@ class VllmGenerationWorker:
             gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
             enable_prefix_caching=True,
             dtype="auto",
-            enforce_eager=True,
+            # Use cuda-graph by default for performance, set to True to use eager execution
+            enforce_eager=False,
             max_model_len=self.cfg["vllm_cfg"]["max_model_len"],
             trust_remote_code=True,
             worker_cls=UpdatableVllmInternalWorker,
