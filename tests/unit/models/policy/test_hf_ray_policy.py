@@ -364,13 +364,14 @@ def generation_setup(init_reference_model=True):
 
 @pytest.fixture
 def generation_setup_no_ref_model():
-    yield generation_setup(init_reference_model=False)
+    for item in generation_setup(init_reference_model=False):
+        yield item
 
 
 @pytest.fixture
 def generation_setup_with_ref_model():
-    yield generation_setup(init_reference_model=True)
-
+    for item in generation_setup(init_reference_model=False):
+        yield item
 
 @pytest.mark.timeout(180)
 def test_hf_policy_generation(generation_setup_no_ref_model, tracker):
