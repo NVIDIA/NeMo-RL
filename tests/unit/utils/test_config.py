@@ -243,3 +243,14 @@ def test_parse_hydra_overrides():
     overrides = []
     updated_cfg = parse_hydra_overrides(cfg, overrides)
     assert updated_cfg == cfg  # Config should be unchanged
+
+    # Test override additions and deletions
+    overrides = [
+        "+model.num_layers=12",
+        "++model.type=transformer",
+        "~training.batch_size",
+    ]
+    updated_cfg = parse_hydra_overrides(cfg, overrides)
+    assert updated_cfg.model.num_layers == 12
+    assert updated_cfg.model.type == "transformer"
+    assert "batch_size" not in updated_cfg.training
