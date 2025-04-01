@@ -182,6 +182,7 @@ def setup(
         if last_checkpoint_path
         else None,
         init_optimizer=True,
+        init_reference_model=False,
     )
     loss_fn = NLLLoss()
     print(f"  ✓ Model initialized")
