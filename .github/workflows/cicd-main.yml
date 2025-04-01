@@ -154,7 +154,7 @@ jobs:
       TIMEOUT: 15
       SCRIPT: |
         cd ${REINFORCER_REPO_DIR}
-        uv run --extra test bash -x ./tests/run_unit.sh
+        uv run --group test bash -x ./tests/run_unit.sh
       FINAL_SCRIPT_EXTERNAL: |
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Unit test results
