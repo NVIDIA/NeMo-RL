@@ -364,12 +364,12 @@ def generation_setup(init_reference_model=True):
 
 @pytest.fixture
 def generation_setup_no_ref_model():
-    return generation_setup(init_reference_model=False)
+    yield generation_setup(init_reference_model=False)
 
 
 @pytest.fixture
 def generation_setup_with_ref_model():
-    return generation_setup(init_reference_model=True)
+    yield generation_setup(init_reference_model=True)
 
 
 @pytest.mark.timeout(180)
