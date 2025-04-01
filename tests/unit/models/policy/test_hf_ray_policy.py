@@ -16,12 +16,13 @@ import pytest
 import pprint
 import torch
 
+from nemo_reinforcer.algorithms.interfaces import LossFunction
 from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.models.policy import PolicyConfig
-from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.algorithms.interfaces import LossFunction
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
+from nemo_reinforcer.models.policy import PolicyConfig
+from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 from tests.unit.test_utils import simple_loss, nll_loss
 
 
@@ -92,8 +93,7 @@ def policy_setup(tokenizer):
     )
 
     config = basic_llama_test_config
-    config["generation"]["pad_token"] = tokenizer.pad_token_id
-    config["generation"]["stop_token_ids"] = [tokenizer.eos_token_id]
+    config["generation"] = configure_generation_config(config["generation"], tokenizer)
 
     print("Creating HfPolicy...")
     policy = HfPolicy(cluster=cluster, config=config)
@@ -308,8 +308,9 @@ def generation_setup(request, tokenizer):
         )
 
         config = basic_llama_test_config
-        config["generation"]["pad_token"] = tokenizer.pad_token_id
-        config["generation"]["stop_token_ids"] = [tokenizer.eos_token_id]
+        config["generation"] = configure_generation_config(
+            config["generation"], tokenizer
+        )
 
         print("Creating generation HfPolicy...")
         policy = HfPolicy(

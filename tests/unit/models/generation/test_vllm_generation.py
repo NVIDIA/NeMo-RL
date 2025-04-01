@@ -20,6 +20,7 @@ import numpy as np
 from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 
 
@@ -38,19 +39,6 @@ basic_vllm_test_config: VllmConfig = {
         "max_model_len": 1024,
     },
 }
-
-
-def configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=False):
-    """Apply tokenizer-specific configurations to vLLM config."""
-    if is_eval:
-        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = False
-        vllm_config["vllm_cfg"]["load_format"] = "auto"
-    else:
-        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = True
-        vllm_config["vllm_cfg"]["load_format"] = "dummy"
-    vllm_config["pad_token"] = tokenizer.pad_token_id
-    vllm_config["stop_token_ids"] = [tokenizer.eos_token_id]
-    return vllm_config
 
 
 @pytest.fixture(scope="module")
@@ -90,7 +78,7 @@ def policy(cluster, tokenizer, check_vllm_available):
     """Initialize the vLLM policy."""
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
+    vllm_config = configure_generation_config(vllm_config, tokenizer)
     policy = VllmGeneration(cluster, vllm_config)
     yield policy
 
@@ -210,7 +198,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
+    vllm_config = configure_generation_config(vllm_config, tokenizer)
 
     # Create HF-specific config with required parameters
     hf_config = {
@@ -399,8 +387,8 @@ def test_vllm_policy_tensor_parallel(cluster, tokenizer):
     """Test vLLM policy with tensor parallelism > 1."""
     # Configure with tensor_parallel_size=2
     tp_config = basic_vllm_test_config.copy()
-    tp_config = configure_vllm_with_tokenizer(tp_config, tokenizer)
-    tp_config["tensor_parallel_size"] = 2
+    tp_config = configure_generation_config(tp_config, tokenizer)
+    tp_config["vllm_cfg"]["tensor_parallel_size"] = 2
 
     # Ensure we specify the distributed executor backend
     tp_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}
@@ -463,7 +451,7 @@ def test_vllm_generate_text(cluster, tokenizer):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
 
     # Ensure we can get same output
     assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
@@ -497,7 +485,7 @@ def test_vllm_weight_update_and_prefix_cache_reset(
 
     # Create configs
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
     vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
     if tensor_parallel_size > 1:
         vllm_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}

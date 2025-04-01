@@ -18,19 +18,18 @@ import pprint
 from collections import defaultdict
 from typing import Any, Dict
 
-from datasets import load_dataset
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
 from nemo_reinforcer.algorithms.grpo import MasterConfig, grpo_train, setup
 from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.data import DataConfig
-from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, rl_collate_fn
+from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
 from nemo_reinforcer.data.hf_datasets.openmathinstruct2 import OpenMathInstruct2Dataset
 from nemo_reinforcer.data.interfaces import DatumSpec, LLMMessageLogType, TaskDataSpec
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from nemo_reinforcer.environments.math_environment import MathEnvironment
-from nemo_reinforcer.models.policy import PolicyConfig
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 from nemo_reinforcer.utils.config import load_config, parse_hydra_overrides
 from nemo_reinforcer.utils.logger import get_next_experiment_dir
 
@@ -173,7 +172,7 @@ def math_data_processor(
     return output
 
 
-def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs):
+def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig, env_configs):
     print("\n▶ Setting up data...")
     math_task_spec = TaskDataSpec(
         task_name="math",
@@ -187,8 +186,6 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
         data = OpenMathInstruct2Dataset()
     else:
         raise ValueError(f"No processor for dataset {data_config['dataset_name']}.")
-
-    tokenizer = get_tokenizer(policy_config["model_name"])
 
     task_data_processors = defaultdict(
         lambda: (math_task_spec, openinstructmath2_data_processor)
@@ -219,7 +216,7 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
 
     task_to_env = defaultdict(lambda: math_env)
     task_to_env["math"] = math_env
-    return dataset, val_dataset, task_to_env, task_to_env, tokenizer
+    return dataset, val_dataset, task_to_env, task_to_env
 
 
 def main():
@@ -256,10 +253,20 @@ def main():
 
     init_ray()
 
-    # setup data
-    dataset, val_dataset, task_to_env, val_task_to_env, tokenizer = setup_data(
-        config["data"], config["policy"], config["env"]
+    # setup tokenizer
+    tokenizer = get_tokenizer(config["policy"]["model_name"])
+    config["policy"]["generation"] = configure_generation_config(
+        config["policy"]["generation"], tokenizer
     )
+
+    # setup data
+    (
+        dataset,
+        val_dataset,
+        task_to_env,
+        val_task_to_env,
+    ) = setup_data(tokenizer, config["data"], config["env"])
+
     (
         policy,
         policy_generation,
@@ -272,6 +279,7 @@ def main():
         grpo_state,
         master_config,
     ) = setup(config, tokenizer, dataset, val_dataset)
+
     grpo_train(
         policy,
         policy_generation,

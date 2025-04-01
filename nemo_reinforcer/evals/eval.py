@@ -105,12 +105,6 @@ def setup(
     backend = generation_config["backend"]
     assert backend == "vllm", "Only vLLM backend is supported for evaluation"
 
-    # set vllm config
-    generation_config["vllm_cfg"]["load_format"] = "auto"
-    generation_config["vllm_cfg"]["skip_tokenizer_init"] = False
-    generation_config["stop_token_ids"] = [tokenizer.eos_token_id]
-    generation_config["pad_token"] = tokenizer.pad_token_id
-
     # initialize vllm generation
     vllm_generation = VllmGeneration(cluster=cluster, config=generation_config)
     print(
