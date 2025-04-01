@@ -696,10 +696,17 @@ class HfPolicyWorker:
         torch.cuda.synchronize()
 
     def report_device_id(self) -> str:
-        from vllm.platforms import current_platform
+        """Report the UUID of the current CUDA device using NVML.
 
-        self.device_uuid = current_platform.get_device_uuid(torch.cuda.current_device())
-        return self.device_uuid
+        Returns:
+            str: UUID of the device in the format "GPU-xxxxx"
+        """
+        from nemo_reinforcer.utils.nvml import get_device_uuid
+
+        # Get current device index from torch
+        device_idx = torch.cuda.current_device()
+        # Get device UUID using NVML
+        return get_device_uuid(device_idx)
 
     @torch.no_grad()
     def get_weight_ipc_handles(self, offload_model=True):
@@ -718,7 +725,7 @@ class HfPolicyWorker:
         params = dtype_params
         self._held_reference_model_params = params
         data = {}
-        self.device_uuid = self.report_device_id()
+        device_uuid = self.report_device_id()
         for name, p in params.items():
             data[name] = reduce_tensor(p.detach())
 
@@ -726,7 +733,7 @@ class HfPolicyWorker:
             self.model = self.manual_offload_to_cpu(self.model)
             gc.collect()
             torch.cuda.empty_cache()
-        return {self.device_uuid: data}
+        return {device_uuid: data}
 
     def prepare_for_lp_inference(self):
         self.model = self.manual_load_to_gpu(self.model)
