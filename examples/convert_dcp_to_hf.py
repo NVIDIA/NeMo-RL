@@ -16,7 +16,7 @@ import argparse
 import os
 from omegaconf import OmegaConf
 
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
+from nemo_reinforcer.distributed.virtual_cluster import init_ray, RayVirtualCluster
 from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 from nemo_reinforcer.utils.config import load_config
 
@@ -27,7 +27,10 @@ def parse_args():
         description="Convert Torch DCP checkpoint to HF checkpoint"
     )
     parser.add_argument(
-        "--config", type=str, default=None, help="Path to YAML config file"
+        "--config",
+        type=str,
+        default=None,
+        help="Path to YAML config file used during model training",
     )
     parser.add_argument(
         "--dcp-ckpt-path", type=str, default=None, help="Path to DCP checkpoint"
@@ -66,8 +69,10 @@ def main():
     policy_config = config["policy"]
     cluster_config = config["cluster"]
 
+    init_ray()
+
     cluster = RayVirtualCluster(
-        name="sft_cluster",
+        name="convert_cluster",
         bundle_ct_per_node_list=[cluster_config["gpus_per_node"]]
         * cluster_config["num_nodes"],
         use_gpus=True,
