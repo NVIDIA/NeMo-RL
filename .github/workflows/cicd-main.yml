@@ -16,8 +16,8 @@ name: "CICD Reinforcer"
 on:
   pull_request:
     branches:
-      - 'main'
-      - 'r**'
+      - "main"
+      - "r**"
     types: [labeled]
   merge_group:
     types: [checks_requested]
@@ -81,14 +81,14 @@ jobs:
           # Some output that's helpful for debugging
           echo "Docs changed: $CHANGED_DOCS"
           echo "Src changed: $CHANGED_SRC"
-          
+
           # echo "DOCS_ONLY: $DOCS_ONLY"
           echo "LABEL: $LABEL"
           echo "IS_PULLREQUEST: $IS_PULLREQUEST"
-          
+
           # Run CI only (on main or if label is attached) and if it's not only docs
           echo run_ci=$([[ ("$LABEL" = "true" || "$IS_PULLREQUEST" = "false" || "$MERGE_GROUP" = "true")  && "$DOCS_ONLY" = "false" ]] && echo "true" || echo "false") | tee -a "$GITHUB_OUTPUT"
-  
+
   lint-check:
     name: Lint check
     needs: [pre-flight]
@@ -102,7 +102,7 @@ jobs:
           pip install pre-commit
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
-  
+
   sphinx-build:
     name: Sphinx build
     needs: [pre-flight]
@@ -115,7 +115,7 @@ jobs:
         run: |
           pip install uv
           cd docs/
-          uv run --extra docs sphinx-build . _build/html
+          uv run --group docs sphinx-build . _build/html
 
   build-container:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
@@ -140,7 +140,7 @@ jobs:
       TIMEOUT: 10
       SCRIPT: |
         cd ${REINFORCER_REPO_DIR}/docs
-        uv run --extra docs sphinx-build -b doctest . _build/doctest
+        uv run --group docs sphinx-build -b doctest . _build/doctest
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
@@ -154,7 +154,7 @@ jobs:
       TIMEOUT: 15
       SCRIPT: |
         cd ${REINFORCER_REPO_DIR}
-        uv run --extra test bash -x ./tests/run_unit.sh
+        uv run --group test bash -x ./tests/run_unit.sh
       FINAL_SCRIPT_EXTERNAL: |
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Unit test results
