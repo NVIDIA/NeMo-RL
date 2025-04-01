@@ -1,11 +1,15 @@
 # GRPO Algorithm Configuration
 defaults: "grpo_math_1B.yaml"
 
+grpo:
+  num_prompts_per_step: 64
+  num_generations_per_prompt: 32
+
 policy:
   model_name: "meta-llama/Llama-3.1-8B-Instruct"
   train_global_batch_size: 512
   train_micro_batch_size: 1
-  generation_batch_size: 32
+  generation_batch_size: 32 # Only used when generating using HF backend
   logprob_batch_size: 2
   max_total_sequence_length: 4096
   precision: "bfloat16"
