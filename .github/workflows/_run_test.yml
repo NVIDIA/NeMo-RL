@@ -27,6 +27,7 @@ on:
         default: 10
       UNIT_TEST_SCRIPT:
         type: string
+<<<<<<< HEAD
         description: Unit test script to execute
         required: true
       DOC_TEST_SCRIPT:
@@ -36,10 +37,18 @@ on:
       FUNCTIONAL_TEST_SCRIPT:
         type: string
         description: Functional test script to execute
+=======
+        description: Test script to execute in container
+>>>>>>> origin/main
         required: true
       AFTER_SCRIPT:
         type: string
-        description: Script to run after main test
+        description: Script to run after main test in container
+        required: false
+        default: ":"
+      FINAL_SCRIPT_EXTERNAL:
+        type: string
+        description: Script to run after SCRIPT and AFTER_SCRIPT, but outside container (useful for logging)
         required: false
         default: ":"
       IS_OPTIONAL:
@@ -72,11 +81,13 @@ jobs:
               --env TRANSFORMERS_OFFLINE=0 \
               --env HYDRA_FULL_ERROR=1 \
               --env HF_HOME=/home/TestData/reinforcer/hf_home \
+              --env HF_DATASETS_CACHE=/home/TestData/reinforcer/hf_datasets_cache \
               --env REINFORCER_REPO_DIR=/opt/reinforcer \
               --env HF_TOKEN \
               --volume /mnt/datadrive/TestData/reinforcer/datasets:/opt/reinforcer/datasets:ro \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
               --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
+              --volume /mnt/datadrive/TestData/reinforcer/hf_datasets_cache:/home/TestData/reinforcer/hf_datasets_cache \
               nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }} \
               bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
 
@@ -103,6 +114,15 @@ jobs:
             RUN_TEST_EOF
             )
             docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
+
+        - name: final_script_external
+          if: always() && inputs.FINAL_SCRIPT_EXTERNAL != ':'
+          run: |
+            cmd=$(cat <<"RUN_TEST_EOF"
+            ${{ inputs.FINAL_SCRIPT_EXTERNAL }}
+            RUN_TEST_EOF
+            )
+            bash -eux -o pipefail -c "$cmd"
 
         - name: Container shutdown
           if: always()

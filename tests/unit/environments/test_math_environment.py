@@ -15,13 +15,17 @@ import pytest
 import ray
 from nemo_reinforcer.environments.math_environment import MathEnvironment
 import time
+import os
 
 
 @pytest.fixture(scope="module")
 def math_env():
     """Create a MathEnvironment actor for testing."""
     env = MathEnvironment.options(
-        runtime_env={"py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE}
+        runtime_env={
+            "py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE,
+            "env_vars": dict(os.environ),
+        }
     ).remote({"num_workers": 2})
     yield env
     # Clean up the actor and wait for it to be killed

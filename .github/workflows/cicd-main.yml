@@ -16,8 +16,8 @@ name: "CICD Reinforcer"
 on:
   pull_request:
     branches:
-      - 'main'
-      - 'r**'
+      - "main"
+      - "r**"
     types: [labeled]
   merge_group:
     types: [checks_requested]
@@ -28,9 +28,10 @@ on:
         default: all
         type: string
         description: Comma-separated list of tests to run. Use "all" to run the full test suite.
-  push:
-    branches:
-      - 'main'
+  # TODO: Due to limited compute, disabling pushes to main. This is okay to do since we force PRs to be up to date and the CI tests on pull/$PR_NUM/merge
+  #push:
+  #  branches:
+  #    - 'main'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.label.name || 'main' }}
@@ -114,7 +115,7 @@ jobs:
         run: |
           pip install uv
           cd docs/
-          uv run --extra docs sphinx-build . _build/html
+          uv run --group docs sphinx-build . _build/html
 
   build-container:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
@@ -142,17 +143,23 @@ jobs:
         set +e
         cd /opt/reinforcer
         uv run --no-sync bash -x ./tests/run_unit.sh
-        exit 0
       DOC_TEST_SCRIPT: |
         cd /opt/reinforcer/docs
         uv run --no-sync sphinx-build -b doctest . _build/doctest
       FUNCTIONAL_TEST_SCRIPT: |
-        # Functional tests are currently optional, so we exit with 0 to avoid failing the workflow
-        set +e
-        cd /opt/reinforcer
-        uv run --no-sync bash ./tests/functional/sft.sh
-        uv run --no-sync bash ./tests/functional/grpo.sh
-        exit 0
+        # TODO: Temporarily disable functional tests until we have more capacity and tests run quicker
+        #   Related: https://github.com/NVIDIA/reinforcer/pull/27
+        # set +e
+        # cd /opt/reinforcer
+        # uv run --no-sync bash ./tests/functional/sft.sh
+        # uv run --no-sync bash ./tests/functional/grpo.sh
+      FINAL_SCRIPT_EXTERNAL: |
+        cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
+        # Unit test results
+        \`\`\`json
+        $(cat tests/unit/unit_results.json || echo "n/a")
+        \`\`\`
+        EOF
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
 

@@ -15,24 +15,23 @@
 import argparse
 import os
 import pprint
-
-from omegaconf import OmegaConf
-from typing import Dict, Any
+from collections import defaultdict
+from typing import Any, Dict
 
 from datasets import load_dataset
+from omegaconf import OmegaConf
 from transformers import AutoTokenizer
-from collections import defaultdict
 
 from nemo_reinforcer.algorithms.grpo import MasterConfig, grpo_train, setup
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
-from nemo_reinforcer.utils.config import load_config
-from nemo_reinforcer.utils.logger import get_next_experiment_dir
-from nemo_reinforcer.data.interfaces import TaskDataSpec, DatumSpec, LLMMessageLogType
 from nemo_reinforcer.data import DataConfig
-from nemo_reinforcer.models.policy import PolicyConfig
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, rl_collate_fn
-from nemo_reinforcer.environments.math_environment import MathEnvironment
 from nemo_reinforcer.data.hf_datasets.openmathinstruct2 import OpenMathInstruct2Dataset
+from nemo_reinforcer.data.interfaces import DatumSpec, LLMMessageLogType, TaskDataSpec
+from nemo_reinforcer.distributed.virtual_cluster import init_ray
+from nemo_reinforcer.environments.math_environment import MathEnvironment
+from nemo_reinforcer.models.policy import PolicyConfig
+from nemo_reinforcer.utils.config import load_config, parse_hydra_overrides
+from nemo_reinforcer.utils.logger import get_next_experiment_dir
 
 
 def parse_args():
@@ -43,10 +42,7 @@ def parse_args():
     )
 
     # Parse known args for the script
-    args, remaining = parser.parse_known_args()
-
-    # Convert remaining args to OmegaConf format
-    overrides = OmegaConf.from_dotlist(remaining)
+    args, overrides = parser.parse_known_args()
 
     return args, overrides
 
@@ -122,6 +118,8 @@ def math_data_processor(
 
     template = task_data_spec.custom_template
     message_log: LLMMessageLogType = []
+
+    # system prompt
     if task_data_spec.system_prompt:
         sys_message = {"role": "system", "content": task_data_spec.system_prompt}
         message = tokenizer.apply_chat_template(
@@ -135,10 +133,11 @@ def math_data_processor(
             0
         ]
         message_log.append(sys_message)
-    user_message = {
-        "role": "user",
-        "content": task_data_spec.prompt.format(problem),
-    }
+
+    # user prompt
+    if task_data_spec.prompt:
+        problem = task_data_spec.prompt.format(problem)
+    user_message = {"role": "user", "content": problem}
     message = tokenizer.apply_chat_template(
         [user_message],
         chat_template=template,
@@ -167,8 +166,9 @@ def math_data_processor(
         "extra_env_info": extra_env_info,
         "loss_multiplier": loss_multiplier,
         "idx": idx,
-        "task_name": datum_dict["task_name"],
     }
+    if "task_name" in datum_dict:
+        output["task_name"] = datum_dict["task_name"]
     return output
 
 
@@ -188,6 +188,8 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
         raise ValueError(f"No processor for dataset {data_config['dataset_name']}.")
 
     tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     task_data_processors = defaultdict(
         lambda: (math_task_spec, openinstructmath2_data_processor)
@@ -195,7 +197,10 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig, env_configs
     task_data_processors["math"] = (math_task_spec, openinstructmath2_data_processor)
 
     math_env = MathEnvironment.options(
-        runtime_env={"py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE}
+        runtime_env={
+            "py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE,
+            "env_vars": dict(os.environ),  # Pass thru all user environment variables
+        }
     ).remote(env_configs["math"])
     dataset = AllTaskProcessedDataset(
         data.formatted_ds["train"],
@@ -233,7 +238,7 @@ def main():
 
     if overrides:
         print(f"Overrides: {overrides}")
-        config = OmegaConf.merge(config, overrides)
+        config = parse_hydra_overrides(config, overrides)
 
     config: MasterConfig = OmegaConf.to_container(config, resolve=True)
     print("Applied CLI overrides")
@@ -267,7 +272,7 @@ def main():
         checkpointer,
         grpo_state,
         master_config,
-    ) = setup(config, dataset, val_dataset)
+    ) = setup(config, tokenizer, dataset, val_dataset)
     grpo_train(
         policy,
         policy_generation,

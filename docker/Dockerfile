@@ -21,7 +21,7 @@ WORKDIR /opt/reinforcer
 COPY pyproject.toml .
 RUN uv venv .venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
-RUN uv sync --extra test --extra dev --extra docs --no-install-project
+RUN uv sync --group test --group dev --group docs --no-install-project
 
 FROM base as hermetic
 # hermetic creates a virtual environment with the default dependencies pre-installed for convenience

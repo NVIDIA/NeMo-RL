@@ -109,6 +109,7 @@ class MasterConfig(TypedDict):
 
 def setup(
     master_config: MasterConfig,
+    tokenizer: AutoTokenizer,
     dataset: AllTaskProcessedDataset,
     val_dataset: Optional[AllTaskProcessedDataset],
 ) -> Tuple[
@@ -136,6 +137,12 @@ def setup(
     grpo_config = master_config["grpo"]
     logger_config = master_config["logger"]
     cluster_config = master_config["cluster"]
+
+    # ==========================
+    #         Logger
+    # ==========================
+    logger = Logger(logger_config)
+    logger.log_hyperparams(master_config)
 
     # ==========================
     #      Checkpointing
@@ -213,6 +220,12 @@ def setup(
     # vllm model loading prefers clean environment, initialize policy_generation before policy (#52 will fix this)
     backend = generation_config["backend"]
     generation_config["model_name"] = policy_config["model_name"]  # Needed for vLLM
+    generation_config["vllm_cfg"]["skip_tokenizer_init"] = True
+    # When https://github.com/NVIDIA/reinforcer/issues/57 is fixed, we should update stop_token_ids below.
+    generation_config["stop_token_ids"] = [tokenizer.eos_token_id]
+    generation_config["pad_token"] = tokenizer.pad_token_id
+    generation_config["vllm_cfg"]["load_format"] = "dummy"
+
     if backend == "hf":
         policy_generation = None
         print(f"  ✓ Using HF backend for generation with {policy_config['model_name']}")
@@ -238,8 +251,6 @@ def setup(
     )
 
     loss_fn = ClippedPGLossFn(loss_config)
-    logger = Logger(logger_config)
-    logger.log_hyperparams(master_config)
 
     print("\n" + "=" * 60)
     print(" " * 18 + "SETUP COMPLETE")

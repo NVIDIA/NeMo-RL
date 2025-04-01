@@ -39,6 +39,9 @@ class VllmSpecificArgs(TypedDict):
     tensor_parallel_size: int
     gpu_memory_utilization: float
     max_model_len: int
+    # Additional arguments for vLLM inserted by reinforcer based on the context of when vllm is used
+    skip_tokenizer_init: bool
+    load_format: str
 
 
 class VllmConfig(GenerationConfig):
@@ -94,6 +97,7 @@ class VllmGenerationWorker:
 
         # Force vllm to use v0 runtime (will be enabled by default in #51)
         env_vars["VLLM_USE_V1"] = "0"
+
         return resources, env_vars, init_kwargs
 
     def __init__(
@@ -110,6 +114,7 @@ class VllmGenerationWorker:
                           Only needed for the first worker in each tied worker group.
         """
         self.cfg = config
+
         self.model_name = self.cfg["model_name"]
         self.tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
         self.gpu_memory_utilization = self.cfg["vllm_cfg"]["gpu_memory_utilization"]
@@ -166,21 +171,22 @@ class VllmGenerationWorker:
 
         self.llm = LLM(
             model=self.model_name,
-            tensor_parallel_size=self.tensor_parallel_size,
-            gpu_memory_utilization=self.gpu_memory_utilization,
+            # Training pipeline will set this to "dummy" and eval will load real weights using 'auto'
+            load_format=self.cfg["vllm_cfg"]["load_format"],
+            skip_tokenizer_init=self.cfg["vllm_cfg"]["skip_tokenizer_init"],
+            tensor_parallel_size=self.cfg["vllm_cfg"]["tensor_parallel_size"],
+            gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
             enable_prefix_caching=True,
             dtype="auto",
-            enforce_eager=True,
+            # Use cuda-graph by default for performance, set to True to use eager execution
+            enforce_eager=False,
             max_model_len=self.cfg["vllm_cfg"]["max_model_len"],
             trust_remote_code=True,
             worker_cls=UpdatableVllmInternalWorker,
             enable_sleep_mode=True,
+            disable_log_stats=True,
             **vllm_kwargs,
         )
-
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
 
     def llm(self):
         return self.llm
@@ -196,6 +202,7 @@ class VllmGenerationWorker:
 
         Args:
             data: BatchedDataDict containing input_ids and input_lengths tensors
+            greedy: Whether to use greedy decoding instead of sampling
 
         Returns:
             BatchedDataDict conforming to GenerationOutputSpec:
@@ -212,7 +219,7 @@ class VllmGenerationWorker:
             f"input_ids and input_lengths must be present in the BatchedDataDict, got keys: {data.keys()}"
         )
         is_right_padded, error_msg = verify_right_padding(
-            data, pad_value=self.tokenizer.pad_token_id
+            data, pad_value=self.cfg["pad_token"]
         )
         if not is_right_padded:
             warnings.warn(
@@ -242,7 +249,7 @@ class VllmGenerationWorker:
         # Read generation parameters from config
         top_k = self.cfg["top_k"] if self.cfg["top_k"] is not None else -1
         sampling_params = self.SamplingParams(
-            temperature=self.cfg["temperature"],
+            temperature=self.cfg["temperature"] if not greedy else 0,
             top_p=self.cfg["top_p"],
             top_k=top_k
             if not greedy
@@ -250,6 +257,7 @@ class VllmGenerationWorker:
             max_tokens=self.cfg["max_new_tokens"],
             logprobs=0,  # Return logprobs for the generated tokens
             stop=None,
+            stop_token_ids=self.cfg["stop_token_ids"],
         )
 
         # Generate outputs
@@ -275,7 +283,7 @@ class VllmGenerationWorker:
 
             # Create a new tensor with the right size and fill with padding token
             full_output = torch.full(
-                (total_length,), self.tokenizer.pad_token_id, dtype=input_ids.dtype
+                (total_length,), self.cfg["pad_token"], dtype=input_ids.dtype
             )
 
             # Copy original input (with padding) into the beginning
@@ -325,6 +333,37 @@ class VllmGenerationWorker:
 
         return return_data
 
+    def generate_text(
+        self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
+    ) -> BatchedDataDict[GenerationOutputSpec]:
+        """Generate text responses using vLLM generation.
+
+        Args:
+            data: BatchedDataDict containing prompts with text strings
+            greedy: Whether to use greedy decoding instead of sampling
+
+        Returns:
+            BatchedDataDict containing:
+                - texts: List of generated text responses
+        """
+        # Read generation parameters from config
+        top_k = self.cfg["top_k"] if self.cfg["top_k"] is not None else -1
+        sampling_params = self.SamplingParams(
+            temperature=self.cfg["temperature"] if not greedy else 0,
+            top_p=self.cfg["top_p"],
+            top_k=top_k if not greedy else 1,
+            max_tokens=self.cfg["max_new_tokens"],
+            stop=self.cfg.get("stop_sequences", None),
+        )
+
+        # Generate outputs
+        outputs = self.llm.generate(data["prompts"], sampling_params)
+        texts = [output.outputs[0].text for output in outputs]
+
+        # Convert to BatchedDataDict
+        return_data = BatchedDataDict({"texts": texts})
+        return return_data
+
     def shutdown(self):
         """Clean up vLLM resources."""
         try:
@@ -342,9 +381,6 @@ class VllmGenerationWorker:
             return False
 
     def report_device_id(self) -> str:
-        # from vllm.platforms import current_platform
-        # self.device_uuid = current_platform.get_device_uuid(self.rank)
-        # return self.device_uuid
         return self.llm.collective_rpc("report_device_id", args=tuple())[0]
 
     def update_weights_from_ipc_handles(self, ipc_handles):
@@ -401,6 +437,17 @@ class VllmGeneration(GenerationInterface):
         """Initialize a vLLM policy with distributed workers."""
         # Store config
         self.cfg = config
+        # Ensure all required VllmConfig fields are present
+        missing_keys = [
+            key for key in VllmConfig.__annotations__ if key not in self.cfg
+        ]
+        assert not missing_keys, (
+            f"VLLM Configuration Error: Missing required keys in VllmConfig.\n"
+            f"Missing keys: {', '.join(missing_keys)}\n"
+            f"Provided keys: {', '.join(self.cfg.keys())}\n"
+            f"Please update your configuration to include all required VLLM parameters."
+        )
+
         self.tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
 
         # Create worker builder for VllmGenerationWorker
@@ -513,6 +560,42 @@ class VllmGeneration(GenerationInterface):
             "unpadded_sequence_lengths",
             "logprobs",
         ]
+        missing_keys = [key for key in required_keys if key not in combined]
+        if missing_keys:
+            raise ValueError(
+                f"Missing required keys for GenerationOutputSpec: {missing_keys}"
+            )
+
+        return combined
+
+    def generate_text(
+        self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
+    ) -> BatchedDataDict[GenerationOutputSpec]:
+        """Generate text responses using vLLM."""
+        assert isinstance(data, BatchedDataDict), (
+            f"data must be a BatchedDataDict, got type: {type(data)}"
+        )
+
+        # Get total batch size
+        batch_size = len(data["prompts"])
+
+        # Shard the data across the tied worker groups
+        sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=batch_size)
+        future_bundle = self.worker_group.run_all_workers_multiple_data(
+            "generate_text",
+            sharded_data,
+            common_kwargs={"greedy": greedy},
+            respect_tied_workers=True,
+        )
+
+        # Get results from the workers, respecting tied worker groups (only one result per tied worker group)
+        results = self.worker_group.get_all_worker_results(future_bundle)
+
+        # Combine results from all tied worker groups
+        combined = BatchedDataDict.from_batches(results)
+
+        # Verify the output has all required fields
+        required_keys = ["texts"]
         missing_keys = [key for key in required_keys if key not in combined]
         if missing_keys:
             raise ValueError(

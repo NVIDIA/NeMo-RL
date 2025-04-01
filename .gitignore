@@ -21,9 +21,11 @@ dist/
 # Cache
 uv_cache/
 hf_home/
+hf_datasets_cache/
 *logs/
 datasets/
 docker/
 wandb/
 checkpoints/
 results/
+code_snapshots/

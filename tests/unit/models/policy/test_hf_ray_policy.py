@@ -40,6 +40,15 @@ basic_llama_test_config: PolicyConfig = {
         "top_p": 1.0,
         "top_k": None,
     },
+    "optimizer": {
+        "name": "torch.optim.AdamW",
+        "kwargs": {
+            "lr": 5e-6,
+            "weight_decay": 0.01,
+            "betas": [0.9, 0.999],
+            "eps": 1e-8,
+        },
+    },
     "scheduler": {
         "name": "torch.optim.lr_scheduler.CosineAnnealingLR",
         "kwargs": {
@@ -192,7 +201,7 @@ def training_setup():
         config = basic_llama_test_config
 
         print("Creating training HfPolicy...")
-        policy = HfPolicy(cluster=cluster, config=config)
+        policy = HfPolicy(cluster=cluster, config=config, init_reference_model=False)
 
         # Create a test batch
         print("Creating test batch...")
@@ -269,7 +278,7 @@ def test_hf_policy_training(training_setup):
 
 
 @pytest.fixture
-def generation_setup():
+def generation_setup(request):
     """Setup and teardown specifically for generation tests."""
     policy = None
     cluster = None
@@ -291,7 +300,9 @@ def generation_setup():
         config = basic_llama_test_config
 
         print("Creating generation HfPolicy...")
-        policy = HfPolicy(cluster=cluster, config=config)
+        policy = HfPolicy(
+            cluster=cluster, config=config, init_reference_model=request.param
+        )
 
         # Create a test batch
         print("Creating test batch...")
@@ -355,7 +366,8 @@ def generation_setup():
 
 
 @pytest.mark.timeout(180)
-def test_hf_policy_generation(generation_setup):
+@pytest.mark.parametrize("generation_setup", [False], indirect=True)
+def test_hf_policy_generation(generation_setup, tracker):
     policy, cluster, data, tokenizer, prompts, expected_generations = generation_setup
 
     # Verify resources were created properly
@@ -406,6 +418,7 @@ def test_hf_policy_generation(generation_setup):
         torch.exp(torch.abs(results["logprobs"] - fprop_results["logprobs"]))
     )
     print(f"avg prob mult error: {avg_prob_mult_error}")
+    tracker.track("avg_prob_mult_error", float(avg_prob_mult_error))
     assert avg_prob_mult_error <= 1.025
 
     # get logprobs for the expected generations
@@ -430,6 +443,7 @@ def test_hf_policy_generation(generation_setup):
 
     expected_logprobs = policy.get_logprobs(expected_data)["logprobs"]
     mean_lps = torch.mean(expected_logprobs * expected_tokenized["attention_mask"])
+    tracker.track("mean_lps", float(mean_lps))
     assert mean_lps > -1.7, "Expected logprobs should be greater than -1.7"
     assert mean_lps < -1.4, "Expected logprobs should be less than -1.4"
 
@@ -439,6 +453,7 @@ def test_hf_policy_generation(generation_setup):
 
 
 @pytest.mark.timeout(180)
+@pytest.mark.parametrize("generation_setup", [True], indirect=True)
 def test_all_hf_policy_generation_lps_ref_training(generation_setup):
     policy, cluster, data, tokenizer, prompts, expected_generations = generation_setup
 

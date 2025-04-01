@@ -23,17 +23,9 @@ from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 
 
-# Skip all tests if no CUDA or vLLM
-pytestmark = [
-    pytest.mark.skipif(
-        not torch.cuda.is_available() or torch.cuda.device_count() < 1,
-        reason="CUDA not available or insufficient GPUs",
-    )
-]
-
-
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
+    "backend": "vllm",
     "model_name": "meta-llama/Llama-3.2-1B",  # Small model for testing
     "dtype": "bfloat16",
     "max_new_tokens": 10,
@@ -46,6 +38,19 @@ basic_vllm_test_config: VllmConfig = {
         "max_model_len": 1024,
     },
 }
+
+
+def configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=False):
+    """Apply tokenizer-specific configurations to vLLM config."""
+    if is_eval:
+        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = False
+        vllm_config["vllm_cfg"]["load_format"] = "auto"
+    else:
+        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = True
+        vllm_config["vllm_cfg"]["load_format"] = "dummy"
+    vllm_config["pad_token"] = tokenizer.pad_token_id
+    vllm_config["stop_token_ids"] = [tokenizer.eos_token_id]
+    return vllm_config
 
 
 @pytest.fixture(scope="module")
@@ -65,7 +70,7 @@ def cluster():
         bundle_ct_per_node_list=[2],  # 1 node with 2 GPU bundle
         use_gpus=True,
         max_colocated_worker_groups=2,
-        num_gpus_per_node=torch.cuda.device_count(),  # Use available GPUs
+        num_gpus_per_node=2,  # Use available GPUs
         name="vllm-test-cluster",
     )
     yield virtual_cluster
@@ -83,9 +88,12 @@ def tokenizer():
 
 
 @pytest.fixture(scope="function")
-def policy(cluster, check_vllm_available):
+def policy(cluster, tokenizer, check_vllm_available):
     """Initialize the vLLM policy."""
-    policy = VllmGeneration(cluster, basic_vllm_test_config)
+    # Create separate configs for each policy
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
+    policy = VllmGeneration(cluster, vllm_config)
     yield policy
 
     # Ensure policy is properly shutdown
@@ -128,6 +136,30 @@ def test_input_data(tokenizer):
             "input_lengths": input_lengths,
         }
     )
+
+
+def test_vllm_missing_required_config_key(cluster, check_vllm_available):
+    """Test that an assertion error is raised when a required config key is missing."""
+    # Create a config missing a required key by removing 'model_name'
+    incomplete_config = basic_vllm_test_config.copy()
+    del incomplete_config["model_name"]  # Remove a required key
+
+    # Also need to ensure skip_tokenizer_init and load_format are there
+    # since these are checked in VllmConfig.__annotations__
+    incomplete_config["skip_tokenizer_init"] = True
+    incomplete_config["load_format"] = "auto"
+
+    # Attempt to initialize VllmGeneration with incomplete config - should raise AssertionError
+    with pytest.raises(AssertionError) as excinfo:
+        VllmGeneration(cluster, incomplete_config)
+
+    # Verify the error message contains information about the missing key
+    error_message = str(excinfo.value)
+    assert "Missing required keys in VllmConfig" in error_message
+    assert "model_name" in error_message, (
+        "Error should mention the missing 'model_name' key"
+    )
+    print(f"Successfully caught missing config key with error: {error_message}")
 
 
 def test_vllm_policy_generation(policy, test_input_data, tokenizer):
@@ -180,6 +212,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
 
     # Create HF-specific config with required parameters
     hf_config = {
@@ -192,6 +225,15 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         "max_new_tokens": 16,
         "do_sample": False,
         "precision": "float32",
+        "optimizer": {
+            "name": "torch.optim.AdamW",
+            "kwargs": {
+                "lr": 5e-6,
+                "weight_decay": 0.01,
+                "betas": [0.9, 0.999],
+                "eps": 1e-8,
+            },
+        },
     }
 
     vllm_policy = None
@@ -231,9 +273,15 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         # Create both policies
         print("Creating vLLM policy...")
         vllm_policy = VllmGeneration(cluster, vllm_config)
+        vllm_policy.finish_generation()
 
         print("Creating HF policy...")
         hf_policy = HfPolicy(cluster, hf_config)
+
+        print(f"refitting vllm policy...")
+        ipc_handles = hf_policy.get_weights_ipc_handles()
+        vllm_policy.prepare_for_generation()
+        vllm_policy.update_weights(ipc_handles)
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
@@ -262,6 +310,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
             }
         )
         # Get logprobs from HF policy
+        hf_policy.prepare_for_lp_inference()
         fprop_results = hf_policy.get_logprobs(fprop_logprob_data)
         # Zero out logprobs for input tokens
 
@@ -327,6 +376,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         print(f"Training loss: {results['loss']}")
 
         hf_policy.finish_training()
+        hf_policy.offload_after_refit()
 
         # Step 4: Use vLLM for generation again to complete the workflow
         print("Using vLLM for generation again...")
@@ -349,12 +399,9 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
 def test_vllm_policy_tensor_parallel(cluster, tokenizer):
     """Test vLLM policy with tensor parallelism > 1."""
-    # Skip if less than 2 GPUs are available
-    if torch.cuda.device_count() < 2:
-        pytest.skip("Tensor parallelism test requires at least 2 GPUs")
-
     # Configure with tensor_parallel_size=2
     tp_config = basic_vllm_test_config.copy()
+    tp_config = configure_vllm_with_tokenizer(tp_config, tokenizer)
     tp_config["tensor_parallel_size"] = 2
 
     # Ensure we specify the distributed executor backend
@@ -411,17 +458,12 @@ def test_vllm_policy_tensor_parallel(cluster, tokenizer):
 @pytest.mark.parametrize("tensor_parallel_size", [1, 2])
 def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
     """Test that weights can be updated from HF to vLLM policy."""
-    # Skip if requesting tensor_parallel_size=2 but less than 2 GPUs are available
-    if tensor_parallel_size > 1 and torch.cuda.device_count() < 2:
-        pytest.skip(
-            f"Tensor parallelism test with tp={tensor_parallel_size} requires at least {tensor_parallel_size} GPUs"
-        )
-
     # Create HF policy
     from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
     vllm_config["tensor_parallel_size"] = tensor_parallel_size
 
     # Add vllm_kwargs only if using tensor parallelism
@@ -439,6 +481,15 @@ def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
         "max_new_tokens": 16,
         "do_sample": False,
         "precision": "float32",
+        "optimizer": {
+            "name": "torch.optim.AdamW",
+            "kwargs": {
+                "lr": 5e-6,
+                "weight_decay": 0.01,
+                "betas": [0.9, 0.999],
+                "eps": 1e-8,
+            },
+        },
     }
 
     hf_policy = HfPolicy(cluster, hf_config)
@@ -485,3 +536,38 @@ def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
 
     # Clean up
     vllm_policy.shutdown()
+
+
+def test_vllm_generate_text(cluster, tokenizer):
+    """Test that vLLM can generate text."""
+    # Prepare test data
+    test_prompts = [
+        "Hello, my name is",
+        "The capital of France is",
+    ]
+    test_prompts = BatchedDataDict({"prompts": test_prompts})
+
+    # Create separate configs for each policy
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+
+    # Ensure we can get same output
+    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
+        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    )
+    assert vllm_config["vllm_cfg"]["tensor_parallel_size"] == 1, (
+        "Tensor parallel size should be 1 to get expected output"
+    )
+
+    # Create vLLM generation
+    vllm_generation = VllmGeneration(cluster, vllm_config)
+
+    # Generate and check result
+    output = vllm_generation.generate_text(test_prompts, greedy=True)
+    assert output["texts"] == [
+        " Kelsey and I am a 2018 graduate",
+        " Paris. The city is located in the north of",
+    ], "Output should be the same as the expected output"
+
+    # Clean up
+    vllm_generation.shutdown()
