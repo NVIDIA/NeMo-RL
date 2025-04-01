@@ -179,6 +179,7 @@ class RayWorkerGroup:
         workers_per_node: Optional[Union[int, List[int]]] = None,
         name_prefix: str = "",
         bundle_indices_list: Optional[List[tuple]] = None,
+        additional_env_vars: Optional[Dict[str, str]] = None,
     ):
         """Initialize a group of distributed Ray workers.
 
@@ -191,13 +192,14 @@ class RayWorkerGroup:
             bundle_indices_list: Explicit list of (node_idx, [local_bundle_indices]) tuples.
                                Each tuple defines a tied group of workers placed on the same node.
                                If provided, workers_per_node is ignored.
+            additional_env_vars: Additional environment variables to pass to the workers
         """
         self._workers = []
         self._worker_metadata = []
         self.cluster = cluster
         self.name_prefix = name_prefix
         self.tied_workers_groups = []
-
+        self.additional_env_vars = additional_env_vars
         # Maps worker indices to their corresponding tied group index
         # For example, if worker with index 3 belongs to tied worker group 1,
         # then worker_to_tied_group_index[3] = 1
@@ -287,6 +289,8 @@ class RayWorkerGroup:
                         "NODE_RANK": str(node_idx),
                     }
                 )
+                if self.additional_env_vars:
+                    env_vars.update(self.additional_env_vars)
 
                 # For tensor parallel groups, only the first worker gets bundle_indices
                 worker_bundle_indices = (

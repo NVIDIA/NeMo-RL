@@ -49,36 +49,6 @@ from nemo_reinforcer.distributed.virtual_cluster import (
 )
 
 
-def move_to_cpu(model):
-    return model
-    for param in model.parameters():
-        param.data = param.data.to("cpu", non_blocking=True)
-        if hasattr(param, "_local_shard"):
-            param._local_shard = param.data
-        if param.grad is not None:
-            param.grad = param.grad.to("cpu", non_blocking=True)
-
-    if hasattr(model, "_fsdp_wrapped_module"):
-        move_to_cpu(model._fsdp_wrapped_module)
-
-    return model
-
-
-def move_to_gpu(model):
-    return model
-    for param in model.parameters():
-        param.data = param.data.to("cuda", non_blocking=True)
-        if hasattr(param, "_local_shard"):
-            param._local_shard = param.data
-        if param.grad is not None:
-            param.grad = param.grad.to("cuda", non_blocking=True)
-
-    if hasattr(model, "_fsdp_wrapped_module"):
-        move_to_gpu(model._fsdp_wrapped_module)
-
-    return model
-
-
 @ray.remote
 class HfPolicyWorker:
     DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.DEFAULT_VENV
@@ -144,23 +114,29 @@ class HfPolicyWorker:
                 buffer_dtype=torch.float32,
             )
 
+            cpu_offload = (
+                CPUOffload(offload_params=True)
+                if self.cfg["fsdp_offload_enabled"]
+                else None
+            )
+
             return FullyShardedDataParallel(
                 model,
                 device_mesh=mesh,
                 auto_wrap_policy=size_based_auto_wrap_policy,
                 mixed_precision=mp_policy,
-                cpu_offload=CPUOffload(offload_params=True),
+                cpu_offload=cpu_offload,
             )
 
         self.model.to("cuda")
         self.model = do_fsdp(self.model)
-        self.model = move_to_cpu(self.model)
+        self.model = self.manual_offload_to_cpu(self.model)
 
         self.reference_model.to("cuda")
         self.reference_model = do_fsdp(self.reference_model)
-        self.reference_model = move_to_cpu(self.reference_model)
+        self.reference_model = self.manual_offload_to_cpu(self.reference_model)
 
-        self.model = move_to_gpu(self.model)
+        self.model = self.manual_load_to_gpu(self.model)
         self._held_reference_model_params = None
         # register_fsdp_forward_method(self.model, "generate")
         if init_optimizer:
@@ -210,13 +186,6 @@ class HfPolicyWorker:
             print(
                 "No weights path provided. Starting from scratch (default policy init)"
             )
-
-    @staticmethod
-    def configure_worker(
-        num_gpus: int | float, bundle_indices: Optional[list] = None
-    ) -> tuple[dict, dict, dict]:
-        env_vars = {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
-        return None, env_vars, None
 
     def is_alive(self):
         return True
@@ -463,8 +432,8 @@ class HfPolicyWorker:
             original_model = self.model
             original_reference_model = self.reference_model
 
-            self.model = move_to_cpu(self.model)
-            self.reference_model = move_to_gpu(self.reference_model)
+            self.model = self.manual_offload_to_cpu(self.model)
+            self.reference_model = self.manual_load_to_gpu(self.reference_model)
 
             # Swap the references
             self.model, self.reference_model = self.reference_model, self.model
@@ -477,8 +446,8 @@ class HfPolicyWorker:
 
         finally:
             # Restore original references and device placement
-            self.reference_model = move_to_cpu(original_reference_model)
-            self.model = move_to_gpu(original_model)
+            self.reference_model = self.manual_offload_to_cpu(original_reference_model)
+            self.model = self.manual_load_to_gpu(original_model)
             gc.collect()
             torch.cuda.empty_cache()
 
@@ -745,28 +714,28 @@ class HfPolicyWorker:
             data[name] = reduce_tensor(p.detach())
 
         if offload_model:
-            self.model = move_to_cpu(self.model)
+            self.model = self.manual_offload_to_cpu(self.model)
             gc.collect()
             torch.cuda.empty_cache()
         return {self.device_uuid: data}
 
     def prepare_for_lp_inference(self):
-        self.model = move_to_gpu(self.model)
+        self.model = self.manual_load_to_gpu(self.model)
         self.model.eval()
         self.offload_before_refit()
 
     def prepare_for_training(self, *args, **kwargs):
         # onload models and optimizer state to cuda
-        self.model = move_to_gpu(self.model)
+        self.model = self.manual_load_to_gpu(self.model)
         self.model.train()
 
-        # Move optimizer state to CUDA if it exists
-        if hasattr(self, "optimizer") and self.optimizer is not None:
-            for state in self.optimizer.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v) and not v.is_cuda:
-                        ...
-                        # state[k] = v.to("cuda")
+        if not self.cfg["fsdp_offload_enabled"]:
+            # Move optimizer state to CUDA if it exists
+            if hasattr(self, "optimizer") and self.optimizer is not None:
+                for state in self.optimizer.state.values():
+                    for k, v in state.items():
+                        if torch.is_tensor(v) and not v.is_cuda:
+                            state[k] = v.to("cuda")
 
         torch.cuda.empty_cache()
 
@@ -774,15 +743,15 @@ class HfPolicyWorker:
     def offload_before_refit(self):
         """Offload the optimizer and buffers to the CPU."""
         torch.randn(1).cuda()  # wake up torch allocator
-        if hasattr(self, "optimizer") and self.optimizer is not None:
-            for state in self.optimizer.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        ...
-                        # state[k] = v.to("cpu")
+        if not self.cfg["fsdp_offload_enabled"]:
+            if hasattr(self, "optimizer") and self.optimizer is not None:
+                for state in self.optimizer.state.values():
+                    for k, v in state.items():
+                        if torch.is_tensor(v):
+                            state[k] = v.to("cpu")
 
-        # for buffer in self.model.buffers():
-        #     buffer.data = buffer.data.to("cpu")
+            for buffer in self.model.buffers():
+                buffer.data = buffer.data.to("cpu")
 
         gc.collect()
         torch.cuda.empty_cache()
@@ -797,7 +766,7 @@ class HfPolicyWorker:
     @torch.no_grad()
     def offload_after_refit(self):
         # Offload as much as possible on the CPU
-        self.model = move_to_cpu(self.model)
+        self.model = self.manual_offload_to_cpu(self.model)
         self.model.eval()
         torch.randn(1).cuda()  # wake up torch allocator
         self.offload_before_refit()  # rerun the old offload function
@@ -814,6 +783,38 @@ class HfPolicyWorker:
         print(
             f"GPU Memory after refit complete: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved"
         )
+
+    def manual_offload_to_cpu(self, model):
+        if self.cfg["fsdp_offload_enabled"]:
+            return model
+
+        for param in model.parameters():
+            param.data = param.data.to("cpu", non_blocking=True)
+            if hasattr(param, "_local_shard"):
+                param._local_shard = param.data
+            if param.grad is not None:
+                param.grad = param.grad.to("cpu", non_blocking=True)
+
+        if hasattr(model, "_fsdp_wrapped_module"):
+            self.manual_offload_to_cpu(model._fsdp_wrapped_module)
+
+        return model
+
+    def manual_load_to_gpu(self, model):
+        if self.cfg["fsdp_offload_enabled"]:
+            return model
+
+        for param in model.parameters():
+            param.data = param.data.to("cuda", non_blocking=True)
+            if hasattr(param, "_local_shard"):
+                param._local_shard = param.data
+            if param.grad is not None:
+                param.grad = param.grad.to("cuda", non_blocking=True)
+
+        if hasattr(model, "_fsdp_wrapped_module"):
+            self.manual_load_to_gpu(model._fsdp_wrapped_module)
+
+        return model
 
     def save_checkpoint(
         self,
@@ -921,11 +922,15 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             weights_path=weights_path,
             optimizer_path=optimizer_path,
         )
+        additional_env_vars = {}
+        if config["expandable_segments_enabled"]:
+            additional_env_vars["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
         self.worker_group = RayWorkerGroup(
             cluster,
             worker_builder,
             name_prefix=name_prefix,
             workers_per_node=workers_per_node,
+            additional_env_vars=additional_env_vars,
         )
         self.dp_size = self.worker_group.world_size
         self.cfg = config
