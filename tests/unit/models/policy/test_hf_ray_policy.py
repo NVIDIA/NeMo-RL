@@ -373,6 +373,7 @@ def generation_setup_with_ref_model():
     for item in generation_setup(init_reference_model=False):
         yield item
 
+
 @pytest.mark.timeout(180)
 def test_hf_policy_generation(generation_setup_no_ref_model, tracker):
     policy, cluster, data, tokenizer, prompts, expected_generations = (
