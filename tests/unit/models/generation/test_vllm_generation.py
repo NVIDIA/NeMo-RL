@@ -27,6 +27,7 @@ from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
     "model_name": "meta-llama/Llama-3.2-1B",  # Small model for testing
+    "tokenizer_name": "meta-llama/Llama-3.2-1B",
     "dtype": "bfloat16",
     "max_new_tokens": 10,
     "temperature": 1.0,
