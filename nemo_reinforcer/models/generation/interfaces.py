@@ -44,6 +44,11 @@ def verify_right_padding(
         f"data must be a BatchedDataDict, got type: {type(data)}"
     )
 
+    assert pad_value is not None, (
+        "Tokenizer does not have a pad token assigned. \n"
+        "If the default tokenizer does not have a pad token, you can assign it the value of eos token by tokenizer.pad_token = tokenizer.eos_token"
+    )
+
     # Determine which type of data we're dealing with
     if "input_ids" in data and "input_lengths" in data:
         # GenerationDatumSpec
