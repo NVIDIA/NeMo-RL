@@ -243,7 +243,7 @@ def validate(
 
             cat_and_padded, input_lengths = batched_message_log_to_flat_message(
                 val_batch["message_log"],
-                pad_value_dict={"token_ids": tokenizer.eos_token_id},
+                pad_value_dict={"token_ids": tokenizer.pad_token_id},
             )
 
             val_data: BatchedDataDict = BatchedDataDict(
@@ -356,7 +356,7 @@ def sft_train(
 
                 cat_and_padded, input_lengths = batched_message_log_to_flat_message(
                     batch["message_log"],
-                    pad_value_dict={"token_ids": tokenizer.eos_token_id},
+                    pad_value_dict={"token_ids": tokenizer.pad_token_id},
                 )
 
                 train_data: BatchedDataDict = BatchedDataDict(
