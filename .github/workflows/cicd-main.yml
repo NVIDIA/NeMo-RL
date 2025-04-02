@@ -150,7 +150,7 @@ jobs:
         # cd /opt/reinforcer
         # uv run --no-sync bash ./tests/functional/sft.sh
         # uv run --no-sync bash ./tests/functional/grpo.sh
-      FINAL_SCRIPT_EXTERNAL: |
+      AFTER_SCRIPT: |
         cd /opt/reinforcer
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Unit test results
