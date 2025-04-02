@@ -88,7 +88,7 @@ def main():
     )
 
     policy.save_checkpoint(
-        weights_path=hf_ckpt,
+        weights_path=os.path.abspath(hf_ckpt),
         save_hf=True,
         save_torch_dist=False,
     )
