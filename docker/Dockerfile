@@ -18,6 +18,8 @@ RUN chmod 755 /home/ray/.cache
 FROM base AS deps
 
 WORKDIR /opt/reinforcer
+COPY nemo_reinforcer/package_info.py nemo_reinforcer/package_info.py
+COPY nemo_reinforcer/__init__.py nemo_reinforcer/__init__.py
 COPY pyproject.toml .
 RUN uv venv .venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
