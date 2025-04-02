@@ -27,7 +27,6 @@ on:
         default: 10
       UNIT_TEST_SCRIPT:
         type: string
-<<<<<<< HEAD
         description: Unit test script to execute
         required: true
       DOC_TEST_SCRIPT:
@@ -37,9 +36,6 @@ on:
       FUNCTIONAL_TEST_SCRIPT:
         type: string
         description: Functional test script to execute
-=======
-        description: Test script to execute in container
->>>>>>> origin/main
         required: true
       AFTER_SCRIPT:
         type: string
