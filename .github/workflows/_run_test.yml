@@ -81,7 +81,7 @@ jobs:
               --env REINFORCER_REPO_DIR=/opt/reinforcer \
               --env HF_TOKEN \
               --env GITHUB_STEP_SUMMARY \
-              --volume $(dirname $GITHUB_STEP_SUMMARY):$(dirname $GITHUB_STEP_SUMMARY)
+              --volume $(dirname $GITHUB_STEP_SUMMARY):$(dirname $GITHUB_STEP_SUMMARY) \
               --volume /mnt/datadrive/TestData/reinforcer/datasets:/opt/reinforcer/datasets:ro \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
               --volume /mnt/datadrive/TestData/reinforcer/hf_home/hub:/home/TestData/reinforcer/hf_home/hub \
