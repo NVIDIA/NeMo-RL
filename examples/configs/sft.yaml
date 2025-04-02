@@ -22,6 +22,8 @@ policy:
   train_micro_batch_size: 1
   max_total_sequence_length: 2048
   precision: "float32"
+  expandable_segments_enabled: false
+  fsdp_offload_enabled: false
 
   optimizer:
     name: "torch.optim.AdamW"
