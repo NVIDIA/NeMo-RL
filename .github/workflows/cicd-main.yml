@@ -152,12 +152,12 @@ jobs:
         # uv run --no-sync bash ./tests/functional/grpo.sh
       AFTER_SCRIPT: |
         cd /opt/reinforcer
-        cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
+        cat <<EOF
         # Unit test results
         \`\`\`json
         $(cat tests/unit/unit_results.json || echo "n/a")
         \`\`\`
-        EOF
+        EOF | tee -a $GITHUB_STEP_SUMMARY
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
