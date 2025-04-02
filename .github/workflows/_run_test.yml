@@ -76,7 +76,7 @@ jobs:
             GITHUB_ACTION_DIR=$(dirname $GITHUB_STEP_SUMMARY)
             docker run --rm -u root -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=64g \
               --env TRANSFORMERS_OFFLINE=0 \
-              --env HYDRA_FULL_ERROR=1 \x
+              --env HYDRA_FULL_ERROR=1 \
               --env HF_HOME=/home/TestData/reinforcer/hf_home \
               --env HF_DATASETS_CACHE=/home/TestData/reinforcer/hf_datasets_cache \
               --env REINFORCER_REPO_DIR=/opt/reinforcer \
