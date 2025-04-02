@@ -17,6 +17,7 @@ set -eoux pipefail
 CONTAINER=$CONTAINER
 MOUNTS=$MOUNTS
 COMMAND=${COMMAND:-}  # This is a script relative to the SLURM_SUBMIT_DIR. If left empty, it will leave the cluster idle after it's brought up.
+PORT=${PORT:-41993}
 ########################################################
 
 COMMON_SRUN_ARGS=""
@@ -54,7 +55,7 @@ done
 head_node=${nodes_array[0]}
 head_node_ip=${ip_addresses_array[0]}
 
-port=41993
+port=$PORT
 ip_head=$head_node_ip:$port
 
 # First we start the head of the ray cluster on one of the physical nodes
