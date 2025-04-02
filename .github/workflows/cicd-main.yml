@@ -139,8 +139,6 @@ jobs:
       RUNNER: self-hosted-azure
       TIMEOUT: 15
       UNIT_TEST_SCRIPT: |
-        # FIX ME
-        set +e
         cd /opt/reinforcer
         uv run --no-sync bash -x ./tests/run_unit.sh
       DOC_TEST_SCRIPT: |
@@ -149,7 +147,6 @@ jobs:
       FUNCTIONAL_TEST_SCRIPT: |
         # TODO: Temporarily disable functional tests until we have more capacity and tests run quicker
         #   Related: https://github.com/NVIDIA/reinforcer/pull/27
-        # set +e
         # cd /opt/reinforcer
         # uv run --no-sync bash ./tests/functional/sft.sh
         # uv run --no-sync bash ./tests/functional/grpo.sh
