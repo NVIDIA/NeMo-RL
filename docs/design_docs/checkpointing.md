@@ -15,7 +15,7 @@ There are two ways to get a Reinforcer checkpoint in HuggingFace format.
         save_hf=True,
     )
     ```
-2. Convert a torch distributed checkpoint checkpoint to HuggingFace format after training. We provide a conversion script for this purpose.
+2. Convert a Torch distributed checkpoint checkpoint to HuggingFace format after training. We provide a conversion script for this purpose.
 
     ```python
     uv run examples/convert_dcp_to_hf.py --config=<YAML CONFIG USED DURING TRAINING> <ANY CONFIG OVERRIDES USED DURING TRAINING> --dcp-ckpt-path=<PATH TO DIST CHECKPOINT TO CONVERT> --hf-ckpt-path=<WHERE TO SAVE HF CHECKPOINT>
