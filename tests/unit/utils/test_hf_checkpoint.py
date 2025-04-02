@@ -1,0 +1,163 @@
+import copy
+import os
+import pytest
+import torch
+
+from nemo_reinforcer.utils.hf_checkpoint import (
+    load_checkpoint,
+    save_checkpoint,
+    ModelState,
+    OptimizerState,
+)
+
+
+@pytest.fixture
+def test_experiment():
+    model = torch.nn.ModuleList(
+        [
+            torch.nn.Linear(4, 4),
+            torch.nn.LayerNorm(4),
+            torch.nn.ReLU(),
+            torch.nn.Linear(4, 1),
+        ]
+    ).to("cuda")
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
+
+    return model, optimizer, scheduler
+
+
+## recursively get the dummy state dict
+## by replacing tensors with random ones of the same shape
+def get_dummy_state_dict(state_dict, dummy_dict={}):
+    for k in state_dict.keys():
+        if isinstance(state_dict[k], dict):
+            dummy_dict[k] = get_dummy_state_dict(state_dict[k], {})
+        elif isinstance(state_dict[k], torch.Tensor):
+            dummy_dict[k] = torch.randn(state_dict[k].shape)
+        else:
+            dummy_dict[k] = state_dict[k]
+    return dummy_dict
+
+
+## recursively check equality of two dictionaries
+def check_dict_equality(dict1, dict2):
+    for k in dict1.keys():
+        if isinstance(dict1[k], dict):
+            check_dict_equality(dict1[k], dict2[k])
+        elif isinstance(dict1[k], torch.Tensor):
+            assert torch.allclose(dict1[k], dict2[k])
+        else:
+            assert dict1[k] == dict2[k]
+
+
+def test_model_state(test_experiment):
+    test_model, _, _ = test_experiment
+    model_state = ModelState(test_model)
+    state_dict = model_state.state_dict()
+    assert set(state_dict) == {"model"}
+
+    ## relu has no parameters
+    expected_keys = {
+        "0.bias",
+        "0.weight",
+        "1.bias",
+        "1.weight",
+        "3.bias",
+        "3.weight",
+    }
+    assert set(state_dict["model"].keys()) == expected_keys
+
+    dummy_model_state_dict = get_dummy_state_dict(state_dict, {})
+
+    ## update the model's state dict and verify that the model's parameters are updated
+    model_state.load_state_dict(dummy_model_state_dict)
+    new_model_state_dict = model_state.state_dict()
+    check_dict_equality(new_model_state_dict, dummy_model_state_dict)
+
+
+def test_optimizer_state(test_experiment):
+    test_model, optimizer, scheduler = test_experiment
+
+    optim_state = OptimizerState(test_model, optimizer, scheduler)
+    state_dict = optim_state.state_dict()
+
+    assert set(state_dict.keys()) == {"optim", "sched"}
+
+    ## relu has no parameters
+    expected_keys = {
+        "0.bias",
+        "0.weight",
+        "1.bias",
+        "1.weight",
+        "3.bias",
+        "3.weight",
+    }
+
+    assert set(state_dict["optim"]["state"].keys()) == expected_keys
+
+    dummy_state_dict = get_dummy_state_dict(state_dict, {})
+
+    optim_state.load_state_dict(dummy_state_dict)
+    new_state_dict = optim_state.state_dict()
+    check_dict_equality(new_state_dict, dummy_state_dict)
+
+
+def test_save_and_load_model_only(test_experiment):
+    test_model, _, _ = test_experiment
+    save_checkpoint(test_model, "/tmp/test_model_only")
+    assert os.path.exists("/tmp/test_model_only")
+    assert not os.path.exists("/tmp/test_model_only-hf")
+    assert os.listdir("/tmp/test_model_only") == [".metadata", "__0_0.distcp"]
+
+
+def test_save_and_load_model_and_optimizer(test_experiment):
+    test_model, optimizer, scheduler = test_experiment
+    for _ in range(5):
+        scheduler.step()
+
+    save_checkpoint(
+        test_model,
+        "/tmp/model_and_optimizer/model",
+        optimizer,
+        scheduler,
+        optimizer_path="/tmp/model_and_optimizer/optimizer",
+    )
+
+    assert os.path.exists("/tmp/model_and_optimizer/model")
+    assert os.path.exists("/tmp/model_and_optimizer/optimizer")
+    assert os.listdir("/tmp/model_and_optimizer/model") == [".metadata", "__0_0.distcp"]
+    assert os.listdir("/tmp/model_and_optimizer/optimizer") == [
+        ".metadata",
+        "__0_0.distcp",
+    ]
+
+    ## modify the model, optimizer, and scheduler and verify that loading the checkpoint overrides the values
+    new_linear = torch.nn.Linear(4, 4)
+    new_linear.weight = torch.nn.Parameter(torch.ones([4, 4]).to("cuda"))
+    new_linear.bias = torch.nn.Parameter(torch.ones(4).to("cuda"))
+    new_model = torch.nn.ModuleList(
+        [
+            new_linear,
+            torch.nn.LayerNorm(4),
+            torch.nn.ReLU(),
+            torch.nn.Linear(4, 1),
+        ]
+    ).to("cuda")
+
+    new_optimizer = torch.optim.Adam(new_model.parameters(), lr=0.001)
+    new_scheduler = torch.optim.lr_scheduler.StepLR(
+        new_optimizer, step_size=4, gamma=0.2
+    )
+    load_checkpoint(
+        new_model,
+        "/tmp/model_and_optimizer/model",
+        new_optimizer,
+        new_scheduler,
+        optimizer_path="/tmp/model_and_optimizer/optimizer",
+    )
+
+    assert scheduler.state_dict() == new_scheduler.state_dict()
+    check_dict_equality(new_model.state_dict(), test_model.state_dict())
+    check_dict_equality(new_optimizer.state_dict(), optimizer.state_dict())
