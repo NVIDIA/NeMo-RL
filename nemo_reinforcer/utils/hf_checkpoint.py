@@ -154,7 +154,9 @@ def save_checkpoint(
     if save_hf:
         # Create a new path by appending "-hf" to the weights path
         hf_weights_path = f"{Path(weights_path)}-hf"
-        model.save_pretrained(hf_weights_path, is_main_process=(torch.distributed.get_rank()==0))
+        model.save_pretrained(
+            hf_weights_path, is_main_process=(torch.distributed.get_rank() == 0)
+        )
 
     if save_torch_dist:
         model_state_dict = {"model": ModelState(model)}
