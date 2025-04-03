@@ -237,6 +237,17 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
             "Where is the sun?",
         ]
 
+        expected_generations = [
+            "Write a story about a magical forest. The forest is magical because it is full of",
+            "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis",
+            "What are the benefits of exercise? The benefits of exercise are many and varied. It",
+            "Describe the water cycle in your own words.\nDescribe the water cycle in",
+            "What is the capital of France? A. Paris B. New York C. Washington",
+            "Who is the president of the USA? Who is the president of the USA? Who is",
+            "What is the capital of the moon? A. Houston, Texas B. New York City",
+            "Where is the sun? Where is the moon? Where is the earth?",
+        ]
+
         # Tokenize the prompts the same way as in test_hf_ray_policy
         tokenized = tokenizer(
             prompts,
@@ -271,7 +282,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
-        generation_results = vllm_policy.generate(test_input_data)
+        generation_results = vllm_policy.generate(test_input_data, greedy=True)
         vllm_policy.finish_generation()
         # Validate generation outputs
         assert "output_ids" in generation_results, (
@@ -286,6 +297,9 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
             generation_results["output_ids"], skip_special_tokens=True
         )
         print(f"vLLM generated texts: {generated_texts}")
+        assert generated_texts == expected_generations, (
+            "Output should be the same as the expected output"
+        )
 
         # Run logprob calculation with HF policy to verify
 

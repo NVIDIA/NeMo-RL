@@ -397,6 +397,10 @@ def test_hf_policy_generation(generation_setup, tokenizer, tracker):
     # Verify results
     assert "output_ids" in results, "Generation results should contain 'output_ids'"
     output_ids = results["output_ids"]
+    generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    assert generated_texts == expected_generations, (
+        "Output should be the same as the expected output"
+    )
 
     # run logprob calculation manually to verify
     fprop_logprob_data = BatchedDataDict(
