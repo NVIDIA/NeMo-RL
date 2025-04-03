@@ -103,8 +103,9 @@ convention = "google"
 "*_test.py" = ["D"]
 
 [tool.uv]
-# We set the link-mode to symlink since ray's tempdir `/tmp/ray` is on a different
-# file-system than the uv-cache and the default of hardlink always triggers a copy.
-# Since the venv is cheap and can be considered ephemeral, we can always symlink for
-# now.
-link-mode = "symlink"
+# Users may use different link-modes depending on their scenario:
+#  --link-mode=hardlink (default on linux; may get warnings about switching to --link-mode copy if uv cache and venv on different file-systems)
+#  --link-mode=copy (slower but more reliable; supresses warning)
+#  --link-mode=symlink (fastest option when uv cache and venv on different file-system; caveat: venv is brittle since it depends on the environment/container)
+#
+#link-mode = "symlink"

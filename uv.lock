@@ -1171,6 +1171,20 @@ wheels = [
 ]
 
 [[package]]
+name = "hydra-core"
+version = "1.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "antlr4-python3-runtime" },
+    { name = "omegaconf" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6d/8e/07e42bc434a847154083b315779b0a81d567154504624e181caf2c71cd98/hydra-core-1.3.2.tar.gz", hash = "sha256:8a878ed67216997c3e9d88a8e72e7b4767e81af37afb4ea3334b269a4390a824", size = 3263494 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/50/e0edd38dcd63fb26a8547f13d28f7a008bc4a3fd4eb4ff030673f22ad41a/hydra_core-1.3.2-py3-none-any.whl", hash = "sha256:fa0238a9e31df3373b35b0bfb672c34cc92718d21f81311d8996a16de1141d8b", size = 154547 },
+]
+
+[[package]]
 name = "identify"
 version = "2.6.9"
 source = { registry = "https://pypi.org/simple" }
@@ -1743,14 +1757,15 @@ wheels = [
 
 [[package]]
 name = "nemo-reinforcer"
-version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "colored" },
     { name = "datasets" },
+    { name = "hydra-core" },
     { name = "math-verify" },
     { name = "numpy" },
+    { name = "nvidia-ml-py" },
     { name = "omegaconf" },
     { name = "ray", extra = ["default"] },
     { name = "rich" },
@@ -1758,11 +1773,15 @@ dependencies = [
     { name = "torch" },
     { name = "torchdata" },
     { name = "transformers" },
-    { name = "vllm" },
     { name = "wandb" },
 ]
 
 [package.optional-dependencies]
+vllm = [
+    { name = "vllm" },
+]
+
+[package.dev-dependencies]
 build = [
     { name = "einops" },
     { name = "packaging" },
@@ -1787,44 +1806,52 @@ test = [
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
 ]
-vllm = [
-    { name = "vllm" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "accelerate", specifier = ">=0.26" },
     { name = "colored", specifier = "==2.2.3" },
     { name = "datasets" },
-    { name = "einops", marker = "extra == 'build'" },
+    { name = "hydra-core" },
     { name = "math-verify" },
-    { name = "myst-parser", marker = "extra == 'docs'" },
     { name = "numpy" },
-    { name = "nvidia-sphinx-theme", marker = "extra == 'docs'" },
+    { name = "nvidia-ml-py" },
     { name = "omegaconf" },
-    { name = "packaging", marker = "extra == 'build'" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = "==3.6.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0.0" },
-    { name = "pytest-cov", marker = "extra == 'test'" },
-    { name = "pytest-timeout", marker = "extra == 'test'" },
     { name = "ray", extras = ["default"], specifier = "==2.43.0" },
     { name = "rich" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = "==0.9.9" },
-    { name = "setuptools", marker = "extra == 'build'" },
-    { name = "sphinx", marker = "extra == 'docs'" },
-    { name = "sphinx-autobuild", marker = "extra == 'docs'" },
-    { name = "sphinx-autodoc2", marker = "extra == 'docs'" },
-    { name = "sphinx-copybutton", marker = "extra == 'docs'" },
     { name = "tensorboard" },
     { name = "torch", specifier = "==2.6.0" },
-    { name = "torch", marker = "extra == 'build'", specifier = "==2.6.0" },
     { name = "torchdata" },
     { name = "transformers" },
-    { name = "vllm", specifier = "==0.8.0" },
     { name = "vllm", marker = "extra == 'vllm'", specifier = "==0.8.0" },
     { name = "wandb" },
 ]
-provides-extras = ["vllm", "build", "docs", "dev", "test"]
+provides-extras = ["vllm"]
+
+[package.metadata.requires-dev]
+build = [
+    { name = "einops" },
+    { name = "packaging" },
+    { name = "setuptools" },
+    { name = "torch", specifier = "==2.6.0" },
+]
+dev = [
+    { name = "pre-commit", specifier = "==3.6.0" },
+    { name = "ruff", specifier = "==0.9.9" },
+]
+docs = [
+    { name = "myst-parser" },
+    { name = "nvidia-sphinx-theme" },
+    { name = "sphinx" },
+    { name = "sphinx-autobuild" },
+    { name = "sphinx-autodoc2" },
+    { name = "sphinx-copybutton" },
+]
+test = [
+    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "pytest-cov" },
+    { name = "pytest-timeout" },
+]
 
 [[package]]
 name = "nest-asyncio"
@@ -2028,6 +2055,15 @@ version = "0.6.2"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/a8/bcbb63b53a4b1234feeafb65544ee55495e1bb37ec31b999b963cbccfd1d/nvidia_cusparselt_cu12-0.6.2-py3-none-manylinux2014_x86_64.whl", hash = "sha256:df2c24502fd76ebafe7457dbc4716b2fec071aabaed4fb7691a201cde03704d9", size = 150057751 },
+]
+
+[[package]]
+name = "nvidia-ml-py"
+version = "12.570.86"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ad/6e/7b0c9b88c7d520fb8639024a1a3b6dd1db03bf2c17ae85040c8758d2eb6f/nvidia_ml_py-12.570.86.tar.gz", hash = "sha256:0508d4a0c7b6d015cf574530b95a62ed4fc89da3b8b47e1aefe6777db170ec8b", size = 43147 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/a8/ec37169be4e2b7063b9076ed3fe0661e87335fbca665eed3f48c415cb234/nvidia_ml_py-12.570.86-py3-none-any.whl", hash = "sha256:58907de35a845abd13dcb227f18298f3b5dd94a72d04c9e594e77711e95c0b51", size = 44442 },
 ]
 
 [[package]]

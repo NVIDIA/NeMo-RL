@@ -23,7 +23,7 @@ def test_create_local_venv():
         # Mock os.environ to set REINFORCER_VENV_DIR for this test
         with patch.dict(os.environ, {"REINFORCER_VENV_DIR": tempdir}):
             venv_python = create_local_venv(
-                py_executable="uv run --extra docs", venv_name="test_venv"
+                py_executable="uv run --group docs", venv_name="test_venv"
             )
             assert os.path.exists(venv_python)
             assert venv_python == f"{tempdir}/test_venv/bin/python"
