@@ -490,15 +490,14 @@ def test_vllm_generate_text(cluster, tokenizer):
     vllm_generation.shutdown()
 
 
-@pytest.mark.timeout(
-    180
-)  # Increased timeout due to multiple generations and weight updates
+@pytest.mark.timeout(180)
 @pytest.mark.parametrize("tensor_parallel_size", [1, 2])
-def test_vllm_prefix_cache_reset(cluster, tokenizer, tensor_parallel_size):
+def test_vllm_weight_update_and_prefix_cache_reset(
+    cluster, tokenizer, tensor_parallel_size
+):
     """Test that the vLLM prefix cache is correctly reset when weights change."""
     from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 
-    # --- Setup ---
     # Create configs
     vllm_config = basic_vllm_test_config.copy()
     vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
@@ -508,9 +507,9 @@ def test_vllm_prefix_cache_reset(cluster, tokenizer, tensor_parallel_size):
 
     hf_config = {
         "model_name": basic_vllm_test_config["model_name"],
-        "train_global_batch_size": 1,  # Keep minimal for this test
+        "train_global_batch_size": 1,
         "train_micro_batch_size": 1,
-        "learning_rate": 1e-6,  # Dummy value
+        "learning_rate": 1e-6,
         "logprob_batch_size": 1,
         "max_new_tokens": 16,
         "do_sample": False,
@@ -555,7 +554,7 @@ def test_vllm_prefix_cache_reset(cluster, tokenizer, tensor_parallel_size):
         print("Adding noise to weights in HF policy...")
         ray.get(
             [
-                worker.add_noise_to_weights.remote()
+                worker._add_noise_to_weights.remote()
                 for worker in hf_policy.worker_group.workers
             ]
         )
@@ -584,6 +583,7 @@ def test_vllm_prefix_cache_reset(cluster, tokenizer, tensor_parallel_size):
         assert logprob2 != logprob3, (
             "Logprobs should be different after cache reset and weight update."
         )
+
         print("Prefix cache reset verified successfully.")
 
     finally:

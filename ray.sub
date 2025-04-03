@@ -19,21 +19,25 @@ MOUNTS=$MOUNTS
 COMMAND=${COMMAND:-}  # This is a script relative to the SLURM_SUBMIT_DIR. If left empty, it will leave the cluster idle after it's brought up.
 ########################################################
 
+# Defaults to placing uv cache inside the SLURM_SUBMIT_DIR
+# This directory is mounted into the container at /home/ray/.cache/uv so it is shared between the head and worker nodes
+UV_CACHE_DIR="${UV_CACHE_DIR:-$SLURM_SUBMIT_DIR/uv_cache}"
+mkdir -p $UV_CACHE_DIR
+
+# Create logs directory
+LOG_DIR="$SLURM_SUBMIT_DIR/$SLURM_JOB_ID-logs"
+mkdir -p $LOG_DIR
+
 COMMON_SRUN_ARGS=""
-COMMON_SRUN_ARGS+=" --export=ALL"
 COMMON_SRUN_ARGS+=" --no-container-mount-home"
 COMMON_SRUN_ARGS+=" --mpi=pmix"
-COMMON_SRUN_ARGS+=" --container-mounts=$MOUNTS"
+COMMON_SRUN_ARGS+=" --container-mounts=$MOUNTS,$UV_CACHE_DIR:/home/ray/.cache/uv"
 COMMON_SRUN_ARGS+=" --container-image=$CONTAINER"
 COMMON_SRUN_ARGS+=" --container-workdir=$SLURM_SUBMIT_DIR"
 # TODO: delete these (just for debugging)
 COMMON_SRUN_ARGS+=" -p $SLURM_JOB_PARTITION"
 COMMON_SRUN_ARGS+=" -A $SLURM_JOB_ACCOUNT"
 COMMON_SRUN_ARGS+=" --gres=gpu:8"
-
-# Create logs directory
-LOG_DIR="$SLURM_JOB_ID-logs"
-mkdir -p $LOG_DIR
 
 # Number of GPUs per node
 gpus_per_node=8
@@ -87,7 +91,7 @@ EOF
 )
 srun $COMMON_SRUN_ARGS --container-name=ray-head --nodes=1 --ntasks=1 -w "$head_node" -o $LOG_DIR/ray-head.log bash -x -c "$head_cmd" &
 
-export NUM_ACTORS=$((gpus_per_node * SLURM_JOB_NUM_NODES))
+NUM_ACTORS=$((gpus_per_node * SLURM_JOB_NUM_NODES))
 
 # Start Ray worker nodes
 # We want 1 Ray worker node per physical node

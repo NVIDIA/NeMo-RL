@@ -50,7 +50,7 @@ from nemo_reinforcer.distributed.virtual_cluster import (
 
 @ray.remote
 class HfPolicyWorker:
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.DEFAULT_VENV
+    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.BASE
 
     def __repr__(self):
         """Customizes the actor's prefix in the Ray logs.
@@ -679,15 +679,15 @@ class HfPolicyWorker:
 
             return return_data
 
-    def add_noise_to_weights(self):
+    def _add_noise_to_weights(self):
         """Add small Gaussian noise to the weights of the model. Note that this is used for testing purposes only."""
         # TODO @sahilj: do this without a summon (maybe FSDP2)
-        noise_std = 0.01  # Standard deviation for the noise - adjust as needed
+        noise_std = 0.01  # Standard deviation for the noise
         with torch.distributed.fsdp.FullyShardedDataParallel.summon_full_params(
             self.model, recurse=True
         ):
             for p in self.model.parameters():
-                if p.requires_grad:  # Only add noise to trainable parameters
+                if p.requires_grad:
                     noise = torch.randn_like(p.data) * noise_std
                     p.data.add_(noise)  # Add noise in-place
         torch.cuda.synchronize()
