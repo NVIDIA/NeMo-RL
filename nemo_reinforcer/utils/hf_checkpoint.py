@@ -150,19 +150,23 @@ def save_checkpoint(
         save_hf: Whether to save in HuggingFace format
     """
     if save_hf:
-        # Create a new path by appending "-hf" to the weights path
-        hf_weights_path = f"{Path(weights_path)}-hf"
+        ## NOTE rank0_only is False because True causes a hanf with SFT
+        ## this causes multiple copies of the model to get offloaded to CPU
+        with torch.distributed.fsdp.FullyShardedDataParallel.summon_full_params(
+            model,
+            offload_to_cpu=True,
+            writeback=False,
+        ):
+            state_dict = model.state_dict()
 
-        ## make sure we save the checkpoint from rank 0 only
-        def custom_save(obj, f) -> None:
-            if torch.distributed.get_rank == 0:
-                torch.save(obj, f)
+        if torch.distributed.get_rank() == 0:
+            # Create a new path by appending "-hf" to the weights path
+            hf_weights_path = f"{Path(weights_path)}-hf"
 
-        model.save_pretrained(
-            hf_weights_path,
-            is_main_process=(torch.distributed.get_rank() == 0),
-            save_function=custom_save,
-        )
+            model.save_pretrained(
+                hf_weights_path,
+                state_dict=state_dict,
+            )
 
     if save_torch_dist:
         model_state = {"model": ModelState(model)}
