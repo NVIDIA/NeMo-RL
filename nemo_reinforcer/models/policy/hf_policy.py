@@ -679,14 +679,17 @@ class HfPolicyWorker:
 
             return return_data
 
-    def zero_out_weights(self):
-        """Zero out the weights of the model."""
+    def _add_noise_to_weights(self):
+        """Add small Gaussian noise to the weights of the model. Note that this is used for testing purposes only."""
         # TODO @sahilj: do this without a summon (maybe FSDP2)
+        noise_std = 0.01  # Standard deviation for the noise
         with torch.distributed.fsdp.FullyShardedDataParallel.summon_full_params(
             self.model, recurse=True
         ):
             for p in self.model.parameters():
-                p.data.zero_()
+                if p.requires_grad:
+                    noise = torch.randn_like(p.data) * noise_std
+                    p.data.add_(noise)  # Add noise in-place
         torch.cuda.synchronize()
 
     def report_device_id(self) -> str:
