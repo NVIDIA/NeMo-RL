@@ -1,9 +1,16 @@
 # Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to >100B Parameters, scaling from 1 GPU to 100s
 
 <!-- markdown all in one -->
-- [Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to \>100B Parameters](#nemo-reinforcer-a-scalable-and-efficient-post-training-library-for-models-ranging-from-1-gpu-to-1000s-and-from-tiny-to-100b-parameters)
+- [Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to \>100B Parameters, scaling from 1 GPU to 100s](#nemo-reinforcer-a-scalable-and-efficient-post-training-library-for-models-ranging-from-tiny-to-100b-parameters-scaling-from-1-gpu-to-100s)
   - [Features](#features)
   - [Installation](#installation)
+  - [Quick start](#quick-start)
+    - [SFT](#sft)
+      - [Single Node](#single-node)
+      - [Multi-node](#multi-node)
+    - [GRPO](#grpo)
+      - [Single Node](#single-node-1)
+      - [Multi-node](#multi-node-1)
   - [Cluster Start](#cluster-start)
 
 **Nemo-Reinforcer** is a scalable and efficient post-training library designed for models ranging from 1 GPU to thousands, and from tiny to over 100 billion parameters.
@@ -40,7 +47,7 @@ pip install uv
 # Specify a virtual env that uses Python 3.12
 uv venv -p python3.12.9 .venv
 # Install NeMo-Reinforcer with vllm
-uv pip install -e .
+uv pip install -e .[vllm]
 # Install NeMo-Reinforcer with dev/test dependencies
 uv pip install -e '.[dev,test]'
 

@@ -25,11 +25,6 @@ dependencies = [
     "tensorboard",
     "omegaconf",
     "torchdata",
-    # TODO: for convenience we include vllm in the base set of dependencies, but eventually
-    #  this should be exclusively present in an extra once we have more than one inference
-    #  backend. Also, this issue https://github.com/NVIDIA/reinforcer/issues/101, must be
-    #  completed before we can remove vllm here.
-    "vllm==0.8.0",
     "nvidia-ml-py",
     "hydra-core",
 ]
