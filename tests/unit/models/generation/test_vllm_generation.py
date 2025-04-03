@@ -15,6 +15,7 @@
 import pytest
 import torch
 import ray
+import numpy as np
 
 from transformers import AutoTokenizer
 
@@ -454,90 +455,6 @@ def test_vllm_policy_tensor_parallel(cluster, tokenizer):
             vllm_policy.shutdown()
 
 
-@pytest.mark.timeout(60)
-@pytest.mark.parametrize("tensor_parallel_size", [1, 2])
-def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
-    """Test that weights can be updated from HF to vLLM policy."""
-    # Create HF policy
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
-
-    # Create separate configs for each policy
-    vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
-    vllm_config["tensor_parallel_size"] = tensor_parallel_size
-
-    # Add vllm_kwargs only if using tensor parallelism
-    if tensor_parallel_size > 1:
-        vllm_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}
-
-    # Create HF-specific config with required parameters
-    hf_config = {
-        "model_name": basic_vllm_test_config["model_name"],
-        # Required training parameters
-        "train_global_batch_size": 4,
-        "train_micro_batch_size": 1,
-        "learning_rate": 5e-6,
-        "logprob_batch_size": 1,
-        "max_new_tokens": 16,
-        "do_sample": False,
-        "precision": "float32",
-        "optimizer": {
-            "name": "torch.optim.AdamW",
-            "kwargs": {
-                "lr": 5e-6,
-                "weight_decay": 0.01,
-                "betas": [0.9, 0.999],
-                "eps": 1e-8,
-            },
-        },
-    }
-
-    hf_policy = HfPolicy(cluster, hf_config)
-    print(f"hf_policy created: {hf_policy}", flush=True)
-    # hf_policy.finish_training()
-    vllm_policy = VllmGeneration(cluster, vllm_config)
-    print(
-        f"vllm_policy created with tensor_parallel_size={tensor_parallel_size}: {vllm_policy}",
-        flush=True,
-    )
-
-    # Test generation with tensor parallelism
-    vllm_policy.finish_generation()
-    # hf_policy.prepare_for_training()
-
-    # Zero out the weights in the HF model via workers
-    ray.get(
-        [worker.zero_out_weights.remote() for worker in hf_policy.worker_group.workers]
-    )
-    print("Zeroed out weights in HF policy")
-    # Get device IDs
-    training_device_id = ray.get(
-        hf_policy.worker_group.workers[0].report_device_id.remote()
-    )
-    worker_device_id = ray.get(
-        vllm_policy.worker_group.workers[0].report_device_id.remote()
-    )
-
-    # Ensure they are on the same device
-    assert training_device_id == worker_device_id, (
-        "Training actor and worker should be on the same device"
-    )
-
-    # Use our new utility methods for weight update
-    # Get IPC handles from the HF policy
-    ipc_handles = hf_policy.get_weights_ipc_handles()
-    print("Got IPC handles from HF policy")
-    vllm_policy.prepare_for_generation()
-    # Update weights in the VllmGeneration
-    assert vllm_policy.update_weights(ipc_handles), "Weight update should succeed"
-
-    # Check if weights have been updated
-    assert vllm_policy._check_all_weights_changed(), "Weights should be updated to zero"
-
-    # Clean up
-    vllm_policy.shutdown()
-
-
 def test_vllm_generate_text(cluster, tokenizer):
     """Test that vLLM can generate text."""
     # Prepare test data
@@ -571,3 +488,113 @@ def test_vllm_generate_text(cluster, tokenizer):
 
     # Clean up
     vllm_generation.shutdown()
+
+
+@pytest.mark.timeout(
+    180
+)  # Increased timeout due to multiple generations and weight updates
+@pytest.mark.parametrize("tensor_parallel_size", [1, 2])
+def test_vllm_prefix_cache_reset(cluster, tokenizer, tensor_parallel_size):
+    """Test that the vLLM prefix cache is correctly reset when weights change."""
+    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+
+    # --- Setup ---
+    # Create configs
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+    vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
+    if tensor_parallel_size > 1:
+        vllm_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}
+
+    hf_config = {
+        "model_name": basic_vllm_test_config["model_name"],
+        "train_global_batch_size": 1,  # Keep minimal for this test
+        "train_micro_batch_size": 1,
+        "learning_rate": 1e-6,  # Dummy value
+        "logprob_batch_size": 1,
+        "max_new_tokens": 16,
+        "do_sample": False,
+        "precision": "float32",
+        "optimizer": {"name": "torch.optim.AdamW", "kwargs": {"lr": 1e-6}},
+    }
+
+    # Create policies
+    vllm_policy = None
+    hf_policy = None
+    try:
+        print(f"Creating HF policy for TP={tensor_parallel_size}...")
+        hf_policy = HfPolicy(cluster, hf_config)
+        print(f"Creating vLLM policy for TP={tensor_parallel_size}...")
+        vllm_policy = VllmGeneration(cluster, vllm_config)
+
+        # Prepare input data (batch size 2)
+        text = """Answer the question based on the context below. Keep the answer short and concise. Respond "Unsure about answer" if not sure about the answer. Context: Teplizumab traces its roots to a New Jersey drug company called Ortho Pharmaceutical. There, scientists generated an early version of the antibody, dubbed OKT3. Originally sourced from mice, the molecule was able to bind to the surface of T cells and limit their cell-killing potential. In 1986, it was approved to help prevent organ rejection after kidney transplants, making it the first therapeutic antibody allowed for human use.Question: What was OKT3 originally sourced from?Answer:"""
+        test_prompt = [text, text]  # Use batch size 2
+        encodings = tokenizer(
+            test_prompt,
+            padding=True,
+            return_tensors="pt",
+            padding_side="right",
+        )
+        input_ids = encodings["input_ids"]
+        input_lengths = encodings["attention_mask"].sum(dim=1).to(torch.int32)
+        test_input_data = BatchedDataDict(
+            {"input_ids": input_ids, "input_lengths": input_lengths}
+        )
+
+        print("Running Generation 1 (Initial)...")
+        vllm_policy.prepare_for_generation()
+        outputs1 = vllm_policy.generate(test_input_data, greedy=True)
+        generated_text = tokenizer.decode(
+            outputs1["output_ids"][0], skip_special_tokens=True
+        )
+        print(f"Generated text (Run 1): {generated_text}")
+        logprob1 = outputs1["logprobs"][0, input_lengths[0]].item()
+        print(f"Logprob of first generated token (Run 1): {logprob1}")
+
+        print("Adding noise to weights in HF policy...")
+        ray.get(
+            [
+                worker.add_noise_to_weights.remote()
+                for worker in hf_policy.worker_group.workers
+            ]
+        )
+
+        print("Updating vLLM weights from HF policy...")
+        ipc_handles = hf_policy.get_weights_ipc_handles()
+        update_success = vllm_policy.update_weights(ipc_handles)
+        assert update_success, "Weight update should succeed"
+        print("vLLM weights successfully updated.")
+
+        print("Running Generation 2 (Weights Updated, Cache Still Active)...")
+        # Generate again *without* resetting the cache
+        outputs2 = vllm_policy.generate(test_input_data, greedy=True)
+        logprob2 = outputs2["logprobs"][0, input_lengths[0]].item()
+        print(f"Logprob of first generated token (Run 2): {logprob2}")
+        assert logprob2 != logprob1, "Logprobs should be different after weight update."
+
+        print("Resetting vLLM prefix cache (via finish/prepare cycle)...")
+        vllm_policy.finish_generation()  # Calls sleep() which resets cache
+        vllm_policy.prepare_for_generation()  # Calls wake_up()
+
+        print("Running Generation 3 (Weights updated, Cache Reset)...")
+        outputs3 = vllm_policy.generate(test_input_data, greedy=True)
+        logprob3 = outputs3["logprobs"][0, input_lengths[0]].item()
+        print(f"Logprob of first generated token (Run 3): {logprob3}")
+        assert logprob2 != logprob3, (
+            "Logprobs should be different after cache reset and weight update."
+        )
+        print("Prefix cache reset verified successfully.")
+
+    finally:
+        # --- Cleanup ---
+        print("Cleaning up resources...")
+        if vllm_policy:
+            vllm_policy.shutdown()
+        if hf_policy:
+            hf_policy.shutdown()
+        # Force garbage collection to help release resources
+        import gc
+
+        gc.collect()
+        torch.cuda.empty_cache()

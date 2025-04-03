@@ -402,21 +402,6 @@ class VllmGenerationWorker:
             print(f"Error updating weights: {e}")
             return False
 
-    def check_weights_changed(self):
-        """Check if the weights are updated to 0 by delegating to the vLLM Worker implementation.
-
-        Returns:
-            bool: True if all weights have been zeroed, False otherwise.
-        """
-        try:
-            result = self.llm.collective_rpc("check_weights_changed", args=tuple())
-            # The collective_rpc returns a list of results, one per worker
-            # Extract the boolean value from the first worker's result
-            return result[0] if isinstance(result, list) and len(result) > 0 else False
-        except Exception as e:
-            print(f"Error checking weights: {e}")
-            return False
-
     def sleep(self):
         # Reset the prefix cache to ensure that prefix cache is not reused after weights are updated
         self.llm.llm_engine.reset_prefix_cache()
@@ -505,27 +490,6 @@ class VllmGeneration(GenerationInterface):
             )
 
         return tied_worker_groups
-
-    def _check_all_weights_changed(self):
-        """Check if weights have been updated across all workers or leaders.
-
-        Returns:
-            bool: True if all checked weights have been updated, False otherwise.
-        """
-        if not self.worker_group or not self.worker_group.workers:
-            return False
-
-        try:
-            # Use run_all_workers_single_data for methods that don't need data
-            futures = self.worker_group.run_all_workers_single_data(
-                "check_weights_changed", respect_tied_workers=True
-            )
-            # Wait for all futures to complete
-            results = ray.get(futures)
-            return all(result for result in results if result is not None)
-        except Exception as e:
-            print(f"Error checking weights: {e}")
-            return False
 
     def generate(
         self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
