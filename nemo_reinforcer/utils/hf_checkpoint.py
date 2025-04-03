@@ -56,9 +56,7 @@ class ModelState(Stateful):
                 cpu_offload=True
             ),
         )
-        return {
-            "model": model_state_dict,
-        }
+        return model_state_dict
 
     def load_state_dict(self, state_dict):
         """Load the state dictionary into the model.
@@ -69,7 +67,7 @@ class ModelState(Stateful):
         # sets our state dicts on the model, now that we've loaded
         set_model_state_dict(
             self.model,
-            state_dict["model"],
+            state_dict,
         )
 
 
@@ -154,23 +152,29 @@ def save_checkpoint(
     if save_hf:
         # Create a new path by appending "-hf" to the weights path
         hf_weights_path = f"{Path(weights_path)}-hf"
+
+        ## make sure we save the checkpoint from rank 0 only
+        def custom_save(obj, f) -> None:
+            if torch.distributed.get_rank == 0:
+                torch.save(obj, f)
+
         model.save_pretrained(
-            hf_weights_path, is_main_process=(torch.distributed.get_rank() == 0)
+            hf_weights_path,
+            is_main_process=(torch.distributed.get_rank() == 0),
+            save_function=custom_save,
         )
 
     if save_torch_dist:
-        model_state_dict = {"model": ModelState(model)}
-        dcp.save(model_state_dict, checkpoint_id=weights_path)
+        model_state = {"model": ModelState(model)}
+        dcp.save(model_state, checkpoint_id=weights_path)
 
         if optimizer is not None:
             if optimizer_path is None:
                 raise ValueError(
                     "optimizer_path must be provided when saving optimizer state"
                 )
-            optimizer_state_dict = {
-                "optim": OptimizerState(model, optimizer, scheduler)
-            }
-            dcp.save(optimizer_state_dict, checkpoint_id=optimizer_path)
+            optimizer_state = {"optim": OptimizerState(model, optimizer, scheduler)}
+            dcp.save(optimizer_state, checkpoint_id=optimizer_path)
 
 
 def load_checkpoint(
