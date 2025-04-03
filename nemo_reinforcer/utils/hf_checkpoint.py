@@ -180,10 +180,10 @@ def load_checkpoint(
     scheduler: Optional[Any] = None,
     optimizer_path: Optional[str] = None,
 ) -> None:
-    """Load a checkpoint into the model and optionally optimizer.
+    """Load a model weights and optionally optimizer state.
 
     Args:
-        model: The PyTorch model to load into
+        model: The PyTorch model whose weights to update
         weights_path: Path to load model weights from
         optimizer: Optional optimizer to load state into
         scheduler: Optional scheduler to load state into

@@ -218,6 +218,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
     # Create HF-specific config with required parameters
     hf_config = {
         "model_name": basic_vllm_test_config["model_name"],
+        "tokenizer_name": basic_vllm_test_config["tokenizer_name"],
         # Required training parameters
         "train_global_batch_size": 4,
         "train_micro_batch_size": 1,
@@ -474,6 +475,7 @@ def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
     # Create HF-specific config with required parameters
     hf_config = {
         "model_name": basic_vllm_test_config["model_name"],
+        "tokenizer_name": basic_vllm_test_config["tokenizer_name"],
         # Required training parameters
         "train_global_batch_size": 4,
         "train_micro_batch_size": 1,

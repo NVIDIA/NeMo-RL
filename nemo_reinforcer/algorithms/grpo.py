@@ -615,7 +615,7 @@ def grpo_train(
                 policy.prepare_for_training()
 
                 is_last_checkpoint = (
-                    master_config["sft"]["max_num_steps"] - (step + 1)
+                    master_config["grpo"]["max_num_steps"] - (step + 1)
                     < master_config["checkpointing"]["save_period"]
                 )
 

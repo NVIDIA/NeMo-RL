@@ -15,6 +15,7 @@ import copy
 import os
 import pytest
 import torch
+from tempfile import TemporaryDirectory
 
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
@@ -40,7 +41,7 @@ simple_policy_config = {
 
 
 @pytest.fixture
-def test_experiment():
+def mock_experiment():
     model = torch.nn.ModuleList(
         [
             torch.nn.Linear(4, 4),
@@ -56,16 +57,15 @@ def test_experiment():
     return model, optimizer, scheduler
 
 
-## TODO: check scope
 @pytest.fixture(scope="module")
 def cluster():
     """Create a virtual cluster for testing."""
-    # Create a cluster with 1 GPU
+    # Create a cluster with 2 GPU
     virtual_cluster = RayVirtualCluster(
-        bundle_ct_per_node_list=[1],  # [2],  # 1 node with 2 GPU bundle
+        bundle_ct_per_node_list=[2],  # 1 node with 2 GPU bundle
         use_gpus=True,
-        max_colocated_worker_groups=1,  # 2,
-        num_gpus_per_node=1,  # 2,  # Use available GPUs
+        max_colocated_worker_groups=1,
+        num_gpus_per_node=2,  # Use available GPUs
         name="test-cluster",
     )
     yield virtual_cluster
@@ -93,9 +93,10 @@ def policy(cluster, tokenizer):
     )
 
 
-## recursively get the dummy state dict
-## by replacing tensors with random ones of the same shape
 def get_dummy_state_dict(state_dict, dummy_dict={}):
+    """Recursively get the dummy state dict
+    by replacing tensors with random ones of the same shape.
+    """
     for k in state_dict.keys():
         if isinstance(state_dict[k], dict):
             dummy_dict[k] = get_dummy_state_dict(state_dict[k], {})
@@ -106,8 +107,8 @@ def get_dummy_state_dict(state_dict, dummy_dict={}):
     return dummy_dict
 
 
-## recursively check equality of two dictionaries
 def check_dict_equality(dict1, dict2):
+    """Recursively check equality of two dictionaries"""
     for k in dict1.keys():
         if isinstance(dict1[k], dict):
             check_dict_equality(dict1[k], dict2[k])
@@ -117,8 +118,8 @@ def check_dict_equality(dict1, dict2):
             assert dict1[k] == dict2[k]
 
 
-def test_model_state(test_experiment):
-    test_model, _, _ = test_experiment
+def test_model_state(mock_experiment):
+    test_model, _, _ = mock_experiment
     model_state = ModelState(test_model)
     state_dict = model_state.state_dict()
     assert set(state_dict) == {"model"}
@@ -142,8 +143,8 @@ def test_model_state(test_experiment):
     check_dict_equality(new_model_state_dict, dummy_model_state_dict)
 
 
-def test_optimizer_state(test_experiment):
-    test_model, optimizer, scheduler = test_experiment
+def test_optimizer_state(mock_experiment):
+    test_model, optimizer, scheduler = mock_experiment
 
     optim_state = OptimizerState(test_model, optimizer, scheduler)
     state_dict = optim_state.state_dict()
@@ -169,60 +170,68 @@ def test_optimizer_state(test_experiment):
     check_dict_equality(new_state_dict, dummy_state_dict)
 
 
-def test_save_and_load_model_only(test_experiment):
-    test_model, _, _ = test_experiment
-    save_checkpoint(test_model, "/tmp/test_model_only")
-    assert os.path.exists("/tmp/test_model_only")
-    assert not os.path.exists("/tmp/test_model_only-hf")
-    assert set(os.listdir("/tmp/test_model_only")) == {".metadata", "__0_0.distcp"}
+def test_save_and_load_model_only(mock_experiment):
+    test_model, _, _ = mock_experiment
+
+    with TemporaryDirectory() as tmp_dir:
+        save_checkpoint(test_model, os.path.join(tmp_dir, "test_model_only"))
+        assert os.path.exists(os.path.join(tmp_dir, "test_model_only"))
+        assert not os.path.exists(os.path.join(tmp_dir, "test_model_only-hf"))
+        assert set(os.listdir(os.path.join(tmp_dir, "test_model_only"))) == {
+            ".metadata",
+            "__0_0.distcp",
+        }
 
 
-def test_save_and_load_model_and_optimizer(test_experiment):
-    test_model, optimizer, scheduler = test_experiment
+def test_save_and_load_model_and_optimizer(mock_experiment):
+    test_model, optimizer, scheduler = mock_experiment
     for _ in range(5):
         scheduler.step()
 
-    save_checkpoint(
-        test_model,
-        "/tmp/model_and_optimizer/model",
-        optimizer,
-        scheduler,
-        optimizer_path="/tmp/model_and_optimizer/optimizer",
-    )
+    with TemporaryDirectory() as tmp_dir:
+        save_checkpoint(
+            test_model,
+            os.path.join(tmp_dir, "model_and_optimizer/model"),
+            optimizer,
+            scheduler,
+            optimizer_path=os.path.join(tmp_dir, "model_and_optimizer/optimizer"),
+        )
 
-    assert set(os.listdir("/tmp/model_and_optimizer/model")) == {
-        ".metadata",
-        "__0_0.distcp",
-    }
-    assert set(os.listdir("/tmp/model_and_optimizer/optimizer")) == {
-        ".metadata",
-        "__0_0.distcp",
-    }
+        assert set(os.listdir(os.path.join(tmp_dir, "model_and_optimizer/model"))) == {
+            ".metadata",
+            "__0_0.distcp",
+        }
+        assert set(
+            os.listdir(os.path.join(tmp_dir, "model_and_optimizer/optimizer"))
+        ) == {
+            ".metadata",
+            "__0_0.distcp",
+        }
 
-    ## modify the model, optimizer, and scheduler and verify that loading the checkpoint overrides the values
-    new_linear = torch.nn.Linear(4, 4)
-    new_linear.weight = torch.nn.Parameter(torch.ones([4, 4]).to("cuda"))
-    new_linear.bias = torch.nn.Parameter(torch.ones(4).to("cuda"))
-    new_model = torch.nn.ModuleList(
-        [
-            new_linear,
-            torch.nn.LayerNorm(4),
-            torch.nn.ReLU(),
-            torch.nn.Linear(4, 1),
-        ]
-    ).to("cuda")
+        ## modify the model, optimizer, and scheduler and verify that loading the checkpoint overrides the values
+        new_linear = torch.nn.Linear(4, 4)
+        new_linear.weight = torch.nn.Parameter(torch.ones([4, 4]).to("cuda"))
+        new_linear.bias = torch.nn.Parameter(torch.ones(4).to("cuda"))
+        new_model = torch.nn.ModuleList(
+            [
+                new_linear,
+                torch.nn.LayerNorm(4),
+                torch.nn.ReLU(),
+                torch.nn.Linear(4, 1),
+            ]
+        ).to("cuda")
 
-    new_optimizer = torch.optim.Adam(new_model.parameters(), lr=0.001)
-    new_scheduler = torch.optim.lr_scheduler.StepLR(
-        new_optimizer, step_size=4, gamma=0.2
-    )
-    load_checkpoint(
-        new_model,
-        "/tmp/model_and_optimizer/model",
-        new_optimizer,
-        new_scheduler,
-        optimizer_path="/tmp/model_and_optimizer/optimizer",
-    )
+        new_optimizer = torch.optim.Adam(new_model.parameters(), lr=0.001)
+        new_scheduler = torch.optim.lr_scheduler.StepLR(
+            new_optimizer, step_size=4, gamma=0.2
+        )
+        load_checkpoint(
+            new_model,
+            os.path.join(tmp_dir, "model_and_optimizer/model"),
+            new_optimizer,
+            new_scheduler,
+            optimizer_path=os.path.join(tmp_dir, "model_and_optimizer/optimizer"),
+        )
 
     assert scheduler.state_dict() == new_scheduler.state_dict()
     check_dict_equality(new_model.state_dict(), test_model.state_dict())
@@ -245,29 +254,36 @@ def test_save_and_load_hf_checkpoint(policy):
     )
     policy.get_logprobs(dummy_fwd_dict)
 
-    policy.save_checkpoint(
-        "/tmp/test_hf_and_dcp",
-        save_hf=True,
-        save_torch_dist=True,
-    )
+    with TemporaryDirectory() as tmp_dir:
+        policy.save_checkpoint(
+            os.path.join(tmp_dir, "test_hf_and_dcp"),
+            save_hf=True,
+            save_torch_dist=True,
+        )
 
-    ## make sure we save both HF and DCP checkpoints
-    assert set(os.listdir("/tmp/test_hf_and_dcp")) == {"__0_0.distcp", ".metadata"}
-    ## 1B model has two shards
-    assert set(os.listdir("/tmp/test_hf_and_dcp-hf")) == {
-        "config.json",
-        "generation_config.json",
-        "model-00001-of-00002.safetensors",
-        "model-00002-of-00002.safetensors",
-        "model.safetensors.index.json",
-    }
+        ## make sure we save both HF and DCP checkpoints
+        assert set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp"))) == {
+            "__0_0.distcp",
+            "__1_0.distcp",
+            ".metadata",
+        }
+        ## 1B model has two shards
+        assert set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp-hf"))) == {
+            "config.json",
+            "generation_config.json",
+            "model-00001-of-00002.safetensors",
+            "model-00002-of-00002.safetensors",
+            "model.safetensors.index.json",
+        }
 
-    coverted_model = AutoModelForCausalLM.from_pretrained("/tmp/test_hf_and_dcp-hf")
-    original_model = AutoModelForCausalLM.from_pretrained(
-        simple_policy_config["model_name"]
-    )
+        coverted_model = AutoModelForCausalLM.from_pretrained(
+            os.path.join(tmp_dir, "test_hf_and_dcp-hf")
+        )
+        original_model = AutoModelForCausalLM.from_pretrained(
+            simple_policy_config["model_name"]
+        )
 
-    ## make sure this model matches the original
+    ## make sure converted model matches the original
     check_dict_equality(coverted_model.state_dict(), original_model.state_dict())
 
     policy.worker_group.shutdown()
