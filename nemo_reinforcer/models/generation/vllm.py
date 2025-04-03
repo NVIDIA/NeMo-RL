@@ -50,8 +50,7 @@ class VllmConfig(GenerationConfig):
 
 @ray.remote
 class VllmGenerationWorker:
-    # This is the default py_executable for vLLM workers
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.DEFAULT_VENV
+    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.VLLM
 
     def __repr__(self):
         """Customizes the actor's prefix in the Ray logs.

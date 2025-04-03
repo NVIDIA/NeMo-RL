@@ -33,8 +33,7 @@ class MathEnvConfig(TypedDict):
 
 @ray.remote
 class HFVerifyWorker:
-    # TODO: Slim down the dependencies to just math_verify
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.DEFAULT_VENV
+    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.SYSTEM
 
     def verify(
         self, pred_responses: List[str], ground_truths: List[str]
@@ -65,8 +64,7 @@ class MathEnvironmentMetadata(TypedDict):
 
 @ray.remote
 class MathEnvironment(EnvironmentInterface):
-    # TODO: Slim down the dependencies to just math_verify
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.DEFAULT_VENV
+    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.SYSTEM
 
     def __init__(self, cfg: Dict):
         self.num_workers = cfg["num_workers"]

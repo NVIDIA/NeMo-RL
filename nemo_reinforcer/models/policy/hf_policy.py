@@ -50,7 +50,7 @@ from nemo_reinforcer.distributed.virtual_cluster import (
 
 @ray.remote
 class HfPolicyWorker:
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.DEFAULT_VENV
+    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.BASE
 
     def __repr__(self):
         """Customizes the actor's prefix in the Ray logs.
