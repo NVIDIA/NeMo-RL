@@ -47,4 +47,5 @@ design_docs/logger.md
 design_docs/uv.md
 design_docs/chat_datasets.md
 design_docs/generation.md
+design_docs/checkpointing.md
 ```

@@ -14,7 +14,7 @@
 
 import argparse
 import os
-from omegaconf import OmegaConf
+import json
 
 from nemo_reinforcer.distributed.virtual_cluster import init_ray, RayVirtualCluster
 from nemo_reinforcer.models.policy.hf_policy import HfPolicy
@@ -30,7 +30,7 @@ def parse_args():
         "--config",
         type=str,
         default=None,
-        help="Path to YAML config file used during model training",
+        help="Path to config.json file in the checkpoint directory",
     )
     parser.add_argument(
         "--dcp-ckpt-path", type=str, default=None, help="Path to DCP checkpoint"
@@ -39,28 +39,17 @@ def parse_args():
         "--hf-ckpt-path", type=str, default=None, help="Path to save HF checkpoint"
     )
     # Parse known args for the script
-    args, remaining = parser.parse_known_args()
+    args = parser.parse_args()
 
-    # Convert remaining args to OmegaConf format
-    overrides = OmegaConf.from_dotlist(remaining)
-
-    return args, overrides
+    return args
 
 
 def main():
     """Main entry point."""
-    # Parse arguments
-    args, overrides = parse_args()
+    args = parse_args()
 
-    if not args.config:
-        args.config = os.path.join(os.path.dirname(__file__), "configs", "sft.yaml")
-
-    config = load_config(args.config)
-    print(f"Loaded configuration from: {args.config}")
-
-    if overrides:
-        print(f"Overrides: {overrides}")
-        config = OmegaConf.merge(config, overrides)
+    with open(args.config, "r") as f:
+        config = json.load(f)
 
     dcp_ckpt = args.dcp_ckpt_path
     hf_ckpt = args.hf_ckpt_path
@@ -92,7 +81,11 @@ def main():
         save_hf=True,
         save_torch_dist=False,
     )
+
     print(f"Saved HF checkpoint to: {hf_ckpt}-hf")
+
+    cluster.shutdown()
+    policy.worker_group.shutdown()
 
 
 if __name__ == "__main__":
