@@ -15,23 +15,29 @@ ENV RAY_USAGE_STATS_ENABLED=0
 
 RUN chmod 755 /home/ray/.cache
 
-FROM base AS deps
+FROM base AS hermetic
 
 WORKDIR /opt/reinforcer
-COPY nemo_reinforcer/package_info.py nemo_reinforcer/package_info.py
-COPY nemo_reinforcer/__init__.py nemo_reinforcer/__init__.py
-COPY pyproject.toml .
-RUN uv venv .venv
+# This is less efficient as this invalidates the cache more frequently, but
+# creates a smaller image. Adding reinforcer afterwards and doing
+# `uv pip install --no-deps --editable .` causes a "sync" of some of the environment,
+# which defeats the purpose of pre-installing.
+# In the future we may optimize this: https://github.com/NVIDIA/reinforcer/issues/129
+COPY --chown=ray --chmod=755 . /opt/reinforcer
+RUN <<"EOF"
+uv venv .venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
-RUN uv sync --group test --group dev --group docs --no-install-project
 
-FROM base as hermetic
-# hermetic creates a virtual environment with the default dependencies pre-installed for convenience
+# Sync each training + inference backend one at a time (since they may conflict)
+# to warm the uv cache, then at the end just sync the default dependencies.
+# Do everything in one layer to prevent large layers.
+
+uv sync --locked --extra vllm --no-install-project
+uv sync --locked --all-groups
+EOF
 
 ENV VIRTUAL_ENV=/opt/reinforcer/.venv
 ENV PATH="/opt/reinforcer/.venv/bin:$PATH"
-
-WORKDIR /opt/reinforcer
 
 # The ray images automatically activate the anaconda venv. We will
 # comment this out of the .bashrc to give the same UX between docker
@@ -45,8 +51,3 @@ sed -i '/# >>> conda initialize >>>/,/# <<< conda initialize <<</ { /^[^#]/ s/^/
 # Comment out any line that explicitly exports the anaconda3 PATH
 sed -i '/export PATH=\$HOME\/anaconda3\/bin:\$PATH/ s/^/# /' ~/.bashrc
 EOF
-
-COPY --from=deps --chown=ray --chmod=755 /opt/reinforcer/.venv /opt/reinforcer/.venv
-COPY --chown=ray --chmod=755 .git /opt/reinforcer/.git
-COPY --chown=ray --chmod=755 . /opt/reinforcer
-RUN uv pip install --no-deps --editable .
