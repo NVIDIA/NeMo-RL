@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from copy import deepcopy
+
 import pytest
 import torch
 import ray
-import numpy as np
 
 from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
@@ -400,7 +401,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 def test_vllm_policy_tensor_parallel(cluster, tokenizer):
     """Test vLLM policy with tensor parallelism > 1."""
     # Configure with tensor_parallel_size=2
-    tp_config = basic_vllm_test_config.copy()
+    tp_config = deepcopy(basic_vllm_test_config)
     tp_config = configure_generation_config(tp_config, tokenizer)
     tp_config["vllm_cfg"]["tensor_parallel_size"] = 2
 
@@ -498,7 +499,7 @@ def test_vllm_weight_update_and_prefix_cache_reset(
     from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 
     # Create configs
-    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = deepcopy(basic_vllm_test_config)
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
     vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
     if tensor_parallel_size > 1:
