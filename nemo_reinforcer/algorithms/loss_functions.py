@@ -149,7 +149,10 @@ class ClippedPGLossFn(LossFunction):
 
 class NLLLoss(LossFunction):
     def __call__(
-        self, next_token_logits: torch.Tensor, data: BatchedDataDict
+        self,
+        next_token_logits: torch.Tensor,
+        data: BatchedDataDict,
+        reduce_across_batch: bool = True,
     ) -> Tuple[torch.Tensor, dict]:
         # logits shape: [batch_size, seq_len, vocab_size]
         # Get the next token logits for each position
@@ -168,14 +171,99 @@ class NLLLoss(LossFunction):
 
         # Only compute loss on generated tokens (not input tokens)
         # by applying the token_loss_mask (shifted by 1 since we're predicting next tokens)
-        num_unmasked_tokens = torch.sum(mask)
-        if num_unmasked_tokens == 0:
-            # prevent division by zero
-            num_unmasked_tokens = torch.tensor(1)
-        loss = -torch.sum(token_logprobs * mask) / num_unmasked_tokens
+        num_unmasked_tokens = torch.sum(mask, -1)
+        num_unmasked_tokens[num_unmasked_tokens == 0] = 1
+
+        if reduce_across_batch:
+            num_unmasked_tokens = num_unmasked_tokens.sum().item()
+            loss = (-torch.sum(token_logprobs * mask) / num_unmasked_tokens).item()
+        else:
+            loss = -torch.sum(token_logprobs * mask, dim=-1) / num_unmasked_tokens
 
         return loss, {
-            "loss": loss.item(),
-            "num_unmasked_tokens": num_unmasked_tokens.item(),
+            "loss": loss,
+            "num_unmasked_tokens": num_unmasked_tokens,
             "total_tokens": mask.numel(),
+        }
+
+
+class DPOLossConfig(TypedDict):
+    reference_policy_kl_penalty: float
+    preference_loss_weight: float = 1.0
+    sft_loss_weight: float = 0.0
+
+
+class DPOLossDataDict(TypedDict):
+    """Required keys for the Clipped Policy Gradient loss function."""
+
+    input_ids: torch.Tensor
+    reference_policy_logprobs: torch.Tensor
+    token_mask: torch.Tensor
+    sample_mask: torch.Tensor
+
+
+class DPOLossFn(LossFunction):
+    def __init__(self, cfg: DPOLossConfig):
+        self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
+        self.preference_loss_weight = cfg["preference_loss_weight"]
+        self.sft_loss_weight = cfg["sft_loss_weight"]
+        self.sft_loss = NLLLoss()
+
+    def split_output_tensor(self, tensor: torch.Tensor):
+        return torch.split(tensor, tensor.shape[0] // 2, dim=0)
+
+    def preference_loss(
+        self, next_token_logits: torch.Tensor, data: BatchedDataDict[DPOLossDataDict]
+    ) -> torch.Tensor:
+        ## TODO: make sure this token mask only includes the chosen / rejected responses
+        ## and not prior assistant tokens
+        ## TODO: there's some duplicate code here with the NLLLoss function. We should refactor
+        token_mask = data["token_mask"][:, 1:]
+        sample_mask = data["sample_mask"]
+        mask = token_mask * sample_mask.unsqueeze(-1)
+
+        next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
+        next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
+        logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
+
+        # Gather the logprobs for the actual next tokens
+        token_logprobs = logprobs.gather(
+            dim=-1, index=next_tokens.unsqueeze(-1)
+        ).squeeze(-1)
+
+        ref_logprobs = data["reference_policy_logprobs"][:, :-1]
+
+        diff = token_logprobs - ref_logprobs
+
+        ## TODO: provide the option to average over tokens
+        rewards = (diff * mask).sum(-1)
+
+        rewards_chosen, rewards_rejected = self.split_output_tensor(rewards)
+        rewards_delta = rewards_chosen - rewards_rejected
+        return -torch.nn.functional.logsigmoid(
+            self.reference_policy_kl_penalty * rewards_delta
+        ).mean(0)
+
+    def __call__(
+        self, next_token_logits: torch.Tensor, data: BatchedDataDict[DPOLossDataDict]
+    ) -> Tuple[torch.Tensor, dict]:
+        sft_loss, _ = self.sft_loss(next_token_logits, data, reduce_across_batch=False)
+        sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
+
+        ## average over the batch dimension
+        sft_loss_chosen = sft_loss_chosen.mean(0)
+
+        preference_loss = self.preference_loss(next_token_logits, data)
+
+        dpo_loss = (
+            self.sft_loss_weight * sft_loss_chosen
+            + self.preference_loss_weight * preference_loss
+        )
+
+        ## TODO: fix initial preference loss -- should be exactly 0.69315
+        print(f"{preference_loss.item()=}")
+        return dpo_loss, {
+            "loss": dpo_loss.item(),
+            "sft_loss": sft_loss_chosen.item(),
+            "preference_loss": preference_loss.item(),
         }

@@ -127,6 +127,19 @@ def add_loss_mask_to_message_log(
                 sentence["token_loss_mask"] = torch.zeros_like(sentence["token_ids"])
 
 
+## TODO: VERIFY
+def add_dpo_loss_mask_to_message_log(
+    message_log: LLMMessageLogType,
+) -> None:
+    """Only unmask the final assistant message in the log."""
+    for message in message_log:
+        for i, sentence in enumerate(message):
+            if i == len(message) - 1:
+                sentence["token_loss_mask"] = torch.ones_like(sentence["token_ids"])
+            else:
+                sentence["token_loss_mask"] = torch.zeros_like(sentence["token_ids"])
+
+
 def _pad_tensor(
     tensor: torch.Tensor,
     max_len: int,
