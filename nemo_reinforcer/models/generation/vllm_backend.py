@@ -13,17 +13,17 @@
 # limitations under the License.
 import torch
 
-try:
-    from vllm.worker.worker import Worker
-except ImportError:
-    raise ImportError(
-        "vLLM is not installed. Please install it with `pip install nemo-reinforcer[vllm]` "
-        "or `pip install vllm` separately. This issue may also occur if worker is using incorrect "
-        "py_executable."
-    )
+# try:
+#     from vllm.worker.worker import Worker
+# except ImportError:
+#     raise ImportError(
+#         "vLLM is not installed. Please install it with `pip install nemo-reinforcer[vllm]` "
+#         "or `pip install vllm` separately. This issue may also occur if worker is using incorrect "
+#         "py_executable."
+#     )
 
 
-class UpdatableVllmInternalWorker(Worker):
+class VllmInternalWorkerExtension:
     def report_device_id(self) -> str:
         from nemo_reinforcer.utils.nvml import get_device_uuid
 
@@ -60,6 +60,6 @@ class UpdatableVllmInternalWorker(Worker):
             return True
         except Exception as e:
             print(
-                f"Error in UpdatableVllmInternalWorker.update_weights_from_ipc_handles: {e}"
+                f"Error in VllmInternalWorkerExtension.update_weights_from_ipc_handles: {e}"
             )
             return False

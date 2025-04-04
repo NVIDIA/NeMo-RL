@@ -95,7 +95,8 @@ class VllmGenerationWorker:
             init_kwargs["fraction_of_gpus"] = num_gpus
 
         # Force vllm to use v0 runtime (will be enabled by default in #51)
-        env_vars["VLLM_USE_V1"] = "0"
+        # env_vars["VLLM_USE_V1"] = "0"
+        env_vars["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
 
         return resources, env_vars, init_kwargs
 
@@ -134,12 +135,13 @@ class VllmGenerationWorker:
         self.world_size = 1
 
         try:
-            from vllm import LLM, SamplingParams
-            from nemo_reinforcer.models.generation.vllm_backend import (
-                UpdatableVllmInternalWorker,
-            )
+            import vllm
+            # from vllm import LLM, SamplingParams
+            # from nemo_reinforcer.models.generation.vllm_backend import (
+            #     UpdatableVllmInternalWorker,
+            # )
 
-            self.SamplingParams = SamplingParams
+            self.SamplingParams = vllm.SamplingParams
         except ImportError:
             raise ImportError(
                 "vLLM is not installed. Please install it with `pip install nemo-reinforcer[vllm]` "
@@ -168,7 +170,7 @@ class VllmGenerationWorker:
             # For non-TP mode, explicitly set executor to None to avoid Ray issues
             vllm_kwargs["distributed_executor_backend"] = None
 
-        self.llm = LLM(
+        self.llm = vllm.LLM(
             model=self.model_name,
             # Training pipeline will set this to "dummy" and eval will load real weights using 'auto'
             load_format=self.cfg["vllm_cfg"]["load_format"],
@@ -181,7 +183,8 @@ class VllmGenerationWorker:
             enforce_eager=False,
             max_model_len=self.cfg["vllm_cfg"]["max_model_len"],
             trust_remote_code=True,
-            worker_cls=UpdatableVllmInternalWorker,
+            worker_extension_cls="nemo_reinforcer.models.generation.vllm_backend.VllmInternalWorkerExtension",
+            # worker_cls=UpdatableVllmInternalWorker,
             enable_sleep_mode=True,
             disable_log_stats=True,
             **vllm_kwargs,
