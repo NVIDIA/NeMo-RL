@@ -28,9 +28,10 @@ from torch.distributed.fsdp import (
     StateDictType,
 )
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.worker_groups import RayWorkerBuilder, RayWorkerGroup
@@ -97,10 +98,7 @@ class HfPolicyWorker:
             )
         else:
             self.reference_model = None
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        # If no pad token is defined, you might need:
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer = get_tokenizer(model_name)
 
         # ------------------------------------------------
         # 3) Move to GPU + Composable FSDP

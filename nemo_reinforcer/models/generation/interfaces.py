@@ -47,8 +47,8 @@ def verify_right_padding(
     )
 
     assert pad_value is not None, (
-        "Tokenizer does not have a pad token assigned. \n"
-        "If the default tokenizer does not have a pad token, you can assign it the value of eos token by tokenizer.pad_token = tokenizer.eos_token"
+        "Tokenizer does not have a pad_token_id. \n"
+        "Please use the nemo_reinforcer.algorithms.utils.get_tokenizer(...) API which sets pad_token_id if absent."
     )
 
     # Determine which type of data we're dealing with
