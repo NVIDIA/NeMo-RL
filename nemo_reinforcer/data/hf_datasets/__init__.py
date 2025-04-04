@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nemo_reinforcer.data.hf_datasets.json_dataset import JsonDataset
 from nemo_reinforcer.data.hf_datasets.oasst import OasstDataset
 from nemo_reinforcer.data.hf_datasets.squad import SquadDataset
 from nemo_reinforcer.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
 
-__all__ = ["OasstDataset", "SquadDataset", "COMMON_CHAT_TEMPLATES"]
+__all__ = ["JsonDataset", "OasstDataset", "SquadDataset", "COMMON_CHAT_TEMPLATES"]

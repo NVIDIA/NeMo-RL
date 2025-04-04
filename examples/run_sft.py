@@ -102,6 +102,8 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
         data = hf_datasets.OasstDataset(output_dir="/tmp/open_assistant")
     elif data_cls == "squad":
         data = hf_datasets.SquadDataset()
+    elif data_cls == "json_dataset":
+        data = hf_datasets.JsonDataset(data_config["data_path"])
     else:
         raise ValueError(f"Unknown dataset class: {data_cls}")
     print(
