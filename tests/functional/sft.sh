@@ -26,9 +26,14 @@ python -u $PROJECT_ROOT/examples/run_sft.py \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \
-    checkpointing.enabled=false \
+    checkpointing.enabled=true \
+    checkpointing.save_every_n_steps=10 \
+    checkpointing.checkpoint_dir=/tmp/sft_checkpoints \
     $@ \
     2>&1 | tee $RUN_LOG
+
+## clean up checkpoint directory
+rm -r /tmp/sft_checkpoints
 
 cd $SCRIPT_DIR
 python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
