@@ -210,7 +210,7 @@ class DPOLossFn(LossFunction):
         self.sft_loss = NLLLoss()
 
     def split_output_tensor(self, tensor: torch.Tensor):
-        return torch.split(tensor, tensor.shape[0] // 2, dim=0)
+        return tensor[::2], tensor[1::2]
 
     def preference_loss(
         self, next_token_logits: torch.Tensor, data: BatchedDataDict[DPOLossDataDict]
@@ -233,10 +233,9 @@ class DPOLossFn(LossFunction):
 
         ref_logprobs = data["reference_policy_logprobs"][:, :-1]
 
-        diff = token_logprobs - ref_logprobs
-
+        diff = (token_logprobs - ref_logprobs) * token_mask
         ## TODO: provide the option to average over tokens
-        rewards = (diff * mask).sum(-1)
+        rewards = diff.sum(-1)
 
         rewards_chosen, rewards_rejected = self.split_output_tensor(rewards)
         rewards_delta = rewards_chosen - rewards_rejected
@@ -247,11 +246,15 @@ class DPOLossFn(LossFunction):
     def __call__(
         self, next_token_logits: torch.Tensor, data: BatchedDataDict[DPOLossDataDict]
     ) -> Tuple[torch.Tensor, dict]:
-        sft_loss, _ = self.sft_loss(next_token_logits, data, reduce_across_batch=False)
-        sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
+        sft_loss_chosen = torch.tensor(0.0)
+        if self.sft_loss_weight > 0:
+            sft_loss, _ = self.sft_loss(
+                next_token_logits, data, reduce_across_batch=False
+            )
+            sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
 
-        ## average over the batch dimension
-        sft_loss_chosen = sft_loss_chosen.mean(0)
+            ## average over the batch dimension
+            sft_loss_chosen = sft_loss_chosen.mean(0)
 
         preference_loss = self.preference_loss(next_token_logits, data)
 
@@ -260,8 +263,6 @@ class DPOLossFn(LossFunction):
             + self.preference_loss_weight * preference_loss
         )
 
-        ## TODO: fix initial preference loss -- should be exactly 0.69315
-        print(f"{preference_loss.item()=}")
         return dpo_loss, {
             "loss": dpo_loss.item(),
             "sft_loss": sft_loss_chosen.item(),

@@ -309,9 +309,19 @@ def dpo_train(
             print("▶ Preparing batch...")
             with timer.time("get_ref_policy_logprobs"):
                 ## append ref policy logprobs to batch
-                batch = policy.get_reference_policy_logprobs(train_data)
+                batch = policy.get_reference_policy_logprobs(
+                    train_data,
+                    ## TODO: make more robust
+                    micro_batch_size=master_config["policy"]["train_micro_batch_size"]
+                    * 2,
+                )
 
-            train_data["reference_policy_logprobs"] = batch["reference_logprobs"]
+            ## roll the reference logprobs by one to the left
+            ## this ensures that the logprobs correspond to the next token
+            ## in the sequence
+            train_data["reference_policy_logprobs"] = torch.roll(
+                batch["reference_logprobs"], -1, dims=-1
+            )
 
             ## train_data.to("cpu")
             print("▶ Taking a training step...")

@@ -190,34 +190,26 @@ def dpo_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
     two examples per prompt. The chosen and rejected examples are concatenated
     along the batch dimension, resulting in a batch size of 2 * len(data_batch).
     """
-    message_log_chosen = [datum_spec["message_log_chosen"] for datum_spec in data_batch]
-    message_log_rejected = [
-        datum_spec["message_log_rejected"] for datum_spec in data_batch
-    ]
-    length_chosen = torch.tensor(
-        [datum_spec["length_chosen"] for datum_spec in data_batch]
-    )
-    length_rejected = torch.tensor(
-        [datum_spec["length_rejected"] for datum_spec in data_batch]
-    )
-    loss_multiplier = torch.tensor(
-        [datum_spec["loss_multiplier"] for datum_spec in data_batch]
-    )
+    message_log = []
+    length = []
+    loss_multiplier = []
+    idx = []
+    task_names = []
+    for datum_spec in data_batch:
+        ## interleave chosen and rejected examples
+        message_log.append(datum_spec["message_log_chosen"])
+        message_log.append(datum_spec["message_log_rejected"])
+        length.append(datum_spec["length_chosen"])
+        length.append(datum_spec["length_rejected"])
+        loss_multiplier.extend([datum_spec["loss_multiplier"]] * 2)
+        idx.extend([datum_spec["idx"]] * 2)
+        task_names.extend([datum_spec.get("task_name", None)] * 2)
+    length = torch.tensor(length)
+    loss_multiplier = torch.tensor(loss_multiplier)
 
     ## TODO
     # extra_env_info = [datum_spec["extra_env_info"] for datum_spec in data_batch]
 
-    ## conctenate chosen and rejected examples
-    message_log = message_log_chosen + message_log_rejected
-    length = torch.cat([length_chosen, length_rejected])
-    loss_multiplier = torch.cat([loss_multiplier] * 2)
-
-    task_names = []
-    for datum_spec in data_batch:
-        task_names.append(datum_spec.get("task_name", None))
-    task_names = task_names * 2
-
-    idx = [datum_spec["idx"] for datum_spec in data_batch] * 2
     batch_max_length = torch.ones_like(length) * length.max()
 
     output = BatchedDataDict(

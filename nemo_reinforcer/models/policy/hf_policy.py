@@ -347,10 +347,12 @@ class HfPolicyWorker:
 
         return metrics
 
-    def get_logprobs(self, data: BatchedDataDict) -> BatchedDataDict:
+    def get_logprobs(
+        self, data: BatchedDataDict, micro_batch_size: int = None
+    ) -> BatchedDataDict:
         """Get the logprobs of the model for a batch of data.
 
-        Uses the configured logprob_batch_size to do microbatching.
+        If no micro-batch size is provided, uses the configured logprob_batch_size to do microbatching.
 
         Input data is assumed to be right-padded. The method internally converts to
         left-padded format for computation, and returns outputs in right-padded format.
@@ -360,7 +362,11 @@ class HfPolicyWorker:
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
-        logprob_batch_size = self.cfg["logprob_batch_size"]
+        logprob_batch_size = (
+            micro_batch_size
+            if micro_batch_size is not None
+            else self.cfg["logprob_batch_size"]
+        )
         all_log_probs = []
         self.model.eval()
 
@@ -454,7 +460,9 @@ class HfPolicyWorker:
             gc.collect()
             torch.cuda.empty_cache()
 
-    def get_reference_policy_logprobs(self, data: BatchedDataDict) -> BatchedDataDict:
+    def get_reference_policy_logprobs(
+        self, data: BatchedDataDict, micro_batch_size: int = None
+    ) -> BatchedDataDict:
         """Get the logprobs from the reference policy for a batch of data.
 
         Returns:
@@ -463,7 +471,7 @@ class HfPolicyWorker:
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
         with self.use_reference_model():
-            reference_logprobs = self.get_logprobs(data)
+            reference_logprobs = self.get_logprobs(data, micro_batch_size)
 
         return_data = BatchedDataDict()
         return_data["reference_logprobs"] = reference_logprobs["logprobs"].cpu()
@@ -941,7 +949,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         return logprobs
 
     def get_reference_policy_logprobs(
-        self, data: BatchedDataDict[GenerationDatumSpec]
+        self, data: BatchedDataDict[GenerationDatumSpec], micro_batch_size: int = None
     ) -> BatchedDataDict:
         """Get the logprobs of the reference policy for a data dict.
 
@@ -949,7 +957,9 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         """
         sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None)
         futures = self.worker_group.run_all_workers_multiple_data(
-            "get_reference_policy_logprobs", sharded_data
+            "get_reference_policy_logprobs",
+            sharded_data,
+            common_kwargs={"micro_batch_size": micro_batch_size},
         )
         logprobs = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures)
