@@ -50,4 +50,7 @@ sed -i '/# >>> conda initialize >>>/,/# <<< conda initialize <<</ { /^[^#]/ s/^/
 
 # Comment out any line that explicitly exports the anaconda3 PATH
 sed -i '/export PATH=\$HOME\/anaconda3\/bin:\$PATH/ s/^/# /' ~/.bashrc
+
+# Enable the repo's git history within the container
+git config --global --add safe.directory /opt/reinforcer
 EOF
