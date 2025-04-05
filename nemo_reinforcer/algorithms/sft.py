@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from transformers import AutoTokenizer
 from pathlib import Path
 from typing import Optional, Tuple, TypedDict
 
@@ -78,6 +79,7 @@ def setup(
     master_config: MasterConfig,
     train_dataset: AllTaskProcessedDataset,
     val_dataset: AllTaskProcessedDataset,
+    tokenizer: AutoTokenizer,
 ) -> Tuple[
     HfPolicy,
     RayVirtualCluster,
@@ -175,6 +177,7 @@ def setup(
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
+        tokenizer=tokenizer,
         weights_path=Path(last_checkpoint_path) / "policy.pt"
         if last_checkpoint_path
         else None,

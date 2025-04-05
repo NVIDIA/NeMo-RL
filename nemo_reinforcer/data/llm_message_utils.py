@@ -355,12 +355,10 @@ def get_formatted_message_log(
     """
     new_message_log = []
     prev_formatted_message = ""
-    template = task_data_spec.custom_template
 
     for i, message in enumerate(message_log):
         formatted_message = tokenizer.apply_chat_template(
             message_log[: i + 1],
-            chat_template=template,
             add_generation_prompt=False,
             tokenize=False,
             add_special_tokens=False,
@@ -376,11 +374,13 @@ def get_formatted_message_log(
         message_chunk = formatted_message[prev_message_len_no_eos:]
 
         if tokenizer.bos_token is not None:
+            ## TODO: make configurable
             if i == 0 and not message_chunk.startswith(tokenizer.bos_token):
                 message_chunk = tokenizer.bos_token + message_chunk
 
         if i == len(message_log) - 1:
             message_chunk = message_chunk.rstrip("\n")
+            ## TODO: make configurable
             if tokenizer.eos_token is not None and not message_chunk.endswith(
                 tokenizer.eos_token
             ):

@@ -20,7 +20,8 @@ import requests
 import copy
 from dataclasses import dataclass
 from typing import Optional
-from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset, COMMON_CHAT_TEMPLATES
+
+from nemo_reinforcer.data.interfaces import TaskDataSpec
 
 SYSTEM_PROMPT = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\n\n"
 
@@ -119,10 +120,9 @@ def download_and_process_oasst(output_directory=".", seed=42, split_ratio=0.95):
 
 
 @dataclass
-class OasstDataset(HfDataset):
+class OasstDataset:
     def __init__(self, output_dir: str = "."):
         self.formatted_ds = download_and_process_oasst(output_dir)
-        super().__init__(
-            dataset_name="oasst",
-            custom_template=COMMON_CHAT_TEMPLATES.simple_role_header,
+        self.task_spec = TaskDataSpec(
+            task_name="OASST",
         )

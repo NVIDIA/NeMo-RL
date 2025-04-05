@@ -100,7 +100,15 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig):
     val_dataset = data.formatted_ds["validation"]
     sft_task_spec = data.task_spec
 
+    ## TODO: save tokenizer whenever we save an hf checkpoint
     tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
+    if "chat_template" in policy_config["tokenizer"]:
+        if policy_config["tokenizer"]["chat_template"].lower() in {"none", "null"}:
+            tokenizer.chat_template = (
+                hf_datasets.COMMON_CHAT_TEMPLATES.passthrough_prompt_response
+            )
+        else:
+            tokenizer.chat_template = policy_config["tokenizer"]["chat_template"]
 
     train_dataset = AllTaskProcessedDataset(
         train_dataset,
@@ -166,7 +174,7 @@ def main():
         checkpointer,
         sft_save_state,
         master_config,
-    ) = setup(config, dataset, val_dataset)
+    ) = setup(config, dataset, val_dataset, tokenizer)
     sft_train(
         policy,
         train_dataloader,

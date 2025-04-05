@@ -14,8 +14,9 @@
 
 from typing import Optional
 from datasets import load_dataset
-from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset
 from dataclasses import dataclass
+
+from nemo_reinforcer.data.interfaces import TaskDataSpec
 
 
 def format_math(data):
@@ -62,7 +63,7 @@ def prepare_openinstructmath2_dataset(split: str = "train_1M", seed=42, test_siz
 
 
 @dataclass
-class OpenMathInstruct2Dataset(HfDataset):
+class OpenMathInstruct2Dataset:
     def __init__(
         self, split: str = "train_1M", seed: int = 42, test_size: float = 0.05
     ):
@@ -82,6 +83,6 @@ class OpenMathInstruct2Dataset(HfDataset):
             split=split, seed=seed, test_size=test_size
         )
 
-        super().__init__(
-            dataset_name="OpenMathInstruct-2",
+        self.task_spec = TaskDataSpec(
+            task_name="OpenMathInstruct-2",
         )

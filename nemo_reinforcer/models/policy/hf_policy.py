@@ -65,6 +65,7 @@ class HfPolicyWorker:
     def __init__(
         self,
         config: PolicyConfig,
+        tokenizer: AutoTokenizer,
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
         init_optimizer: bool = True,
@@ -97,7 +98,8 @@ class HfPolicyWorker:
             )
         else:
             self.reference_model = None
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        self.tokenizer = tokenizer
         # If no pad token is defined, you might need:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -895,6 +897,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         self,
         cluster: RayVirtualCluster,
         config: PolicyConfig,
+        tokenizer: AutoTokenizer,
         name_prefix: str = "hf_policy",
         workers_per_node: Optional[Union[int, List[int]]] = None,
         init_optimizer: bool = True,
@@ -910,6 +913,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         worker_builder = RayWorkerBuilder(
             HfPolicyWorker,
             config,
+            tokenizer=tokenizer,
             init_optimizer=init_optimizer,
             weights_path=weights_path,
             optimizer_path=optimizer_path,

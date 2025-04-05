@@ -14,7 +14,8 @@
 
 from typing import Optional
 from datasets import load_dataset
-from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset
+
+from nemo_reinforcer.data.interfaces import TaskDataSpec
 
 
 def format_squad(data):
@@ -36,14 +37,10 @@ def format_squad(data):
     }
 
 
-class SquadDataset(HfDataset):
+class SquadDataset:
     def __init__(self):
         original_ds = load_dataset("rajpurkar/squad")
         self.formatted_ds = original_ds.map(format_squad)
-
-        custom_template = "{% for message in messages %}{%- if message['role'] == 'system'  %}{{'Context: ' + message['content'].strip()}}{%- elif message['role'] == 'user'  %}{{' Question: ' + message['content'].strip() + ' Answer:'}}{%- elif message['role'] == 'assistant'  %}{{' ' + message['content'].strip()}}{%- endif %}{% endfor %}"
-
-        super().__init__(
-            dataset_name="squad",
-            custom_template=custom_template,
+        self.task_spec = TaskDataSpec(
+            task_name="SQuAD",
         )
