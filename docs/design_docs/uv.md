@@ -43,20 +43,17 @@ In our codebase, workers (classes decorated with `@ray.remote`, e.g., `HFPolicyW
 We provide several predefined Python executable configurations in {py:class}`PY_EXECUTABLES <nemo_reinforcer.distributed.virtual_cluster.PY_EXECUTABLES>`:
 
 ```python
-# --with-editable .: speeds up the install slightly since editable installs don't require full copies
-# --cache-dir $UV_CACHE_DIR: caching isn't propagated by default. This will set it if the user has set it.
 class PY_EXECUTABLES:
-    # This uses the .venv created by `uv`. This is the fastest option, but provides no isolation between workers.
-    DEFAULT_VENV = f"{os.environ['VIRTUAL_ENV']}/bin/python"
+    SYSTEM = sys.executable
 
-    # TODO: Debug high run-to-run variance latency with these options
-    # Use NeMo-Reinforcer direct dependencies and nothing from system
-    DEFAULT = f"uv run --isolated --with-editable . {uv_cache_flag}"
-    # Use none of NeMo-Reinforcer's dependencies or the system. Useful for workers that only need standard python packages.
-    BARE_BONES = f"uv run --isolated --no-project --with-editable . {uv_cache_flag}"
+    # Use NeMo-Reinforcer direct dependencies.
+    BASE = "uv run --locked"
+
+    # Use NeMo-Reinforcer direct dependencies and vllm.
+    VLLM = "uv run --locked --extra vllm"
 ```
 
-At the moment we **highly recommend** {py:class}`DEFAULT_ENV <nemo_reinforcer.distributed.virtual_cluster.PY_EXECUTABLES.DEFAULT_VENV>` as it results in the fastest bringup of your workload if you are using the `transformers` library and `vllm`.
+To ensure consistent dependencies between actors, we run with `--locked` to make sure the dependencies are consistent with the contents of `uv.lock`.
 
 ### Customization
 
@@ -64,14 +61,13 @@ If you need a different Python executable configuration, you can override the de
 
 ## How It Works
 
-When a Ray job is started:
+When a Reinforcer job is started:
 
-1. The driver process runs in the `uv` environment specified at launch
-2. Ray detects this environment and propagates it to worker processes
-3. Each worker can specify its own environment through `py_executable` in its runtime environment
-4. `uv` efficiently sets up these environments on each worker, using caching to minimize setup time
+1. The driver script creates several {py:class}`RayWorkerGroup <nemo_reinforcer.distributed.worker_groups.RayWorkerGroup>`s.
+2. Each worker group will create their workers which are wrapped in a {py:class}`RayWorkerBuilder <nemo_reinforcer.distributed.worker_groups.RayWorkerBuilder>`
+3. Before the worker class is instantiated by the `RayWorkerBuilder`, if (1) `DEFAULT_PY_EXECUTABLE` is defined on the worker class (decorated with `@ray.remote`) and (2) it starts with `uv`; a `venv` is created with all the dependencies it needs and the `runtime_env["py_executable"]` is replaced with the `venv`'s python interpreter.
 
-This approach ensures consistent environments across the cluster while allowing for worker-specific customization when needed.
+This approach allows a fast start-up and maintains dependency isolation. It also has the added benefit of having all the virtual environments local under `./venvs`.
 
 ## Conclusion
 

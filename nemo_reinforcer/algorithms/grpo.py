@@ -472,7 +472,7 @@ def grpo_train(
                 # Convert LLMMessageLogType to FlatMessagesType for generation
                 batched_flat, input_lengths = batched_message_log_to_flat_message(
                     repeated_batch["message_log"],
-                    pad_value_dict={"token_ids": tokenizer.eos_token_id},
+                    pad_value_dict={"token_ids": tokenizer.pad_token_id},
                 )
                 input_ids = batched_flat["token_ids"]
                 # Create generation-specific input structure
@@ -547,7 +547,7 @@ def grpo_train(
                 # Convert updated LLMMessageLogType to FlatMessagesType for training
                 flat_messages, input_lengths = batched_message_log_to_flat_message(
                     repeated_batch["message_log"],
-                    pad_value_dict={"token_ids": tokenizer.eos_token_id},
+                    pad_value_dict={"token_ids": tokenizer.pad_token_id},
                 )
 
                 # Create training data from flattened messages
@@ -713,7 +713,7 @@ def validate(
             # Convert LLMMessageLogType to FlatMessagesType for generation
             batched_flat, input_lengths = batched_message_log_to_flat_message(
                 val_batch["message_log"],
-                pad_value_dict={"token_ids": tokenizer.eos_token_id},
+                pad_value_dict={"token_ids": tokenizer.pad_token_id},
             )
             # Extract input IDs
             input_ids = batched_flat["token_ids"]
