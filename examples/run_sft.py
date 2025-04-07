@@ -59,7 +59,11 @@ def sft_preprocessor(
 ) -> DatumSpec:
     """Process a datum dictionary for SFT training."""
     message_log = get_formatted_message_log(
-        datum_dict["messages"], tokenizer, task_data_spec
+        datum_dict["messages"],
+        tokenizer,
+        task_data_spec,
+        add_bos_token=True,
+        add_eos_token=True,
     )
 
     length = sum(len(m["token_ids"]) for m in message_log)
@@ -103,7 +107,11 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
     elif data_cls == "squad":
         data = hf_datasets.SquadDataset()
     elif data_cls == "json_dataset":
-        data = hf_datasets.JsonDataset(data_config["data_path"])
+        data = hf_datasets.JsonDataset(
+            data_config["data_path"],
+            data_config["input_key"],
+            data_config["output_key"],
+        )
     else:
         raise ValueError(f"Unknown dataset class: {data_cls}")
     print(
