@@ -15,7 +15,7 @@ The core of the generation system is defined in `interfaces.py`, which establish
        backend: str              # The backend to use (e.g., "vllm", "hf")
        max_new_tokens: int       # Maximum number of tokens to generate
        temperature: float        # Sampling temperature
-       top_p: float              # Top-p sampling parameter 
+       top_p: float              # Top-p sampling parameter
        top_k: int                # Top-k sampling parameter
        model_name: str           # Name or path of the model
    ```
@@ -138,7 +138,7 @@ generator.finish_generation()
 To add a new generation backend:
 
 1. Create a new class that implements {py:class}`GenerationInterface <nemo_reinforcer.models.generation.interfaces.GenerationInterface>`
-2. Implement the required methods: {py:method}`generate <nemo_reinforcer.models.generation.interfaces.GenerationInterface.generate>`, {py:method}`prepare_for_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.prepare_for_generation>`, and {py:method}`finish_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.finish_generation>`
+2. Implement the required methods: {py:meth}`generate <nemo_reinforcer.models.generation.interfaces.GenerationInterface.generate>`, {py:meth}`prepare_for_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.prepare_for_generation>`, and {py:meth}`finish_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.finish_generation>`
 3. Ensure your implementation works with the standard {py:class}`GenerationConfig <nemo_reinforcer.models.generation.interfaces.GenerationConfig>` and {py:class}`GenerationDatumSpec <nemo_reinforcer.models.generation.interfaces.GenerationDatumSpec>` structures
 4. Register your backend with the system (if needed) to make it accessible
 
