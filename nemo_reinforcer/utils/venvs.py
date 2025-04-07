@@ -31,9 +31,8 @@ def create_local_venv(py_executable: str, venv_name: str) -> str:
     The output can be used as a py_executable for a Ray worker assuming the worker
     nodes also have access to the same file system as the head node.
 
-    This function is cached to avoid multiple calls to uv to create the same venv.
-    This is mainly to avoid the duplicate logging of the venv creation since it is
-    safe to call this multiple times.
+    This function is cached to avoid multiple calls to uv to create the same venv,
+    which avoids duplicate logging.
 
     Args:
         py_executable (str): Command to run with the virtual environment (e.g., "uv.sh run --locked")
