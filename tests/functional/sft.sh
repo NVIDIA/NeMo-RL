@@ -1,5 +1,8 @@
 #!/bin/bash
 
+## clean up checkpoint directory on exit
+trap "rm -rf /tmp/sft_checkpoints" EXIT
+
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 PROJECT_ROOT=$(realpath $SCRIPT_DIR/../..)
 # Mark the current repo as safe, since wandb fetchs metadata about the repo
@@ -31,9 +34,6 @@ python -u $PROJECT_ROOT/examples/run_sft.py \
     checkpointing.checkpoint_dir=/tmp/sft_checkpoints \
     $@ \
     2>&1 | tee $RUN_LOG
-
-## clean up checkpoint directory
-trap "rm -r /tmp/sft_checkpoints" EXIT
 
 cd $SCRIPT_DIR
 python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
