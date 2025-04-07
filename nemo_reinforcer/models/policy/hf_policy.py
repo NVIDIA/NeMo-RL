@@ -45,7 +45,7 @@ from nemo_reinforcer.models.policy.utils import import_class_from_path
 from nemo_reinforcer.distributed.virtual_cluster import (
     PY_EXECUTABLES,
 )
-from nemo_reinforcer.utils.hf_checkpoint import (
+from nemo_reinforcer.utils.native_checkpoint import (
     save_checkpoint,
     load_checkpoint,
 )
@@ -102,9 +102,6 @@ class HfPolicyWorker:
         else:
             self.reference_model = None
         self.tokenizer = get_tokenizer(tokenizer_name)
-        # If no pad token is defined, you might need:
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # ------------------------------------------------
         # 3) Move to GPU + Composable FSDP
