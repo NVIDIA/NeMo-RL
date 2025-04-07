@@ -436,6 +436,7 @@ class HfPolicyWorker:
         On exit: Restores original references and re-flips cuda/cpu
 
         """
+        # yield
         try:
             # Save original references
             original_model = self.model
@@ -470,6 +471,7 @@ class HfPolicyWorker:
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
+        ## TODO: investigate this. This is super slow
         with self.use_reference_model():
             reference_logprobs = self.get_logprobs(data, micro_batch_size)
 
@@ -801,15 +803,16 @@ class HfPolicyWorker:
         )
 
     def move_to_cpu(self, model):
+        ## this is the slowest part
         for param in model.parameters():
-            param.data = param.data.to("cpu")
+            param.data = param.data.to("cpu", non_blocking=True, copy=True)
 
         for buffer in model.buffers():
-            buffer.data = buffer.data.to("cpu")
+            buffer.data = buffer.data.to("cpu", non_blocking=True, copy=True)
 
+        ## commenting this out improves perf by 3x
         if hasattr(model, "_fsdp_wrapped_module"):
             model._fsdp_wrapped_module.to("cpu")
-
         return model
 
     def save_checkpoint(

@@ -183,7 +183,13 @@ def eval_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
     return output
 
 
-def dpo_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
+from nemo_reinforcer.data.llm_message_utils import (
+    add_dpo_loss_mask_to_message_log,
+    batched_message_log_to_flat_message,
+)
+
+
+def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
     """Collate function for DPO training.
 
     This function separates the chosen and rejected responses to create
@@ -212,7 +218,7 @@ def dpo_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
 
     batch_max_length = torch.ones_like(length) * length.max()
 
-    output = BatchedDataDict(
+    batch = BatchedDataDict(
         message_log=message_log,
         length=length,
         loss_multiplier=loss_multiplier,
@@ -221,4 +227,25 @@ def dpo_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
         idx=idx,
         batch_max_length=batch_max_length,
     )
-    return output
+
+    ## add loss mask based on role to every message
+    add_dpo_loss_mask_to_message_log(
+        batch["message_log"],
+    )
+
+    cat_and_padded, input_lengths = batched_message_log_to_flat_message(
+        batch["message_log"],
+        ## TODO: update pad value
+        pad_value_dict={"token_ids": tokenizer.eos_token_id},
+    )
+
+    train_data: BatchedDataDict = BatchedDataDict(
+        {
+            "input_ids": cat_and_padded["token_ids"],
+            "input_lengths": input_lengths,
+            "token_mask": cat_and_padded["token_loss_mask"],
+            "sample_mask": batch["loss_multiplier"],
+        }
+    )
+
+    return train_data

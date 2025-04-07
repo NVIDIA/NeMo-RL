@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from functools import partial
 from pathlib import Path
 from typing import Optional, Tuple, TypedDict
+from tqdm import tqdm
 
 import numpy as np
 import torch
+from transformers import AutoTokenizer
 from torchdata.stateful_dataloader import StatefulDataLoader
 from nemo_reinforcer.algorithms.loss_functions import (
     DPOLossFn,
@@ -142,11 +145,13 @@ def setup(
     # ==========================
     #           Data
     # ==========================
+    ## TODO: clean up
+    tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
     train_dataloader = StatefulDataLoader(
         train_dataset,
         batch_size=policy_config["train_global_batch_size"],
         shuffle=True,
-        collate_fn=dpo_collate_fn,
+        collate_fn=partial(dpo_collate_fn, tokenizer=tokenizer),
     )
 
     if last_checkpoint_path is not None:
@@ -281,52 +286,34 @@ def dpo_train(
 
     policy.prepare_for_training()
 
-    for batch in train_dataloader:
-        print(f"\n{'=' * 25} Step {step + 1}/{len(train_dataloader)} {'=' * 25}")
+    def augment_dataloader(dataloader):
+        dataloader_iter = iter(dataloader)
+        while True:
+            try:
+                batch = next(dataloader_iter)
 
-        with timer.time("total_step_time"):
-            ## add loss mask based on role to every message
-            add_dpo_loss_mask_to_message_log(
-                batch["message_log"],
-            )
-
-            cat_and_padded, input_lengths = batched_message_log_to_flat_message(
-                batch["message_log"],
-                ## TODO: update pad value
-                pad_value_dict={"token_ids": tokenizer.eos_token_id},
-            )
-
-            train_data: BatchedDataDict = BatchedDataDict(
-                {
-                    "input_ids": cat_and_padded["token_ids"],
-                    "input_lengths": input_lengths,
-                    "token_mask": cat_and_padded["token_loss_mask"],
-                    "sample_mask": batch["loss_multiplier"],
-                }
-            )
-
-            # Prepare batch and generate responses
-            print("▶ Preparing batch...")
-            with timer.time("get_ref_policy_logprobs"):
                 ## append ref policy logprobs to batch
-                batch = policy.get_reference_policy_logprobs(
-                    train_data,
+                logprobs = policy.get_reference_policy_logprobs(
+                    batch,
                     ## TODO: make more robust
                     micro_batch_size=master_config["policy"]["train_micro_batch_size"]
                     * 2,
-                )
+                )["reference_logprobs"]
+                batch["reference_policy_logprobs"] = torch.roll(logprobs, -1, dims=-1)
 
-            ## roll the reference logprobs by one to the left
-            ## this ensures that the logprobs correspond to the next token
-            ## in the sequence
-            train_data["reference_policy_logprobs"] = torch.roll(
-                batch["reference_logprobs"], -1, dims=-1
-            )
+                yield batch
 
+            except StopIteration:
+                break
+
+    for batch in augment_dataloader(train_dataloader):
+        print(f"\n{'=' * 25} Step {step + 1}/{len(train_dataloader)} {'=' * 25}")
+
+        with timer.time("total_step_time"):
             ## train_data.to("cpu")
             print("▶ Taking a training step...")
             train_results = policy.train(
-                train_data,
+                batch,
                 loss_fn,
                 eval_mode=False,
                 gbs=master_config["policy"]["train_global_batch_size"] * 2,
