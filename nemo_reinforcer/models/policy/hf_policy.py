@@ -23,9 +23,7 @@ import torch
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import (
     FullyShardedDataParallel,
-    FullStateDictConfig,
     MixedPrecision,
-    StateDictType,
 )
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
 from transformers import AutoModelForCausalLM
@@ -46,6 +44,10 @@ from nemo_reinforcer.models.policy import PolicyConfig
 from nemo_reinforcer.models.policy.utils import import_class_from_path
 from nemo_reinforcer.distributed.virtual_cluster import (
     PY_EXECUTABLES,
+)
+from nemo_reinforcer.utils.native_checkpoint import (
+    save_checkpoint,
+    load_checkpoint,
 )
 
 
@@ -77,6 +79,7 @@ class HfPolicyWorker:
         rank = torch.distributed.get_rank()
         world_size = torch.distributed.get_world_size()
         model_name = self.cfg["model_name"]
+        tokenizer_name = self.cfg["tokenizer_name"]
         if self.cfg["precision"] == "float32":
             self.dtype = torch.float32
         elif self.cfg["precision"] == "bfloat16":
@@ -98,7 +101,7 @@ class HfPolicyWorker:
             )
         else:
             self.reference_model = None
-        self.tokenizer = get_tokenizer(model_name)
+        self.tokenizer = get_tokenizer(tokenizer_name)
 
         # ------------------------------------------------
         # 3) Move to GPU + Composable FSDP
@@ -139,7 +142,7 @@ class HfPolicyWorker:
         else:
             self.optimizer = None
 
-        if "scheduler" in self.cfg:
+        if "scheduler" in self.cfg and self.optimizer is not None:
             if isinstance(self.cfg["scheduler"], dict):
                 scheduler_cls = import_class_from_path(self.cfg["scheduler"]["name"])
                 self.scheduler = scheduler_cls(
@@ -165,7 +168,7 @@ class HfPolicyWorker:
                     self.optimizer, schedulers, milestones
                 )
 
-        else:
+        elif self.optimizer is not None:
             ## default to a passthrough LR schedule
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self.optimizer, lr_lambda=lambda epoch: 1
@@ -173,7 +176,10 @@ class HfPolicyWorker:
 
         # restore
         if weights_path:
-            self.load_checkpoint(weights_path, optimizer_path)
+            self.load_checkpoint(
+                weights_path,
+                optimizer_path,
+            )
         else:
             print(
                 "No weights path provided. Starting from scratch (default policy init)"
@@ -817,78 +823,50 @@ class HfPolicyWorker:
         self,
         weights_path: str,
         optimizer_path: Optional[str] = None,
-        offload_to_cpu: bool = True,
+        save_torch_dist: bool = True,
+        save_hf: bool = False,
     ):
-        # Config to save full state dict on rank 0, offloaded to CPU
-        state_dict_config = FullStateDictConfig(
-            offload_to_cpu=offload_to_cpu, rank0_only=True
+        """Save a checkpoint of the model.
+
+        The checkpoint is saved in the following format:
+
+        weights_path/
+            __0_1.distcp
+            __1_0.distcp
+            ...
+        weights_path-hf/
+            config.json
+            generation_config.json
+            model-00001-of-<TOTAL_SHARDS>.safetensors
+            ...
+            model.safetensors.index.json
+        optimizer_path/
+            __0_0.distcp
+            __1_0.distcp
+            ...
+
+        the HuggingFace checkpoint is saved only if `save_hf` is True,
+        and the optimizer states are saved only if `optimizer` and `optimizer_path` are provided.
+        """
+        save_checkpoint(
+            model=self.model,
+            weights_path=weights_path,
+            optimizer=self.optimizer if optimizer_path else None,
+            scheduler=self.scheduler if optimizer_path else None,
+            optimizer_path=optimizer_path,
+            save_torch_dist=save_torch_dist,
+            save_hf=save_hf,
         )
 
-        with FullyShardedDataParallel.state_dict_type(
-            self.model,
-            state_dict_type=StateDictType.FULL_STATE_DICT,
-            state_dict_config=state_dict_config,
-        ):
-            # Save model state dict
-            model_state_dict = self.model.state_dict()
-            optim_state_dict = FullyShardedDataParallel.optim_state_dict(
-                self.model, self.optimizer
-            )
-            scheduler_state_dict = self.scheduler.state_dict()
-
-            optim_and_scheduler_state_dict = {
-                "optimizer": optim_state_dict,
-                "scheduler": scheduler_state_dict,
-            }
-
-            if torch.distributed.get_rank() == 0:
-                # check if weights_path dir exists
-                weights_dir = os.path.dirname(weights_path)
-                if not os.path.exists(weights_dir):
-                    print(
-                        f"Creating weights directory {weights_dir} DOESN'T EXIST SOMEHOW"
-                    )
-                    os.makedirs(weights_dir)
-                torch.save(model_state_dict, weights_path)
-                if optimizer_path is not None:
-                    torch.save(optim_and_scheduler_state_dict, optimizer_path)
-
     def load_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):
-        print(f"Loading Policy from {weights_path} and optimizer from {optimizer_path}")
-        state_dict_config = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
-
-        state_dict = torch.load(weights_path)
-        if optimizer_path is not None:
-            optim_data = torch.load(optimizer_path)
-            optimizer_state_dict = optim_data["optimizer"]
-            scheduler_state_dict = optim_data.get("scheduler")
-        else:
-            optimizer_state_dict = None
-            scheduler_state_dict = None
-        with FullyShardedDataParallel.state_dict_type(
-            self.model,
-            state_dict_type=StateDictType.FULL_STATE_DICT,
-            state_dict_config=state_dict_config,
-        ):
-            # Load model weights
-            self.model.load_state_dict(state_dict if state_dict else None)
-
-            # Load optimizer state
-            if optimizer_state_dict is not None:
-                optim_state_dict = FullyShardedDataParallel.shard_full_optim_state_dict(
-                    optimizer_state_dict, self.model
-                )
-                if self.optimizer is not None:
-                    self.optimizer.load_state_dict(optim_state_dict)
-                else:
-                    print("WARNING: initializing without optimizer")
-            else:
-                print("WARNING: No optimizer checkpoint provided")
-
-            if scheduler_state_dict is not None:
-                self.scheduler.load_state_dict(scheduler_state_dict)
-            else:
-                print("WARNING: No scheduler checkpoint provided")
+        """Load a checkpoint into the model."""
+        load_checkpoint(
+            model=self.model,
+            weights_path=weights_path,
+            optimizer=self.optimizer if optimizer_path else None,
+            scheduler=self.scheduler if optimizer_path else None,
+            optimizer_path=optimizer_path,
+        )
 
     def shutdown(self):
         """Shutdown the policy."""
@@ -1107,14 +1085,16 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         self,
         weights_path: str,
         optimizer_path: Optional[str] = None,
-        offload_to_cpu: bool = True,
+        save_torch_dist: bool = True,
+        save_hf: bool = False,
     ):
         """Save a checkpoint of the model."""
         futures = self.worker_group.run_all_workers_single_data(
             "save_checkpoint",
             weights_path,
             optimizer_path,
-            offload_to_cpu=offload_to_cpu,
+            save_torch_dist,
+            save_hf,
             respect_tied_workers=True,
         )
         ray.get(futures)

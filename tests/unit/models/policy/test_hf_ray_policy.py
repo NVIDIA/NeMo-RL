@@ -28,6 +28,7 @@ from tests.unit.test_utils import simple_loss, nll_loss
 
 basic_llama_test_config: PolicyConfig = {
     "model_name": "meta-llama/Llama-3.2-1B",
+    "tokenizer_name": "meta-llama/Llama-3.2-1B",
     "generation_batch_size": 1,  # Small batch size for testing
     "train_global_batch_size": 4,
     "train_micro_batch_size": 1,

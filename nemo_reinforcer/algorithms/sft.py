@@ -175,10 +175,10 @@ def setup(
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
-        weights_path=Path(last_checkpoint_path) / "policy.pt"
+        weights_path=Path(last_checkpoint_path) / "policy" / "weights"
         if last_checkpoint_path
         else None,
-        optimizer_path=Path(last_checkpoint_path) / "policy_optimizer.pt"
+        optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
         if last_checkpoint_path
         else None,
         init_optimizer=True,
@@ -311,9 +311,7 @@ def sft_train(
         sft_save_state = _default_sft_save_state()
         step = 0
     else:
-        step = (
-            sft_save_state["step"] + 1
-        )  # N+1 because the checkpoint is _after_ SFT iteration N
+        step = sft_save_state["step"]
 
     sft_config = master_config["sft"]
     # Validation configuration
@@ -399,19 +397,26 @@ def sft_train(
                 master_config["checkpointing"]["enabled"]
                 and (step + 1) % master_config["checkpointing"]["save_period"] == 0
             ):  # +1 because step is 0-indexed
-                sft_save_state["step"] = step
+                is_last_checkpoint = (
+                    min(len(train_dataloader), master_config["sft"]["max_num_steps"])
+                    - (step + 1)
+                    < master_config["checkpointing"]["save_period"]
+                )
+
+                sft_save_state["step"] = step + 1
                 sft_save_state["val_loss"] = val_metrics["val_loss"]
                 with timer.time("checkpointing"):
                     print(f"Saving checkpoint for step {step + 1}...")
                     checkpoint_path = checkpointer.init_tmp_checkpoint(
                         step + 1, sft_save_state, master_config
                     )
+
                     policy.save_checkpoint(
-                        os.path.join(checkpoint_path, "policy.pt"),
-                        os.path.join(checkpoint_path, "policy_optimizer.pt"),
-                        ## NOTE: below is a workaround to avoid a bug with checkpointing
-                        ## this should be removed once the bug is fixed
-                        offload_to_cpu=False,
+                        weights_path=os.path.join(checkpoint_path, "policy", "weights"),
+                        optimizer_path=os.path.join(
+                            checkpoint_path, "policy", "optimizer"
+                        ),
+                        save_hf=is_last_checkpoint,
                     )
                     torch.save(
                         train_dataloader.state_dict(),

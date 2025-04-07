@@ -19,6 +19,7 @@ from nemo_reinforcer.models.generation.interfaces import GenerationConfig
 
 class PolicyConfig(TypedDict):
     model_name: str
+    tokenizer_name: str
     train_global_batch_size: int
     train_micro_batch_size: int
     learning_rate: float

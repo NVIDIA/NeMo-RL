@@ -29,6 +29,7 @@ from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
     "model_name": "meta-llama/Llama-3.2-1B",  # Small model for testing
+    "tokenizer_name": "meta-llama/Llama-3.2-1B",
     "dtype": "bfloat16",
     "max_new_tokens": 10,
     "temperature": 1.0,
@@ -204,6 +205,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
     # Create HF-specific config with required parameters
     hf_config = {
         "model_name": basic_vllm_test_config["model_name"],
+        "tokenizer_name": basic_vllm_test_config["tokenizer_name"],
         # Required training parameters
         "train_global_batch_size": 4,
         "train_micro_batch_size": 1,
@@ -507,6 +509,7 @@ def test_vllm_weight_update_and_prefix_cache_reset(
 
     hf_config = {
         "model_name": basic_vllm_test_config["model_name"],
+        "tokenizer_name": "meta-llama/Llama-3.2-1B",
         "train_global_batch_size": 1,
         "train_micro_batch_size": 1,
         "learning_rate": 1e-6,
