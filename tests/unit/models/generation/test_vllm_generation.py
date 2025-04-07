@@ -12,15 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from copy import deepcopy
+
 import pytest
 import torch
 import ray
-import numpy as np
 
-from transformers import AutoTokenizer
-
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 
 
@@ -39,19 +40,6 @@ basic_vllm_test_config: VllmConfig = {
         "max_model_len": 1024,
     },
 }
-
-
-def configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=False):
-    """Apply tokenizer-specific configurations to vLLM config."""
-    if is_eval:
-        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = False
-        vllm_config["vllm_cfg"]["load_format"] = "auto"
-    else:
-        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = True
-        vllm_config["vllm_cfg"]["load_format"] = "dummy"
-    vllm_config["pad_token"] = tokenizer.pad_token_id
-    vllm_config["stop_token_ids"] = [tokenizer.eos_token_id]
-    return vllm_config
 
 
 @pytest.fixture(scope="module")
@@ -82,9 +70,7 @@ def cluster():
 def tokenizer():
     """Initialize tokenizer for the test model."""
     model_name = basic_vllm_test_config["model_name"]
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = get_tokenizer(model_name)
     return tokenizer
 
 
@@ -93,7 +79,7 @@ def policy(cluster, tokenizer, check_vllm_available):
     """Initialize the vLLM policy."""
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
+    vllm_config = configure_generation_config(vllm_config, tokenizer)
     policy = VllmGeneration(cluster, vllm_config)
     yield policy
 
@@ -213,7 +199,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
+    vllm_config = configure_generation_config(vllm_config, tokenizer)
 
     # Create HF-specific config with required parameters
     hf_config = {
@@ -252,6 +238,17 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
             "Where is the sun?",
         ]
 
+        expected_generations = [
+            "Write a story about a magical forest. The forest is magical because it is full of",
+            "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis",
+            "What are the benefits of exercise? The benefits of exercise are many and varied. It",
+            "Describe the water cycle in your own words.\nDescribe the water cycle in",
+            "What is the capital of France? A. Paris B. New York C. Washington",
+            "Who is the president of the USA? Who is the president of the USA? Who is",
+            "What is the capital of the moon? A. Houston, Texas B. New York City",
+            "Where is the sun? Where is the moon? Where is the earth?",
+        ]
+
         # Tokenize the prompts the same way as in test_hf_ray_policy
         tokenized = tokenizer(
             prompts,
@@ -286,7 +283,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
-        generation_results = vllm_policy.generate(test_input_data)
+        generation_results = vllm_policy.generate(test_input_data, greedy=True)
         vllm_policy.finish_generation()
         # Validate generation outputs
         assert "output_ids" in generation_results, (
@@ -301,6 +298,9 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
             generation_results["output_ids"], skip_special_tokens=True
         )
         print(f"vLLM generated texts: {generated_texts}")
+        assert generated_texts == expected_generations, (
+            "Output should be the same as the expected output"
+        )
 
         # Run logprob calculation with HF policy to verify
 
@@ -401,9 +401,9 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 def test_vllm_policy_tensor_parallel(cluster, tokenizer):
     """Test vLLM policy with tensor parallelism > 1."""
     # Configure with tensor_parallel_size=2
-    tp_config = basic_vllm_test_config.copy()
-    tp_config = configure_vllm_with_tokenizer(tp_config, tokenizer)
-    tp_config["tensor_parallel_size"] = 2
+    tp_config = deepcopy(basic_vllm_test_config)
+    tp_config = configure_generation_config(tp_config, tokenizer)
+    tp_config["vllm_cfg"]["tensor_parallel_size"] = 2
 
     # Ensure we specify the distributed executor backend
     tp_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}
@@ -466,7 +466,7 @@ def test_vllm_generate_text(cluster, tokenizer):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
 
     # Ensure we can get same output
     assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
@@ -499,8 +499,8 @@ def test_vllm_weight_update_and_prefix_cache_reset(
     from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 
     # Create configs
-    vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+    vllm_config = deepcopy(basic_vllm_test_config)
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
     vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
     if tensor_parallel_size > 1:
         vllm_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}

@@ -28,9 +28,10 @@ from torch.distributed.fsdp import (
     StateDictType,
 )
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.worker_groups import RayWorkerBuilder, RayWorkerGroup
@@ -97,10 +98,7 @@ class HfPolicyWorker:
             )
         else:
             self.reference_model = None
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        # If no pad token is defined, you might need:
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer = get_tokenizer(model_name)
 
         # ------------------------------------------------
         # 3) Move to GPU + Composable FSDP
@@ -519,7 +517,9 @@ class HfPolicyWorker:
                 batch_size, seq_len = input_ids.shape
 
                 # Convert right padding to left padding
-                left_padded_input_ids = torch.zeros_like(input_ids)
+                left_padded_input_ids = torch.full_like(
+                    input_ids, gen_cfg["pad_token_id"]
+                )
                 left_padded_attention_mask = torch.zeros(
                     (batch_size, seq_len), dtype=torch.long, device=input_ids.device
                 )
@@ -569,7 +569,12 @@ class HfPolicyWorker:
                 micro_batches.append(mb)
 
             # Get lengths, pad, and concatenate all batches
-            return_data = BatchedDataDict.from_batches(micro_batches)
+            return_data = BatchedDataDict.from_batches(
+                micro_batches,
+                pad_value_dict={
+                    "left_padded_output_ids": self.cfg["generation"]["pad_token_id"]
+                },
+            )
 
             # Calculate the lengths of generations for each sequence by finding stop tokens
             generation_lengths = []
@@ -581,8 +586,9 @@ class HfPolicyWorker:
             max_seq_len = max(
                 [seq.size(0) for seq in return_data["left_padded_output_ids"]]
             )
-            right_padded_output_ids = torch.zeros(
+            right_padded_output_ids = torch.full(
                 (batch_size, max_seq_len),
+                self.cfg["generation"]["pad_token_id"],
                 dtype=return_data["left_padded_output_ids"][0].dtype,
                 device=return_data["left_padded_output_ids"][0].device,
             )
@@ -1017,7 +1023,8 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             "generate", sharded_data, common_kwargs={"greedy": greedy}
         )
         result = BatchedDataDict.from_batches(
-            self.worker_group.get_all_worker_results(futures)
+            self.worker_group.get_all_worker_results(futures),
+            pad_value_dict={"output_ids": self.cfg["generation"]["pad_token_id"]},
         )
 
         # Verify the output has all required fields

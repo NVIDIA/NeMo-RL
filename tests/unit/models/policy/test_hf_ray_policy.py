@@ -16,13 +16,14 @@ import pytest
 import pprint
 import torch
 
-from nemo_reinforcer.models.policy import PolicyConfig
-from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+from nemo_reinforcer.algorithms.interfaces import LossFunction
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.algorithms.interfaces import LossFunction
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
+from nemo_reinforcer.models.policy import PolicyConfig
+from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 from tests.unit.test_utils import simple_loss, nll_loss
-from transformers import AutoTokenizer
 
 
 basic_llama_test_config: PolicyConfig = {
@@ -66,8 +67,16 @@ def gc_collect():
     gc.collect()
 
 
+@pytest.fixture(scope="function")
+def tokenizer():
+    """Initialize tokenizer for the test model."""
+    model_name = basic_llama_test_config["model_name"]
+    tokenizer = get_tokenizer(model_name)
+    return tokenizer
+
+
 @pytest.fixture
-def policy_setup():
+def policy_setup(tokenizer):
     """Setup and teardown for policy tests - creates a virtual cluster and policy."""
     policy = None
     cluster = None
@@ -84,6 +93,7 @@ def policy_setup():
     )
 
     config = basic_llama_test_config
+    config["generation"] = configure_generation_config(config["generation"], tokenizer)
 
     print("Creating HfPolicy...")
     policy = HfPolicy(cluster=cluster, config=config)
@@ -278,7 +288,7 @@ def test_hf_policy_training(training_setup):
 
 
 @pytest.fixture
-def generation_setup(request):
+def generation_setup(request, tokenizer):
     """Setup and teardown specifically for generation tests."""
     policy = None
     cluster = None
@@ -298,6 +308,9 @@ def generation_setup(request):
         )
 
         config = basic_llama_test_config
+        config["generation"] = configure_generation_config(
+            config["generation"], tokenizer
+        )
 
         print("Creating generation HfPolicy...")
         policy = HfPolicy(
@@ -331,8 +344,6 @@ def generation_setup(request):
         ]
 
         # Tokenize the prompts
-        tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
-        tokenizer.pad_token = tokenizer.eos_token
         tokenized = tokenizer(
             prompts,
             padding=True,
@@ -353,7 +364,7 @@ def generation_setup(request):
         )
 
         # Provide the resources to the test
-        yield policy, cluster, data, tokenizer, prompts, expected_generations
+        yield policy, cluster, data, prompts, expected_generations
 
     except Exception as e:
         print(f"Error during generation setup: {e}")
@@ -367,8 +378,8 @@ def generation_setup(request):
 
 @pytest.mark.timeout(180)
 @pytest.mark.parametrize("generation_setup", [False], indirect=True)
-def test_hf_policy_generation(generation_setup, tracker):
-    policy, cluster, data, tokenizer, prompts, expected_generations = generation_setup
+def test_hf_policy_generation(generation_setup, tokenizer, tracker):
+    policy, cluster, data, prompts, expected_generations = generation_setup
 
     # Verify resources were created properly
     assert policy is not None, "Generation policy was not created properly"
@@ -386,6 +397,10 @@ def test_hf_policy_generation(generation_setup, tracker):
     # Verify results
     assert "output_ids" in results, "Generation results should contain 'output_ids'"
     output_ids = results["output_ids"]
+    generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    assert generated_texts == expected_generations, (
+        "Output should be the same as the expected output"
+    )
 
     # run logprob calculation manually to verify
     fprop_logprob_data = BatchedDataDict(
@@ -455,7 +470,7 @@ def test_hf_policy_generation(generation_setup, tracker):
 @pytest.mark.timeout(180)
 @pytest.mark.parametrize("generation_setup", [True], indirect=True)
 def test_all_hf_policy_generation_lps_ref_training(generation_setup):
-    policy, cluster, data, tokenizer, prompts, expected_generations = generation_setup
+    policy, cluster, data, prompts, expected_generations = generation_setup
 
     # Verify resources were created properly
     assert policy is not None, "Generation policy was not created properly"

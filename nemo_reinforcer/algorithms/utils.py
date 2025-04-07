@@ -18,6 +18,7 @@ from functools import wraps
 import numpy as np
 import torch
 from torch.masked import as_masked_tensor
+from transformers import AutoTokenizer
 
 
 def calculate_kl_penalty_joschu2020(
@@ -130,3 +131,11 @@ def set_seed(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def get_tokenizer(model_name: str) -> AutoTokenizer:
+    """Get the tokenizer and set pad token to eos token if it is not already set."""
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    return tokenizer
