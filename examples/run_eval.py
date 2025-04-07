@@ -24,6 +24,7 @@ from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
 from examples.run_grpo_math import math_data_processor
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.data import MathDataConfig
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
 from nemo_reinforcer.data.interfaces import TaskDataSpec
@@ -31,7 +32,7 @@ from nemo_reinforcer.data.llm_message_utils import remap_dataset_keys
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from nemo_reinforcer.environments.math_environment import MathEnvironment
 from nemo_reinforcer.evals.eval import MasterConfig, run_env_eval, setup
-from nemo_reinforcer.models.generation.interfaces import GenerationConfig
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 
 
 def parse_args():
@@ -50,9 +51,7 @@ def parse_args():
     return args, overrides
 
 
-def setup_data(
-    data_config: MathDataConfig, generation_config: GenerationConfig, env_configs
-):
+def setup_data(tokenizer: AutoTokenizer, data_config: MathDataConfig, env_configs):
     print("\n▶ Setting up data...")
     math_task_spec = TaskDataSpec(
         task_name="math",
@@ -72,10 +71,6 @@ def setup_data(
             data_config["solution_key"]: "expected_answer",
         },
     )
-
-    tokenizer = AutoTokenizer.from_pretrained(generation_config["model_name"])
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
 
     math_env = MathEnvironment.options(
         runtime_env={"py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE}
@@ -118,12 +113,18 @@ def main():
     # Init ray
     init_ray()
 
+    # Setup tokenizer
+    tokenizer = get_tokenizer(config["generation"]["model_name"])
+    config["generation"] = configure_generation_config(
+        config["generation"], tokenizer, is_eval=True
+    )
+
     # Setup data
     (
         dataset,
         math_env,
         tokenizer,
-    ) = setup_data(config["data"], config["generation"], config["env"])
+    ) = setup_data(tokenizer, config["data"], config["env"])
 
     # Setup
     (

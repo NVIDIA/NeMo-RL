@@ -18,17 +18,17 @@ import pprint
 from typing import Dict, Any
 
 from omegaconf import OmegaConf
+from transformers import AutoTokenizer
 
 from nemo_reinforcer.algorithms.sft import MasterConfig, sft_train, setup
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
-from nemo_reinforcer.utils.config import load_config
-from nemo_reinforcer.utils.logger import get_next_experiment_dir
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.data import DataConfig, hf_datasets
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
 from nemo_reinforcer.data.interfaces import TaskDataSpec, DatumSpec
 from nemo_reinforcer.data.llm_message_utils import get_formatted_message_log
-from transformers import AutoTokenizer
-from nemo_reinforcer.models.policy import PolicyConfig
+from nemo_reinforcer.distributed.virtual_cluster import init_ray
+from nemo_reinforcer.utils.config import load_config
+from nemo_reinforcer.utils.logger import get_next_experiment_dir
 
 
 def parse_args():
@@ -83,7 +83,19 @@ def sft_preprocessor(
     return output
 
 
-def setup_data(data_config: DataConfig, policy_config: PolicyConfig):
+def setup_tokenizer(tokenizer_config: TokenizerConfig):
+    tokenizer = get_tokenizer(tokenizer_config["name"])
+    if "chat_template" in tokenizer_config:
+        if tokenizer_config["chat_template"].lower() in {"none", "null"}:
+            tokenizer.chat_template = (
+                hf_datasets.COMMON_CHAT_TEMPLATES.passthrough_prompt_response
+            )
+        else:
+            tokenizer.chat_template = tokenizer_config["chat_template"]
+    return tokenizer
+
+
+def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
     print("\n▶ Setting up data...")
     data_cls = data_config["dataset_name"]
     if data_cls == "open_assistant":
@@ -99,16 +111,6 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig):
     train_dataset = data.formatted_ds["train"]
     val_dataset = data.formatted_ds["validation"]
     sft_task_spec = data.task_spec
-
-    ## TODO: save tokenizer whenever we save an hf checkpoint
-    tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
-    if "chat_template" in policy_config["tokenizer"]:
-        if policy_config["tokenizer"]["chat_template"].lower() in {"none", "null"}:
-            tokenizer.chat_template = (
-                hf_datasets.COMMON_CHAT_TEMPLATES.passthrough_prompt_response
-            )
-        else:
-            tokenizer.chat_template = policy_config["tokenizer"]["chat_template"]
 
     train_dataset = AllTaskProcessedDataset(
         train_dataset,
@@ -126,7 +128,7 @@ def setup_data(data_config: DataConfig, policy_config: PolicyConfig):
         max_seq_length=data_config["max_input_seq_length"],
     )
 
-    return train_dataset, val_dataset, tokenizer, sft_task_spec
+    return train_dataset, val_dataset, sft_task_spec
 
 
 def main():
@@ -160,10 +162,16 @@ def main():
 
     init_ray()
 
+    # setup tokenizer
+    tokenizer = setup_tokenizer(config["tokenizer"])
+
     # setup data
-    dataset, val_dataset, tokenizer, sft_task_spec = setup_data(
-        config["data"], config["policy"]
-    )
+    (
+        dataset,
+        val_dataset,
+        sft_task_spec,
+    ) = setup_data(tokenizer, config["data"])
+
     (
         policy,
         cluster,
