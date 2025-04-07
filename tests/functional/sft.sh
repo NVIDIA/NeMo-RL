@@ -33,7 +33,7 @@ python -u $PROJECT_ROOT/examples/run_sft.py \
     2>&1 | tee $RUN_LOG
 
 ## clean up checkpoint directory
-rm -r /tmp/sft_checkpoints
+trap "rm -r /tmp/sft_checkpoints" EXIT
 
 cd $SCRIPT_DIR
 python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS

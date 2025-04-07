@@ -21,7 +21,7 @@ from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from nemo_reinforcer.utils.hf_checkpoint import (
+from nemo_reinforcer.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
     ModelState,

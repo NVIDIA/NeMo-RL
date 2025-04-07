@@ -398,7 +398,8 @@ def sft_train(
                 and (step + 1) % master_config["checkpointing"]["save_period"] == 0
             ):  # +1 because step is 0-indexed
                 is_last_checkpoint = (
-                    master_config["sft"]["max_num_steps"] - (step + 1)
+                    min(len(train_dataloader), master_config["sft"]["max_num_steps"])
+                    - (step + 1)
                     < master_config["checkpointing"]["save_period"]
                 )
 

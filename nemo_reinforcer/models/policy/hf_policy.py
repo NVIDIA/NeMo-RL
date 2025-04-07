@@ -820,7 +820,28 @@ class HfPolicyWorker:
         save_torch_dist: bool = True,
         save_hf: bool = False,
     ):
-        """Save a checkpoint of the model."""
+        """Save a checkpoint of the model.
+
+        The checkpoint is saved in the following format:
+
+        weights_path/
+            __0_1.distcp
+            __1_0.distcp
+            ...
+        weights_path-hf/
+            config.json
+            generation_config.json
+            model-00001-of-<TOTAL_SHARDS>.safetensors
+            ...
+            model.safetensors.index.json
+        optimizer_path/
+            __0_0.distcp
+            __1_0.distcp
+            ...
+
+        the HuggingFace checkpoint is saved only if `save_hf` is True,
+        and the optimizer states are saved only if `optimizer` and `optimizer_path` are provided.
+        """
         save_checkpoint(
             model=self.model,
             weights_path=weights_path,
