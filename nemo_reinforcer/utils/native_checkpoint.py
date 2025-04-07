@@ -137,6 +137,7 @@ def save_checkpoint(
     optimizer_path: Optional[str] = None,
     save_torch_dist: bool = True,
     save_hf: bool = False,
+    tokenizer: Optional[Any] = None,
 ) -> None:
     """Save a checkpoint of the model and optionally optimizer state.
 
@@ -160,6 +161,9 @@ def save_checkpoint(
                 hf_weights_path,
                 state_dict=model_state_dict,
             )
+
+            if tokenizer is not None:
+                tokenizer.save_pretrained(hf_weights_path)
 
     if save_torch_dist:
         model_state = {"model": ModelState(model)}
