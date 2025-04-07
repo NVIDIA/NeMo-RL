@@ -122,7 +122,6 @@ def test_model_state(mock_experiment):
     test_model, _, _ = mock_experiment
     model_state = ModelState(test_model)
     state_dict = model_state.state_dict()
-    assert set(state_dict) == {"model"}
 
     ## relu has no parameters
     expected_keys = {
@@ -133,7 +132,7 @@ def test_model_state(mock_experiment):
         "3.bias",
         "3.weight",
     }
-    assert set(state_dict["model"].keys()) == expected_keys
+    assert set(state_dict.keys()) == expected_keys
 
     dummy_model_state_dict = get_dummy_state_dict(state_dict, {})
 
