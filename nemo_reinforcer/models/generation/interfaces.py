@@ -15,6 +15,8 @@ from abc import ABC, abstractmethod
 from typing import Any, TypedDict, Union, Tuple, List
 
 import torch
+from transformers import AutoTokenizer
+
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 
 
@@ -45,8 +47,8 @@ def verify_right_padding(
     )
 
     assert pad_value is not None, (
-        "Tokenizer does not have a pad token assigned. \n"
-        "If the default tokenizer does not have a pad token, you can assign it the value of eos token by tokenizer.pad_token = tokenizer.eos_token"
+        "Tokenizer does not have a pad_token_id. \n"
+        "Please use the nemo_reinforcer.algorithms.utils.get_tokenizer(...) API which sets pad_token_id if absent."
     )
 
     # Determine which type of data we're dealing with
@@ -107,7 +109,28 @@ class GenerationConfig(TypedDict):
     top_k: int
     model_name: str
     stop_token_ids: List[int]
-    pad_token: int
+    pad_token_id: int
+
+
+def configure_generation_config(
+    config: GenerationConfig, tokenizer: AutoTokenizer, is_eval=False
+):
+    """Apply specific configurations to generation config."""
+    # tokenizer setting
+    config["pad_token_id"] = tokenizer.pad_token_id
+    # When https://github.com/NVIDIA/reinforcer/issues/57 is fixed, we should update stop_token_ids below.
+    config["stop_token_ids"] = [tokenizer.eos_token_id]
+
+    # vllm setting
+    if config["backend"] == "vllm":
+        if is_eval:
+            config["vllm_cfg"]["skip_tokenizer_init"] = False
+            config["vllm_cfg"]["load_format"] = "auto"
+        else:
+            config["vllm_cfg"]["skip_tokenizer_init"] = True
+            config["vllm_cfg"]["load_format"] = "dummy"
+
+    return config
 
 
 class GenerationDatumSpec(TypedDict):

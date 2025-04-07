@@ -218,7 +218,7 @@ class VllmGenerationWorker:
             f"input_ids and input_lengths must be present in the BatchedDataDict, got keys: {data.keys()}"
         )
         is_right_padded, error_msg = verify_right_padding(
-            data, pad_value=self.cfg["pad_token"]
+            data, pad_value=self.cfg["pad_token_id"]
         )
         if not is_right_padded:
             warnings.warn(
@@ -282,7 +282,7 @@ class VllmGenerationWorker:
 
             # Create a new tensor with the right size and fill with padding token
             full_output = torch.full(
-                (total_length,), self.cfg["pad_token"], dtype=input_ids.dtype
+                (total_length,), self.cfg["pad_token_id"], dtype=input_ids.dtype
             )
 
             # Copy original input (with padding) into the beginning
@@ -516,7 +516,9 @@ class VllmGeneration(GenerationInterface):
         results = self.worker_group.get_all_worker_results(future_bundle)
 
         # Combine results from all tied worker groups
-        combined = BatchedDataDict.from_batches(results)
+        combined = BatchedDataDict.from_batches(
+            results, pad_value_dict={"output_ids": self.cfg["pad_token_id"]}
+        )
 
         # Verify the output has all required fields
         required_keys = [
@@ -557,7 +559,9 @@ class VllmGeneration(GenerationInterface):
         results = self.worker_group.get_all_worker_results(future_bundle)
 
         # Combine results from all tied worker groups
-        combined = BatchedDataDict.from_batches(results)
+        combined = BatchedDataDict.from_batches(
+            results, pad_value_dict={"output_ids": self.cfg["pad_token_id"]}
+        )
 
         # Verify the output has all required fields
         required_keys = ["texts"]
