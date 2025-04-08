@@ -375,17 +375,21 @@ def get_formatted_message_log(
         ## pull out the chunk corresponding to the current message
         message_chunk = formatted_message[prev_message_len_no_eos:]
 
-        if add_bos_token and tokenizer.bos_token is not None:
-            if i == 0 and not message_chunk.startswith(tokenizer.bos_token):
+        if i == 0:
+            if (
+                add_bos_token
+                and tokenizer.bos_token is not None
+                and not message_chunk.startswith(tokenizer.bos_token)
+            ):
                 message_chunk = tokenizer.bos_token + message_chunk
 
         if i == len(message_log) - 1:
-            message_chunk = message_chunk.rstrip("\n")
             if (
                 add_eos_token
                 and tokenizer.eos_token is not None
                 and not message_chunk.endswith(tokenizer.eos_token)
             ):
+                message_chunk = message_chunk.rstrip("\n")
                 message_chunk += tokenizer.eos_token
 
         new_message = message.copy()

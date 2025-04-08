@@ -17,9 +17,14 @@ from typing import TypedDict
 from nemo_reinforcer.models.generation.interfaces import GenerationConfig
 
 
+class TokenizerConfig(TypedDict):
+    name: str
+    chat_template: str
+
+
 class PolicyConfig(TypedDict):
     model_name: str
-    tokenizer_name: str
+    tokenizer: TokenizerConfig
     train_global_batch_size: int
     train_micro_batch_size: int
     learning_rate: float

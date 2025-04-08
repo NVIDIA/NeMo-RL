@@ -29,6 +29,7 @@ from nemo_reinforcer.data.llm_message_utils import get_formatted_message_log
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from nemo_reinforcer.utils.config import load_config
 from nemo_reinforcer.utils.logger import get_next_experiment_dir
+from nemo_reinforcer.models.policy import TokenizerConfig
 
 
 def parse_args():
@@ -90,7 +91,7 @@ def sft_preprocessor(
 def setup_tokenizer(tokenizer_config: TokenizerConfig):
     tokenizer = get_tokenizer(tokenizer_config["name"])
     if "chat_template" in tokenizer_config:
-        if tokenizer_config["chat_template"].lower() in {"none", "null"}:
+        if tokenizer_config["chat_template"] is None:
             tokenizer.chat_template = (
                 hf_datasets.COMMON_CHAT_TEMPLATES.passthrough_prompt_response
             )
@@ -106,9 +107,10 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
         data = hf_datasets.OasstDataset(output_dir="/tmp/open_assistant")
     elif data_cls == "squad":
         data = hf_datasets.SquadDataset()
-    elif data_cls == "json_dataset":
-        data = hf_datasets.JsonDataset(
-            data_config["data_path"],
+    elif data_cls == "prompt_response_dataset":
+        data = hf_datasets.PromptResponseDataset(
+            data_config["train_data_path"],
+            data_config["val_data_path"],
             data_config["input_key"],
             data_config["output_key"],
         )
@@ -173,7 +175,7 @@ def main():
     init_ray()
 
     # setup tokenizer
-    tokenizer = setup_tokenizer(config["tokenizer"])
+    tokenizer = setup_tokenizer(config["policy"]["tokenizer"])
 
     # setup data
     (

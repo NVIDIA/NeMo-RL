@@ -26,7 +26,7 @@ from torch.distributed.fsdp import (
     MixedPrecision,
 )
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
 from nemo_reinforcer.algorithms.utils import get_tokenizer
@@ -80,7 +80,7 @@ class HfPolicyWorker:
         rank = torch.distributed.get_rank()
         world_size = torch.distributed.get_world_size()
         model_name = self.cfg["model_name"]
-        tokenizer_name = self.cfg["tokenizer_name"]
+        tokenizer_name = self.cfg["tokenizer"]["name"]
         if self.cfg["precision"] == "float32":
             self.dtype = torch.float32
         elif self.cfg["precision"] == "bfloat16":
