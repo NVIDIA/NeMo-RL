@@ -29,7 +29,6 @@ from nemo_reinforcer.data.llm_message_utils import get_formatted_message_log
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from nemo_reinforcer.utils.config import load_config
 from nemo_reinforcer.utils.logger import get_next_experiment_dir
-from nemo_reinforcer.models.policy import TokenizerConfig
 
 
 def parse_args():
@@ -86,18 +85,6 @@ def sft_preprocessor(
         "idx": idx,
     }
     return output
-
-
-def setup_tokenizer(tokenizer_config: TokenizerConfig):
-    tokenizer = get_tokenizer(tokenizer_config["name"])
-    if "chat_template" in tokenizer_config:
-        if tokenizer_config["chat_template"] is None:
-            tokenizer.chat_template = (
-                hf_datasets.COMMON_CHAT_TEMPLATES.passthrough_prompt_response
-            )
-        else:
-            tokenizer.chat_template = tokenizer_config["chat_template"]
-    return tokenizer
 
 
 def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
@@ -175,7 +162,7 @@ def main():
     init_ray()
 
     # setup tokenizer
-    tokenizer = setup_tokenizer(config["policy"]["tokenizer"])
+    tokenizer = get_tokenizer(config["policy"]["tokenizer"])
 
     # setup data
     (
@@ -194,7 +181,7 @@ def main():
         checkpointer,
         sft_save_state,
         master_config,
-    ) = setup(config, dataset, val_dataset, tokenizer)
+    ) = setup(config, tokenizer, dataset, val_dataset)
     sft_train(
         policy,
         train_dataloader,

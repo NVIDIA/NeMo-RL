@@ -20,6 +20,9 @@ import torch
 from torch.masked import as_masked_tensor
 from transformers import AutoTokenizer
 
+from nemo_reinforcer.data import hf_datasets
+from nemo_reinforcer.models.policy import TokenizerConfig
+
 
 def calculate_kl_penalty_joschu2020(
     logprobs_policy: torch.Tensor, logprobs_reference: torch.Tensor
@@ -133,9 +136,16 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
 
 
-def get_tokenizer(model_name: str) -> AutoTokenizer:
+def get_tokenizer(tokenizer_config: TokenizerConfig) -> AutoTokenizer:
     """Get the tokenizer and set pad token to eos token if it is not already set."""
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_config["name"])
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    if "chat_template" in tokenizer_config:
+        if tokenizer_config["chat_template"] is None:
+            tokenizer.chat_template = (
+                hf_datasets.COMMON_CHAT_TEMPLATES.passthrough_prompt_response
+            )
+        else:
+            tokenizer.chat_template = tokenizer_config["chat_template"]
     return tokenizer

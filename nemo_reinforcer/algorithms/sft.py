@@ -77,9 +77,9 @@ class MasterConfig(TypedDict):
 # =======================================================
 def setup(
     master_config: MasterConfig,
+    tokenizer: AutoTokenizer,
     train_dataset: AllTaskProcessedDataset,
     val_dataset: AllTaskProcessedDataset,
-    tokenizer: AutoTokenizer,
 ) -> Tuple[
     HfPolicy,
     RayVirtualCluster,

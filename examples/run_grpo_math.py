@@ -64,7 +64,6 @@ def openinstructmath2_data_processor(
     problem = user_message[0]["content"]
     extra_env_info = {"ground_truth": user_message[1]["content"]}
 
-    template = task_data_spec.custom_template
     message_log: LLMMessageLogType = []
     user_message = {
         "role": "user",
@@ -72,7 +71,6 @@ def openinstructmath2_data_processor(
     }
     message = tokenizer.apply_chat_template(
         [user_message],
-        chat_template=template,
         tokenize=False,
         add_generation_prompt=True,
         add_special_tokens=False,
@@ -254,7 +252,7 @@ def main():
     init_ray()
 
     # setup tokenizer
-    tokenizer = get_tokenizer(config["policy"]["model_name"])
+    tokenizer = get_tokenizer(config["policy"]["tokenizer"])
     config["policy"]["generation"] = configure_generation_config(
         config["policy"]["generation"], tokenizer
     )
