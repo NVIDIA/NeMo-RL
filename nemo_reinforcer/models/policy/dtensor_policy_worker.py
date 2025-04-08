@@ -508,6 +508,8 @@ class DTensorPolicyWorker:
 
         # Replace the original params with the converted ones
         params = dtype_params
+
+        # hold on to the params so we can explicitly delete them after refit
         self._held_model_params = params
 
         data = {}

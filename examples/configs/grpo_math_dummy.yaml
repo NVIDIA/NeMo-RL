@@ -32,7 +32,6 @@ policy:
   max_total_sequence_length: 2048
   precision: "bfloat16"
   offload_policy: False
-  cpu_offload: False
   tensor_parallel_size: 2
 
   optimizer:
