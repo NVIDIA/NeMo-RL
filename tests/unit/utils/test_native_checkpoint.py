@@ -17,6 +17,7 @@ import pytest
 import torch
 from tempfile import TemporaryDirectory
 
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.models.policy.hf_policy import HfPolicy
@@ -31,7 +32,9 @@ from nemo_reinforcer.utils.native_checkpoint import (
 # Define basic test config
 simple_policy_config = {
     "model_name": "meta-llama/Llama-3.2-1B",  # "hf-internal-testing/tiny-random-Gemma3ForCausalLM",
-    "tokenizer_name": "meta-llama/Llama-3.2-1B",  # "hf-internal-testing/tiny-random-Gemma3ForCausalLM",
+    "tokenizer": {
+        "name": "meta-llama/Llama-3.2-1B",
+    },
     "train_global_batch_size": 32,
     "train_micro_batch_size": 1,
     "logprob_batch_size": 1,
@@ -75,10 +78,7 @@ def cluster():
 @pytest.fixture(scope="function")
 def tokenizer():
     """Initialize tokenizer for the test model."""
-    tokenizer_name = simple_policy_config["tokenizer_name"]
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = get_tokenizer(simple_policy_config["tokenizer"])
     return tokenizer
 
 
@@ -87,6 +87,7 @@ def policy(cluster, tokenizer):
     """Initialize the policy."""
     return HfPolicy(
         cluster=cluster,
+        tokenizer=tokenizer,
         config=simple_policy_config,
         init_optimizer=False,
         init_reference_model=False,
@@ -273,6 +274,9 @@ def test_save_and_load_hf_checkpoint(policy):
             "model-00001-of-00002.safetensors",
             "model-00002-of-00002.safetensors",
             "model.safetensors.index.json",
+            "tokenizer_config.json",
+            "tokenizer.json",
+            "special_tokens_map.json",
         }
 
         coverted_model = AutoModelForCausalLM.from_pretrained(
