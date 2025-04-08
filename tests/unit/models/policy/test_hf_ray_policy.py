@@ -15,6 +15,7 @@ import ray
 import pytest
 import pprint
 import torch
+from copy import deepcopy
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
 from nemo_reinforcer.algorithms.utils import get_tokenizer
@@ -571,8 +572,8 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
     )
 
     # Create separate configs for each policy
-    config = basic_llama_test_config
-    config["generation"]["pad_token"] = tokenizer.pad_token_id
+    config = deepcopy(basic_llama_test_config)
+    config["generation"] = configure_generation_config(config["generation"], tokenizer)
     # Add stop strings for testing
     config["generation"]["stop_token_ids"] = [1690, 1920]  # [" process", "many"]
     config["generation"]["stop_strings"] = ["because it is", "A. Houston"]
