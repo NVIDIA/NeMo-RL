@@ -126,6 +126,7 @@ class DTensorPolicyWorker:
             activation_checkpointing=self.cfg["activation_checkpointing"],
         )
         self.model = self.move_to_cpu(self.model)
+        self._held_model_params = None
 
         if init_reference_model:
             # self._held_reference_model_params = self.model.state_dict()
@@ -489,6 +490,8 @@ class DTensorPolicyWorker:
     def get_weight_ipc_handles(self, offload_model=True):
         from torch.multiprocessing.reductions import reduce_tensor
 
+        self.model = self.move_to_cuda(self.model)
+
         # TODO @sahilj: do this without an allgather (maybe FSDP2)
         params = self.model.state_dict()
 
@@ -505,6 +508,8 @@ class DTensorPolicyWorker:
 
         # Replace the original params with the converted ones
         params = dtype_params
+        self._held_model_params = params
+
         data = {}
         device_uuid = self.report_device_id()
         for name, p in params.items():
@@ -566,6 +571,10 @@ class DTensorPolicyWorker:
         torch.randn(1).cuda()  # wake up torch allocator
         self.offload_before_refit()  # rerun the old offload function
 
+        if self._held_model_params is not None:
+            del self._held_model_params
+            self._held_model_params = None
+
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -576,18 +585,7 @@ class DTensorPolicyWorker:
         )
 
     def move_to_device(self, model, device):
-        for v in self.model.state_dict().values():
-            if not isinstance(v, (torch.Tensor, DTensor)):
-                continue
-            if isinstance(v, DTensor):
-                v._local_tensor.data = v._local_tensor.data.to(
-                    device, non_blocking=True
-                )
-            else:
-                v.data = v.data.to(device, non_blocking=True)
-
-        torch.cuda.synchronize()
-        return model
+        return model.to(device)
 
     def move_to_cuda(self, model):
         allocated = torch.cuda.memory_allocated() / (1024**3)  # Convert to GB
