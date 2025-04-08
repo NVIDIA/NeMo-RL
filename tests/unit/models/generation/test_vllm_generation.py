@@ -12,14 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from copy import deepcopy
+
 import pytest
 import torch
 import ray
 
-from transformers import AutoTokenizer
-
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 
 
@@ -27,6 +29,7 @@ from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
     "model_name": "meta-llama/Llama-3.2-1B",  # Small model for testing
+    "tokenizer_name": "meta-llama/Llama-3.2-1B",
     "dtype": "bfloat16",
     "max_new_tokens": 10,
     "temperature": 1.0,
@@ -38,19 +41,6 @@ basic_vllm_test_config: VllmConfig = {
         "max_model_len": 1024,
     },
 }
-
-
-def configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=False):
-    """Apply tokenizer-specific configurations to vLLM config."""
-    if is_eval:
-        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = False
-        vllm_config["vllm_cfg"]["load_format"] = "auto"
-    else:
-        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = True
-        vllm_config["vllm_cfg"]["load_format"] = "dummy"
-    vllm_config["pad_token"] = tokenizer.pad_token_id
-    vllm_config["stop_token_ids"] = [tokenizer.eos_token_id]
-    return vllm_config
 
 
 @pytest.fixture(scope="module")
@@ -81,9 +71,7 @@ def cluster():
 def tokenizer():
     """Initialize tokenizer for the test model."""
     model_name = basic_vllm_test_config["model_name"]
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = get_tokenizer(model_name)
     return tokenizer
 
 
@@ -92,7 +80,7 @@ def policy(cluster, tokenizer, check_vllm_available):
     """Initialize the vLLM policy."""
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
+    vllm_config = configure_generation_config(vllm_config, tokenizer)
     policy = VllmGeneration(cluster, vllm_config)
     yield policy
 
@@ -212,11 +200,12 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
+    vllm_config = configure_generation_config(vllm_config, tokenizer)
 
     # Create HF-specific config with required parameters
     hf_config = {
         "model_name": basic_vllm_test_config["model_name"],
+        "tokenizer_name": basic_vllm_test_config["tokenizer_name"],
         # Required training parameters
         "train_global_batch_size": 4,
         "train_micro_batch_size": 1,
@@ -249,6 +238,17 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
             "Who is the president of the USA?",
             "What is the capital of the moon?",
             "Where is the sun?",
+        ]
+
+        expected_generations = [
+            "Write a story about a magical forest. The forest is magical because it is full of",
+            "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis",
+            "What are the benefits of exercise? The benefits of exercise are many and varied. It",
+            "Describe the water cycle in your own words.\nDescribe the water cycle in",
+            "What is the capital of France? A. Paris B. New York C. Washington",
+            "Who is the president of the USA? Who is the president of the USA? Who is",
+            "What is the capital of the moon? A. Houston, Texas B. New York City",
+            "Where is the sun? Where is the moon? Where is the earth?",
         ]
 
         # Tokenize the prompts the same way as in test_hf_ray_policy
@@ -285,7 +285,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
-        generation_results = vllm_policy.generate(test_input_data)
+        generation_results = vllm_policy.generate(test_input_data, greedy=True)
         vllm_policy.finish_generation()
         # Validate generation outputs
         assert "output_ids" in generation_results, (
@@ -300,6 +300,9 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
             generation_results["output_ids"], skip_special_tokens=True
         )
         print(f"vLLM generated texts: {generated_texts}")
+        assert generated_texts == expected_generations, (
+            "Output should be the same as the expected output"
+        )
 
         # Run logprob calculation with HF policy to verify
 
@@ -400,9 +403,9 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 def test_vllm_policy_tensor_parallel(cluster, tokenizer):
     """Test vLLM policy with tensor parallelism > 1."""
     # Configure with tensor_parallel_size=2
-    tp_config = basic_vllm_test_config.copy()
-    tp_config = configure_vllm_with_tokenizer(tp_config, tokenizer)
-    tp_config["tensor_parallel_size"] = 2
+    tp_config = deepcopy(basic_vllm_test_config)
+    tp_config = configure_generation_config(tp_config, tokenizer)
+    tp_config["vllm_cfg"]["tensor_parallel_size"] = 2
 
     # Ensure we specify the distributed executor backend
     tp_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}
@@ -454,90 +457,6 @@ def test_vllm_policy_tensor_parallel(cluster, tokenizer):
             vllm_policy.shutdown()
 
 
-@pytest.mark.timeout(60)
-@pytest.mark.parametrize("tensor_parallel_size", [1, 2])
-def test_vllm_policy_weight_update(cluster, tokenizer, tensor_parallel_size):
-    """Test that weights can be updated from HF to vLLM policy."""
-    # Create HF policy
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
-
-    # Create separate configs for each policy
-    vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer)
-    vllm_config["tensor_parallel_size"] = tensor_parallel_size
-
-    # Add vllm_kwargs only if using tensor parallelism
-    if tensor_parallel_size > 1:
-        vllm_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}
-
-    # Create HF-specific config with required parameters
-    hf_config = {
-        "model_name": basic_vllm_test_config["model_name"],
-        # Required training parameters
-        "train_global_batch_size": 4,
-        "train_micro_batch_size": 1,
-        "learning_rate": 5e-6,
-        "logprob_batch_size": 1,
-        "max_new_tokens": 16,
-        "do_sample": False,
-        "precision": "float32",
-        "optimizer": {
-            "name": "torch.optim.AdamW",
-            "kwargs": {
-                "lr": 5e-6,
-                "weight_decay": 0.01,
-                "betas": [0.9, 0.999],
-                "eps": 1e-8,
-            },
-        },
-    }
-
-    hf_policy = HfPolicy(cluster, hf_config)
-    print(f"hf_policy created: {hf_policy}", flush=True)
-    # hf_policy.finish_training()
-    vllm_policy = VllmGeneration(cluster, vllm_config)
-    print(
-        f"vllm_policy created with tensor_parallel_size={tensor_parallel_size}: {vllm_policy}",
-        flush=True,
-    )
-
-    # Test generation with tensor parallelism
-    vllm_policy.finish_generation()
-    # hf_policy.prepare_for_training()
-
-    # Zero out the weights in the HF model via workers
-    ray.get(
-        [worker.zero_out_weights.remote() for worker in hf_policy.worker_group.workers]
-    )
-    print("Zeroed out weights in HF policy")
-    # Get device IDs
-    training_device_id = ray.get(
-        hf_policy.worker_group.workers[0].report_device_id.remote()
-    )
-    worker_device_id = ray.get(
-        vllm_policy.worker_group.workers[0].report_device_id.remote()
-    )
-
-    # Ensure they are on the same device
-    assert training_device_id == worker_device_id, (
-        "Training actor and worker should be on the same device"
-    )
-
-    # Use our new utility methods for weight update
-    # Get IPC handles from the HF policy
-    ipc_handles = hf_policy.get_weights_ipc_handles()
-    print("Got IPC handles from HF policy")
-    vllm_policy.prepare_for_generation()
-    # Update weights in the VllmGeneration
-    assert vllm_policy.update_weights(ipc_handles), "Weight update should succeed"
-
-    # Check if weights have been updated
-    assert vllm_policy._check_all_weights_changed(), "Weights should be updated to zero"
-
-    # Clean up
-    vllm_policy.shutdown()
-
-
 def test_vllm_generate_text(cluster, tokenizer):
     """Test that vLLM can generate text."""
     # Prepare test data
@@ -549,7 +468,7 @@ def test_vllm_generate_text(cluster, tokenizer):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
 
     # Ensure we can get same output
     assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
@@ -571,3 +490,114 @@ def test_vllm_generate_text(cluster, tokenizer):
 
     # Clean up
     vllm_generation.shutdown()
+
+
+@pytest.mark.timeout(180)
+@pytest.mark.parametrize("tensor_parallel_size", [1, 2])
+def test_vllm_weight_update_and_prefix_cache_reset(
+    cluster, tokenizer, tensor_parallel_size
+):
+    """Test that the vLLM prefix cache is correctly reset when weights change."""
+    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+
+    # Create configs
+    vllm_config = deepcopy(basic_vllm_test_config)
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
+    vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
+    if tensor_parallel_size > 1:
+        vllm_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}
+
+    hf_config = {
+        "model_name": basic_vllm_test_config["model_name"],
+        "tokenizer_name": "meta-llama/Llama-3.2-1B",
+        "train_global_batch_size": 1,
+        "train_micro_batch_size": 1,
+        "learning_rate": 1e-6,
+        "logprob_batch_size": 1,
+        "max_new_tokens": 16,
+        "do_sample": False,
+        "precision": "float32",
+        "optimizer": {"name": "torch.optim.AdamW", "kwargs": {"lr": 1e-6}},
+    }
+
+    # Create policies
+    vllm_policy = None
+    hf_policy = None
+    try:
+        print(f"Creating HF policy for TP={tensor_parallel_size}...")
+        hf_policy = HfPolicy(cluster, hf_config)
+        print(f"Creating vLLM policy for TP={tensor_parallel_size}...")
+        vllm_policy = VllmGeneration(cluster, vllm_config)
+
+        # Prepare input data (batch size 2)
+        text = """Answer the question based on the context below. Keep the answer short and concise. Respond "Unsure about answer" if not sure about the answer. Context: Teplizumab traces its roots to a New Jersey drug company called Ortho Pharmaceutical. There, scientists generated an early version of the antibody, dubbed OKT3. Originally sourced from mice, the molecule was able to bind to the surface of T cells and limit their cell-killing potential. In 1986, it was approved to help prevent organ rejection after kidney transplants, making it the first therapeutic antibody allowed for human use.Question: What was OKT3 originally sourced from?Answer:"""
+        test_prompt = [text, text]  # Use batch size 2
+        encodings = tokenizer(
+            test_prompt,
+            padding=True,
+            return_tensors="pt",
+            padding_side="right",
+        )
+        input_ids = encodings["input_ids"]
+        input_lengths = encodings["attention_mask"].sum(dim=1).to(torch.int32)
+        test_input_data = BatchedDataDict(
+            {"input_ids": input_ids, "input_lengths": input_lengths}
+        )
+
+        print("Running Generation 1 (Initial)...")
+        vllm_policy.prepare_for_generation()
+        outputs1 = vllm_policy.generate(test_input_data, greedy=True)
+        generated_text = tokenizer.decode(
+            outputs1["output_ids"][0], skip_special_tokens=True
+        )
+        print(f"Generated text (Run 1): {generated_text}")
+        logprob1 = outputs1["logprobs"][0, input_lengths[0]].item()
+        print(f"Logprob of first generated token (Run 1): {logprob1}")
+
+        print("Adding noise to weights in HF policy...")
+        ray.get(
+            [
+                worker._add_noise_to_weights.remote()
+                for worker in hf_policy.worker_group.workers
+            ]
+        )
+
+        print("Updating vLLM weights from HF policy...")
+        ipc_handles = hf_policy.get_weights_ipc_handles()
+        update_success = vllm_policy.update_weights(ipc_handles)
+        assert update_success, "Weight update should succeed"
+        print("vLLM weights successfully updated.")
+
+        print("Running Generation 2 (Weights Updated, Cache Still Active)...")
+        # Generate again *without* resetting the cache
+        outputs2 = vllm_policy.generate(test_input_data, greedy=True)
+        logprob2 = outputs2["logprobs"][0, input_lengths[0]].item()
+        print(f"Logprob of first generated token (Run 2): {logprob2}")
+        assert logprob2 != logprob1, "Logprobs should be different after weight update."
+
+        print("Resetting vLLM prefix cache (via finish/prepare cycle)...")
+        vllm_policy.finish_generation()  # Calls sleep() which resets cache
+        vllm_policy.prepare_for_generation()  # Calls wake_up()
+
+        print("Running Generation 3 (Weights updated, Cache Reset)...")
+        outputs3 = vllm_policy.generate(test_input_data, greedy=True)
+        logprob3 = outputs3["logprobs"][0, input_lengths[0]].item()
+        print(f"Logprob of first generated token (Run 3): {logprob3}")
+        assert logprob2 != logprob3, (
+            "Logprobs should be different after cache reset and weight update."
+        )
+
+        print("Prefix cache reset verified successfully.")
+
+    finally:
+        # --- Cleanup ---
+        print("Cleaning up resources...")
+        if vllm_policy:
+            vllm_policy.shutdown()
+        if hf_policy:
+            hf_policy.shutdown()
+        # Force garbage collection to help release resources
+        import gc
+
+        gc.collect()
+        torch.cuda.empty_cache()

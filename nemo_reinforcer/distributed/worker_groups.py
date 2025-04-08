@@ -23,6 +23,7 @@ from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import SlicedDataDict
+from nemo_reinforcer.utils.venvs import create_local_venv
 
 
 @dataclass
@@ -155,7 +156,17 @@ class RayWorkerBuilder:
                 options["runtime_env"] = {}
             options["runtime_env"]["py_executable"] = worker_class.DEFAULT_PY_EXECUTABLE
 
-        # Create and return the worker
+        if options.get("runtime_env", {}).get("py_executable", "n/a").startswith("uv"):
+            # If the py_executable begins with uv it signals that we need to create a
+            #  local venv first and then replace the py_executable with the local venv's python.
+            #  The directory the venv will be created in is controlled by the env var
+            #  REINFORCER_VENV_DIR and defaults to $GIT_ROOT/venvs/.
+            unwrapped_cls = worker_class.__ray_actor_class__
+            venv_python = create_local_venv(
+                py_executable=options["runtime_env"]["py_executable"],
+                venv_name=f"{unwrapped_cls.__module__}.{unwrapped_cls.__name__}",
+            )
+            options["runtime_env"]["py_executable"] = venv_python
         return worker_class.options(**options).remote(*self.args, **worker_kwargs)
 
 

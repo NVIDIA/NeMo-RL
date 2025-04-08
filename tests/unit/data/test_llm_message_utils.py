@@ -310,7 +310,7 @@ def test_batch_pad_message_log_custom_pad_value(
     )
 
 
-def test_get_formatted_message_log(
+def test_get_formatted_message_log_llama(
     raw_chat_message_log: LLMMessageLogType,
 ) -> None:
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
@@ -344,6 +344,41 @@ def test_get_formatted_message_log(
         formatted_user_message[len(bot_str) :],
         formatted_assistant_message[len(bot_str) :],
     ]
+
+    task_data_spec = TaskDataSpec(
+        task_name="test",
+    )
+    result = get_formatted_message_log(raw_chat_message_log, tokenizer, task_data_spec)
+    actual_text = [m["content"] for m in result]
+
+    assert actual_text == expected_text
+
+
+def test_get_formatted_message_log_qwen(
+    raw_chat_message_log: LLMMessageLogType,
+) -> None:
+    ## test using a tokenizer that does not have a bos token
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-Coder-32B-Instruct")
+    assert tokenizer.bos_token is None
+
+    ## get expected result
+    ## result is equivalent to if we apply chat template to the full message log,
+    ## remove the trailing newline, and then partition by the delimiter
+    expected_text_string = tokenizer.apply_chat_template(
+        [raw_chat_message_log],
+        tokenize=False,
+        add_generation_prompt=False,
+        add_special_tokens=False,
+    )[0].rstrip("\n")  ## remove trailing newline
+
+    delimiter = "<|im_end|>\n"
+    split_text = expected_text_string.split(delimiter)
+    expected_text = []
+    for i in range(len(split_text)):
+        if i == len(raw_chat_message_log) - 1:
+            expected_text.append(split_text[i])
+        else:
+            expected_text.append(split_text[i] + delimiter)
 
     task_data_spec = TaskDataSpec(
         task_name="test",

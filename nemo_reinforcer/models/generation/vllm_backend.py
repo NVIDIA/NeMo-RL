@@ -63,20 +63,3 @@ class UpdatableVllmInternalWorker(Worker):
                 f"Error in UpdatableVllmInternalWorker.update_weights_from_ipc_handles: {e}"
             )
             return False
-
-    def check_weights_changed(self):
-        """Check if the weights are updated to 0.
-
-        Returns:
-            bool: True if all weights have been zeroed, False otherwise.
-        """
-        try:
-            weights_updated = True
-            for name, p in self.model_runner.model.named_parameters():
-                weights_updated = weights_updated and torch.allclose(
-                    p, torch.zeros_like(p)
-                )
-            return weights_updated
-        except Exception as e:
-            print(f"Error in UpdatableVllmInternalWorker.check_weights_changed: {e}")
-            return False
