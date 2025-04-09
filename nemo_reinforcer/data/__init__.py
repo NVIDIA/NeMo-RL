@@ -21,6 +21,8 @@ class DataConfig(TypedDict):
     system_prompt_file: Optional[str]
     dataset_name: str
     val_dataset_name: Optional[str]
+    add_bos: Optional[bool]
+    add_eos: Optional[bool]
 
 
 class MathDataConfig(DataConfig):

@@ -15,6 +15,7 @@
 import argparse
 import os
 import pprint
+from functools import partial
 from typing import Dict, Any
 
 from omegaconf import OmegaConf
@@ -56,14 +57,16 @@ def sft_preprocessor(
     tokenizer,
     max_seq_length: int,
     idx: int,
+    add_bos: bool = True,
+    add_eos: bool = True,
 ) -> DatumSpec:
     """Process a datum dictionary for SFT training."""
     message_log = get_formatted_message_log(
         datum_dict["messages"],
         tokenizer,
         task_data_spec,
-        add_bos_token=True,
-        add_eos_token=True,
+        add_bos_token=add_bos,
+        add_eos_token=add_eos,
     )
 
     length = sum(len(m["token_ids"]) for m in message_log)
@@ -115,7 +118,11 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
         train_dataset,
         tokenizer,
         sft_task_spec,
-        sft_preprocessor,
+        partial(
+            sft_preprocessor,
+            add_bos=data_config.get("add_bos", True),
+            add_eos=data_config.get("add_eos", True),
+        ),
         max_seq_length=data_config["max_input_seq_length"],
     )
 
@@ -123,7 +130,11 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
         val_dataset,
         tokenizer,
         sft_task_spec,
-        sft_preprocessor,
+        partial(
+            sft_preprocessor,
+            add_bos=data_config.get("add_bos", True),
+            add_eos=data_config.get("add_eos", True),
+        ),
         max_seq_length=data_config["max_input_seq_length"],
     )
 

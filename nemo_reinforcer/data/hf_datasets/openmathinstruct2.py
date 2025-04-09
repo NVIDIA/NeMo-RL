@@ -62,7 +62,6 @@ def prepare_openinstructmath2_dataset(split: str = "train_1M", seed=42, test_siz
     }
 
 
-@dataclass
 class OpenMathInstruct2Dataset:
     def __init__(
         self, split: str = "train_1M", seed: int = 42, test_size: float = 0.05

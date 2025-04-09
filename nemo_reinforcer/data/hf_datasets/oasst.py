@@ -119,7 +119,6 @@ def download_and_process_oasst(output_directory=".", seed=42, split_ratio=0.95):
     return formatted_ds
 
 
-@dataclass
 class OasstDataset:
     def __init__(self, output_dir: str = "."):
         self.formatted_ds = download_and_process_oasst(output_dir)
