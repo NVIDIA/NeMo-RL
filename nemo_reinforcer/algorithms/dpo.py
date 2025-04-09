@@ -164,7 +164,7 @@ def setup(
         val_dataset,
         batch_size=dpo_config["val_global_batch_size"],
         shuffle=False,
-        collate_fn=dpo_collate_fn,
+        collate_fn=partial(dpo_collate_fn, tokenizer=tokenizer),
         drop_last=True,
     )
 
@@ -218,6 +218,26 @@ def setup(
     )
 
 
+def augment_dataloader(dataloader, policy, master_config):
+    dataloader_iter = iter(dataloader)
+    while True:
+        try:
+            batch = next(dataloader_iter)
+
+            ## append ref policy logprobs to batch
+            logprobs = policy.get_reference_policy_logprobs(
+                batch,
+                ## TODO: make more robust
+                micro_batch_size=master_config["policy"]["train_micro_batch_size"] * 2,
+            )["reference_logprobs"].to("cpu")
+            batch["reference_policy_logprobs"] = torch.roll(logprobs, -1, dims=-1)
+
+            yield batch
+
+        except StopIteration:
+            break
+
+
 # =======================================================
 # Training & Validation
 # =======================================================
@@ -234,7 +254,60 @@ def validate(
     val_mbs: int,
 ):
     """Run validation on the validation dataset."""
-    ### TODO ###
+    if val_dataloader is None:
+        print("  ⚠️ No validation dataloader provided, skipping validation")
+        return
+
+    timer = Timer()
+
+    with timer.time("total_validation_time"):
+        print(f"▶ Starting validation at step {step}...")
+
+        # Show a progress indicator for validation
+        # val_total = len(val_dataloader)
+
+        for batch_idx, val_batch in enumerate(
+            augment_dataloader(val_dataloader, policy, master_config)
+        ):
+            ## just run model fwd
+            val_results = policy.train(
+                val_batch,
+                loss_fn,
+                eval_mode=True,
+                gbs=val_batch_size,
+                mbs=val_mbs,
+            )
+
+            ## TODO: this should already be averaged across microbatches.. why isn't it?
+            val_metrics = {
+                "loss": val_results["loss"].numpy(),
+            }
+            val_metrics.update(val_results["all_mb_metrics"])
+            val_metrics = {k: np.mean(v).item() for k, v in val_metrics.items()}
+            if val_batches > 0 and batch_idx >= val_batches:
+                break
+
+        # Calculate validation metrics
+        policy.prepare_for_training()
+
+    # Get timing metrics
+    timing_metrics = timer.get_timing_metrics(reduction_op="sum")
+    validation_time = timing_metrics.get("total_validation_time", 0)
+
+    # Print summary of validation results
+    print("\n📊 Validation Results:")
+    print(f"    • Validation loss: {float(val_metrics['loss']):.4f}")
+    print(f"    • Validation accuracy: {float(val_metrics['accuracy']):.4f}")
+
+    # Print timing information
+    print("\n  ⏱️  Validation Timing:")
+    validation_time = timing_metrics.get("total_validation_time", 0)
+    print(f"    • Total validation time: {validation_time:.2f}s")
+
+    # Make sure to reset the timer after validation
+    timer.reset()
+
+    return val_metrics, timing_metrics
 
 
 def dpo_train(
@@ -264,7 +337,7 @@ def dpo_train(
     val_at_start = dpo_config["val_at_start"]
 
     # Run validation at the start if configured
-    """if val_at_start and step == 0:
+    if val_at_start and step == 0:
         print("\n🔍 Running initial validation...")
 
         ## TODO
@@ -282,35 +355,14 @@ def dpo_train(
         )
 
         logger.log_metrics(val_metrics, step, prefix="validation")
-        logger.log_metrics(validation_timings, step, prefix="timing/validation")"""
+        logger.log_metrics(validation_timings, step, prefix="timing/validation")
 
     policy.prepare_for_training()
 
-    def augment_dataloader(dataloader):
-        dataloader_iter = iter(dataloader)
-        while True:
-            try:
-                batch = next(dataloader_iter)
-
-                ## append ref policy logprobs to batch
-                logprobs = policy.get_reference_policy_logprobs(
-                    batch,
-                    ## TODO: make more robust
-                    micro_batch_size=master_config["policy"]["train_micro_batch_size"]
-                    * 2,
-                )["reference_logprobs"]
-                batch["reference_policy_logprobs"] = torch.roll(logprobs, -1, dims=-1)
-
-                yield batch
-
-            except StopIteration:
-                break
-
-    for batch in augment_dataloader(train_dataloader):
+    for batch in augment_dataloader(train_dataloader, policy, master_config):
         print(f"\n{'=' * 25} Step {step + 1}/{len(train_dataloader)} {'=' * 25}")
 
         with timer.time("total_step_time"):
-            ## train_data.to("cpu")
             print("▶ Taking a training step...")
             train_results = policy.train(
                 batch,
@@ -320,7 +372,7 @@ def dpo_train(
                 mbs=master_config["policy"]["train_micro_batch_size"] * 2,
             )
 
-            """# Run validation if it's a validation step
+            # Run validation if it's a validation step
             if val_period > 0 and (step + 1) % val_period == 0:
                 val_metrics, validation_timings = validate(
                     policy,
@@ -348,9 +400,16 @@ def dpo_train(
                 and (step + 1) % master_config["checkpointing"]["save_period"] == 0
             ):  # +1 because step is 0-indexed
                 dpo_save_state["step"] = step + 1
-                dpo_save_state["val_loss"] = val_metrics["val_loss"]
+                dpo_save_state["val_loss"] = val_metrics["loss"]
                 with timer.time("checkpointing"):
                     print(f"Saving checkpoint for step {step + 1}...")
+                    is_last_checkpoint = (
+                        min(
+                            len(train_dataloader), master_config["dpo"]["max_num_steps"]
+                        )
+                        - (step + 1)
+                        < master_config["checkpointing"]["save_period"]
+                    )
                     checkpoint_path = checkpointer.init_tmp_checkpoint(
                         step + 1, dpo_save_state, master_config
                     )
@@ -358,15 +417,13 @@ def dpo_train(
                     policy.save_checkpoint(
                         os.path.join(checkpoint_path, "policy.pt"),
                         os.path.join(checkpoint_path, "policy_optimizer.pt"),
-                        ## NOTE: below is a workaround to avoid a bug with checkpointing
-                        ## this should be removed once the bug is fixed
-                        offload_to_cpu=False,
+                        save_hf=is_last_checkpoint,
                     )
                     torch.save(
                         train_dataloader.state_dict(),
                         os.path.join(checkpoint_path, "train_dataloader.pt"),
                     )
-                    checkpointer.finalize_checkpoint(checkpoint_path)"""
+                    checkpointer.finalize_checkpoint(checkpoint_path)
 
         ## TODO: add more DPO metrics
         ## accuracy, sft loss, preference loss, etc.

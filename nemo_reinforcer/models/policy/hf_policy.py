@@ -314,11 +314,16 @@ class HfPolicyWorker:
                 # Backward pass
 
                 # Loss is accumulated across microbatches, so we need to scale by the number of microbatches
-                loss = loss / num_microbatches
-                if not eval_mode:
-                    loss.backward()
-                mb_losses.append(loss.item())
-                all_mb_metrics.append(loss_metrics)
+                # loss = loss / num_microbatches
+
+                ## TODO: improve this
+                ## loss = 0 indicates that there are no valid examples in the microbatch
+                ## we should probably use a reserved value here
+                if loss != 0:
+                    if not eval_mode:
+                        loss.backward()
+                    mb_losses.append(loss.item())
+                    all_mb_metrics.append(loss_metrics)
 
             # Clip gradients
             if not eval_mode:
@@ -327,7 +332,8 @@ class HfPolicyWorker:
                 # Update parameters
                 self.optimizer.step()
                 self.scheduler.step()
-            losses.append(torch.tensor(mb_losses).sum().item())
+
+            losses.append(torch.tensor(mb_losses).mean().item())
 
         # Compute global loss across all ranks
         with torch.no_grad():

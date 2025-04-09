@@ -244,7 +244,7 @@ def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
             "input_ids": cat_and_padded["token_ids"],
             "input_lengths": input_lengths,
             "token_mask": cat_and_padded["token_loss_mask"],
-            "sample_mask": batch["loss_multiplier"],
+            "sample_mask": loss_multiplier,
         }
     )
 

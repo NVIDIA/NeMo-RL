@@ -237,11 +237,24 @@ class DPOLossFn(LossFunction):
         ## TODO: provide the option to average over tokens
         rewards = diff.sum(-1)
 
+        ## TODO: make configurable
+        if True:  # average_log_probs:
+            # need to guard against divide by zero in case labels are all -100
+            num_tokens_for_loss = token_mask.sum(-1)
+            rewards = rewards / num_tokens_for_loss.clamp(min=1)
+
+        ## ignore the batches whose sample_mask is 0
+        rewards = rewards[data["sample_mask"] == 1]
+
+        if len(rewards) == 0:
+            return torch.tensor(0.0), torch.tensor(0.0)
+
         rewards_chosen, rewards_rejected = self.split_output_tensor(rewards)
         rewards_delta = rewards_chosen - rewards_rejected
+
         return -torch.nn.functional.logsigmoid(
             self.reference_policy_kl_penalty * rewards_delta
-        ).mean(0)
+        ).mean(0), (rewards_chosen > rewards_rejected).float().mean(0)
 
     def __call__(
         self, next_token_logits: torch.Tensor, data: BatchedDataDict[DPOLossDataDict]
@@ -251,12 +264,17 @@ class DPOLossFn(LossFunction):
             sft_loss, _ = self.sft_loss(
                 next_token_logits, data, reduce_across_batch=False
             )
+            ## ignore the batches whose sample_mask is 0
+            sft_loss = sft_loss[data["sample_mask"] == 1]
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
+
+            if len(sft_loss_chosen) == 0:
+                sft_loss_chosen = torch.tensor(0.0)
 
             ## average over the batch dimension
             sft_loss_chosen = sft_loss_chosen.mean(0)
 
-        preference_loss = self.preference_loss(next_token_logits, data)
+        preference_loss, accuracy = self.preference_loss(next_token_logits, data)
 
         dpo_loss = (
             self.sft_loss_weight * sft_loss_chosen
@@ -267,4 +285,5 @@ class DPOLossFn(LossFunction):
             "loss": dpo_loss.item(),
             "sft_loss": sft_loss_chosen.item(),
             "preference_loss": preference_loss.item(),
+            "accuracy": accuracy.item(),
         }

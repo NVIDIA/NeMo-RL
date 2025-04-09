@@ -61,7 +61,6 @@ def dpo_preprocessor(
     idx: int,
 ) -> DatumSpec:
     """Process a datum dictionary for DPO training."""
-    print(f"{datum_dict=}")
     if isinstance(datum_dict["prompt"], list):
         messages_chosen = datum_dict["prompt"]
         messages_rejected = datum_dict["prompt"]
