@@ -30,3 +30,4 @@ wandb/
 checkpoints/
 results/
 code_snapshots/
+stress_test_results/
