@@ -17,11 +17,11 @@ class DPODataset(HfDataset):
         ## we need to do this outisde of the data class because we want to keep
         ## chosen and rejected responses for a given prompt together when shuffling
         self.formatted_ds = {
-            "train": load_dataset("json", data_files=train_data_path),
-            "validation": load_dataset("json", data_files=val_data_path),
+            "train": load_dataset("json", data_files=train_data_path, split="train"),
+            "validation": load_dataset("json", data_files=val_data_path, split="train"),
         }
         super().__init__(
             dataset_name="dpo",
-            ## no custom template. Assume we use tokenizer's template
-            # custom_template=COMMON_CHAT_TEMPLATES.simple_role_header,
+            ## passthrough template
+            custom_template="{% for message in messages %}{{ message['content'] }}{% endfor %}",
         )
