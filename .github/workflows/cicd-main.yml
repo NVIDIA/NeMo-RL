@@ -21,13 +21,6 @@ on:
     types: [labeled]
   merge_group:
     types: [checks_requested]
-  workflow_dispatch:
-    inputs:
-      test_to_run:
-        required: false
-        default: all
-        type: string
-        description: Comma-separated list of tests to run. Use "all" to run the full test suite.
   # TODO: Due to limited compute, disabling pushes to main. This is okay to do since we force PRs to be up to date and the CI tests on pull/$PR_NUM/merge
   #push:
   #  branches:
@@ -41,20 +34,8 @@ jobs:
   pre-flight:
     runs-on: ubuntu-latest
     outputs:
-      test_to_run: ${{ steps.test_to_run.outputs.main }}
-      all: ${{ steps.all.outputs.main }}
       run_ci: ${{ steps.evaluate.outputs.run_ci }}
     steps:
-      - name: Parse test_to_run
-        id: test_to_run
-        run: |
-          parsed_string=$(echo ${{ inputs.test_to_run || 'all' }} | jq -c --raw-input 'split(",")')
-          echo "main=${parsed_string}" | tee -a "$GITHUB_OUTPUT"
-      - name: Parse all
-        id: all
-        run: |
-          echo "main=${{ contains(fromJSON(steps.test_to_run.outputs.main), 'all') }}" | tee -a "$GITHUB_OUTPUT"
-
       - name: Get changed files
         id: changed-files
         if: github.event_name == 'pull_request'
@@ -75,19 +56,17 @@ jobs:
           CHANGED_DOCS: ${{ steps.changed-files.outputs.doc_all_changed_files }}
           CHANGED_SRC: ${{ steps.changed-files.outputs.src_all_changed_files }}
           IS_PULLREQUEST: ${{ github.event_name == 'pull_request' }}
-          LABEL: ${{ github.event.label.name == 'Run CICD' }}
           MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
         run: |
           # Some output that's helpful for debugging
           echo "Docs changed: $CHANGED_DOCS"
           echo "Src changed: $CHANGED_SRC"
 
-          # echo "DOCS_ONLY: $DOCS_ONLY"
-          echo "LABEL: $LABEL"
+          echo "DOCS_ONLY: $DOCS_ONLY"
           echo "IS_PULLREQUEST: $IS_PULLREQUEST"
 
           # Run CI only (on main or if label is attached) and if it's not only docs
-          echo run_ci=$([[ ("$LABEL" = "true" || "$IS_PULLREQUEST" = "false" || "$MERGE_GROUP" = "true")  && "$DOCS_ONLY" = "false" ]] && echo "true" || echo "false") | tee -a "$GITHUB_OUTPUT"
+          echo run_ci=$([[ ("$IS_PULLREQUEST" = "true" || "$MERGE_GROUP" = "true")  && "$DOCS_ONLY" = "false" ]] && echo "true" || echo "false") | tee -a "$GITHUB_OUTPUT"
 
   lint-check:
     name: Lint check
@@ -118,7 +97,7 @@ jobs:
           uv run --group docs sphinx-build . _build/html
 
   build-container:
-    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' && github.event_name == 'merge_group' }}
     needs: [pre-flight]
     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
     with:
@@ -134,7 +113,7 @@ jobs:
     name: Tests
     needs: [build-container, pre-flight]
     uses: ./.github/workflows/_run_test.yml
-    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    if: ${{ needs.pre-flight.outputs.run_ci == 'true' && github.event_name == 'merge_group' }}
     with:
       RUNNER: self-hosted-azure
       TIMEOUT: 15
@@ -173,7 +152,7 @@ jobs:
       - name: main
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
-          ALL_SUCCESS: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') }}
+          ALL_SUCCESS: ${{ (github.event_name == 'pull_request' && needs.lint-check.result == 'success' && needs.sphinx-build.result == 'success') || (github.event_name == 'merge_queue'  && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped')) }}
           CI_SKIP: ${{ github.event.label.name == 'Skip CICD' }}
         run: |
 
