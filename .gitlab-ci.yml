@@ -27,4 +27,7 @@ pages:
   script:
     - echo "Publishing HTML to GitLab Pages"
     - cp -r docs/_build/html/* public/
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH
   environment: main
