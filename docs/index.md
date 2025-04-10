@@ -6,7 +6,7 @@
 :caption: 🖥️  Environment Start
 :hidden:
 
-local_workstation.md
+local-workstation.md
 cluster.md
 
 ```
@@ -15,7 +15,7 @@ cluster.md
 :caption: 📚 Guides
 :hidden:
 
-adding_new_models.md
+adding-new-models.md
 guides/sft.md
 guides/grpo.md
 guides/eval.md
@@ -41,11 +41,11 @@ apidocs/index.rst
 :caption: 📐 Design Docs
 :hidden:
 
-design_docs/design_and_philosophy.md
-design_docs/padding.md
-design_docs/logger.md
-design_docs/uv.md
-design_docs/chat_datasets.md
-design_docs/generation.md
-design_docs/checkpointing.md
+design-docs/design-and-philosophy.md
+design-docs/padding.md
+design-docs/logger.md
+design-docs/uv.md
+design-docs/chat-datasets.md
+design-docs/generation.md
+design-docs/checkpointing.md
 ```
