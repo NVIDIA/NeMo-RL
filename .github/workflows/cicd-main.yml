@@ -61,8 +61,8 @@ jobs:
           echo "Docs changed: $CHANGED_DOCS"
           echo "Src changed: $CHANGED_SRC"
 
-          echo "DOCS_ONLY: $DOCS_ONLY"
           echo "IS_PULLREQUEST: $IS_PULLREQUEST"
+          echo "DOCS_ONLY: $DOCS_ONLY"
 
           # Run CI only (on main or if label is attached) and if it's not only docs
           echo run_ci=$([[ ("$IS_PULLREQUEST" = "true" || "$MERGE_GROUP" = "true")  && "$DOCS_ONLY" = "false" ]] && echo "true" || echo "false") | tee -a "$GITHUB_OUTPUT"
