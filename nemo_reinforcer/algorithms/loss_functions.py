@@ -244,10 +244,10 @@ class DPOLossFn(LossFunction):
             rewards = rewards / num_tokens_for_loss.clamp(min=1)
 
         ## ignore the batches whose sample_mask is 0
-        rewards = rewards[data["sample_mask"] == 1]
+        #rewards = rewards[data["sample_mask"] == 1]
 
-        if len(rewards) == 0:
-            return torch.tensor(0.0), torch.tensor(0.0)
+        #if len(rewards) == 0:
+        #    return torch.tensor(0.0), torch.tensor(0.0)
 
         rewards_chosen, rewards_rejected = self.split_output_tensor(rewards)
         rewards_delta = rewards_chosen - rewards_rejected
@@ -265,11 +265,11 @@ class DPOLossFn(LossFunction):
                 next_token_logits, data, reduce_across_batch=False
             )
             ## ignore the batches whose sample_mask is 0
-            sft_loss = sft_loss[data["sample_mask"] == 1]
+            #sft_loss = sft_loss[data["sample_mask"] == 1]
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
 
-            if len(sft_loss_chosen) == 0:
-                sft_loss_chosen = torch.tensor(0.0)
+            #if len(sft_loss_chosen) == 0:
+            #    sft_loss_chosen = torch.tensor(0.0)
 
             ## average over the batch dimension
             sft_loss_chosen = sft_loss_chosen.mean(0)

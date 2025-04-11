@@ -319,11 +319,11 @@ class HfPolicyWorker:
                 ## TODO: improve this
                 ## loss = 0 indicates that there are no valid examples in the microbatch
                 ## we should probably use a reserved value here
-                if loss != 0:
-                    if not eval_mode:
-                        loss.backward()
-                    mb_losses.append(loss.item())
-                    all_mb_metrics.append(loss_metrics)
+                #if loss != 0:
+                if not eval_mode:
+                    loss.backward()
+                mb_losses.append(loss.item())
+                all_mb_metrics.append(loss_metrics)
 
             # Clip gradients
             if not eval_mode:
