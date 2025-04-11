@@ -43,7 +43,6 @@ class UpdatableVllmInternalWorker(Worker):
             device_uuid = self.report_device_id()
             handles = ipc_handles[device_uuid]
             device_id = self.device.index
-            weights = []
 
             # Process each handle to get the tensor
             for name, handle in handles.items():
@@ -52,10 +51,10 @@ class UpdatableVllmInternalWorker(Worker):
                 # Update device ID to match the current device
                 list_args[6] = device_id
                 tensor = func(*list_args)
-                weights.append((name, tensor))
 
-            # Load weights into the model
-            self.model_runner.model.load_weights(weights=weights)
+                # Naive streaming.
+                self.model_runner.model.load_weights(weights=[(name, tensor)])
+
             torch.cuda.synchronize()
             return True
         except Exception as e:
