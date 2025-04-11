@@ -142,7 +142,11 @@ class HfPolicyWorker:
         else:
             self.optimizer = None
 
-        if "scheduler" in self.cfg and self.optimizer is not None:
+        if not self.optimizer and "scheduler" in self.cfg:
+            print(
+                f"WARNING: No optimizer specified. Scheduler is ignored: {self.cfg['scheduler']}"
+            )
+        elif self.optimizer and "scheduler" in self.cfg:
             if isinstance(self.cfg["scheduler"], dict):
                 scheduler_cls = import_class_from_path(self.cfg["scheduler"]["name"])
                 self.scheduler = scheduler_cls(
@@ -354,7 +358,7 @@ class HfPolicyWorker:
     def get_logprobs(self, data: BatchedDataDict) -> BatchedDataDict:
         """Get the logprobs of the model for a batch of data.
 
-        Uses the configured logprob_batch_size to do microbatching.
+        Uses the configured max_logprob_batch_size to do microbatching.
 
         Input data is assumed to be right-padded. The method internally converts to
         left-padded format for computation, and returns outputs in right-padded format.
@@ -364,14 +368,22 @@ class HfPolicyWorker:
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
-        logprob_batch_size = self.cfg["logprob_batch_size"]
+        # TODO: remove logprob_batch_size since that's for older checkpoints
+        if "max_logprob_batch_size" in self.cfg:
+            max_logprob_batch_size = self.cfg["max_logprob_batch_size"]
+        elif "logprob_batch_size" in self.cfg:
+            max_logprob_batch_size = self.cfg["logprob_batch_size"]
+        else:
+            raise KeyError(
+                "max_logprob_batch_size or logprob_batch_size(old_name) must be set in the config"
+            )
         all_log_probs = []
         self.model.eval()
 
         # Process in batches
         with torch.no_grad():
             data.to("cuda")
-            for lp_batch in data.make_microbatch_iterator(logprob_batch_size):
+            for lp_batch in data.make_microbatch_iterator(max_logprob_batch_size):
                 input_ids = lp_batch.get("input_ids")
                 batch_size, seq_len = input_ids.shape
 
@@ -474,12 +486,19 @@ class HfPolicyWorker:
         return return_data
 
     def generate(
-        self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
+        self,
+        data: BatchedDataDict[GenerationDatumSpec],
+        greedy: bool = False,
+        generation_batch_size: int | None = None,
+        sampling_param_overrides: Optional[dict] = None,
     ) -> BatchedDataDict[GenerationOutputSpec]:
         """Generate a batch of data using huggingface framework generation.
 
         Args:
             data: BatchedDataDict containing input_ids and input_lengths tensors
+            greedy: Whether to use greedy generation
+            generation_batch_size: The batch size to use for generation. Defaults to self.cfg["generation_batch_size"]
+            sampling_param_overrides: Optional overrides for generation parameters.
 
         Returns:
             BatchedDataDict conforming to GenerationOutputSpec:
@@ -509,7 +528,8 @@ class HfPolicyWorker:
             self.model, recurse=False
         ):
             # Get generation config from self.cfg
-            generation_batch_size = self.cfg["generation_batch_size"]
+            if generation_batch_size is None:
+                generation_batch_size = self.cfg["generation_batch_size"]
             gen_cfg = self.cfg["generation"]
 
             micro_batches = []
@@ -536,14 +556,24 @@ class HfPolicyWorker:
                     # Set attention mask for the actual tokens (at the end for left padding)
                     left_padded_attention_mask[i, seq_len - length :] = 1
 
+                sampling_params = {
+                    "do_sample": not greedy,
+                    "max_new_tokens": gen_cfg["max_new_tokens"],
+                    "temperature": gen_cfg["temperature"],
+                    "top_p": gen_cfg["top_p"],
+                    "top_k": gen_cfg["top_k"],
+                }
+                if sampling_param_overrides:
+                    print(f"sampling_params (before overrides): {sampling_params}")
+                    sampling_params.update(sampling_param_overrides)
+                    print(f"sampling_params (after overrides): {sampling_params}")
+                else:
+                    print(f"sampling_params: {sampling_params}")
+
                 outputs = self.model.module.generate(
                     input_ids=left_padded_input_ids,
                     attention_mask=left_padded_attention_mask,
-                    max_new_tokens=gen_cfg["max_new_tokens"],
-                    do_sample=not greedy,
-                    temperature=gen_cfg["temperature"],
-                    top_p=gen_cfg["top_p"],
-                    top_k=gen_cfg["top_k"],
+                    **sampling_params,
                     pad_token_id=self.tokenizer.pad_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                     return_dict_in_generate=True,
@@ -721,7 +751,11 @@ class HfPolicyWorker:
     def get_weight_ipc_handles(self, offload_model=True):
         from torch.multiprocessing.reductions import reduce_tensor
 
+        # Move the model to the GPU just in case it was previously offloaded
+        self.model.to("cuda")
+
         # TODO @sahilj: do this without an allgather (maybe FSDP2)
+        # https://github.com/NVIDIA/reinforcer/issues/70
         params = self.model.state_dict()
 
         # Create a copy of parameters in the desired dtype (bfloat16 or float32)
@@ -744,10 +778,18 @@ class HfPolicyWorker:
             torch.cuda.empty_cache()
         return {device_uuid: data}
 
-    def prepare_for_lp_inference(self):
+    def prepare_for_inference(self, offload_optimizer_and_buffers: bool = True):
+        """Move the model to the GPU and (optionally) offload the optimizer and buffers to the CPU.
+
+        Args:
+            offload_optimizer_and_buffers: If True, offload the optimizer and buffers to the CPU.
+              True saves more memory and should be used if you only need to calculate logprobs (no generation).
+              Set to False if you need to generate since model buffers should remain on the GPU.
+        """
         self.model.to("cuda")
         self.model.eval()
-        self.offload_before_refit()
+        if offload_optimizer_and_buffers:
+            self.offload_before_refit()
 
     def prepare_for_training(self, *args, **kwargs):
         # onload models and optimizer state to cuda
@@ -985,7 +1027,11 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         return aggregated_results
 
     def generate(
-        self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
+        self,
+        data: BatchedDataDict[GenerationDatumSpec],
+        greedy: bool = False,
+        generation_batch_size: int | None = None,
+        sampling_param_overrides: Optional[dict] = None,
     ) -> BatchedDataDict[GenerationOutputSpec]:
         """Generate a batch of data using the policy."""
         # Verify input data is right-padded
@@ -998,7 +1044,13 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None)
         futures = self.worker_group.run_all_workers_multiple_data(
-            "generate", sharded_data, common_kwargs={"greedy": greedy}
+            "generate",
+            sharded_data,
+            common_kwargs={
+                "greedy": greedy,
+                "generation_batch_size": generation_batch_size,
+                "sampling_param_overrides": sampling_param_overrides,
+            },
         )
         result = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures),
@@ -1020,25 +1072,24 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         return result
 
-    def prepare_for_generation(self, *args, **kwargs):
-        # We don't need to do anything here
-        pass
-
     def prepare_for_training(self, *args, **kwargs):
         # onload everything to the GPU
         futures = self.worker_group.run_all_workers_single_data(
             "prepare_for_training", respect_tied_workers=True
         )
         ray.get(futures)
-        pass
 
-    def prepare_for_lp_inference(self, *args, **kwargs):
+    def prepare_for_inference(
+        self, *args, offload_optimizer_and_buffers: bool = True, **kwargs
+    ):
         futures = self.worker_group.run_all_workers_single_data(
-            "prepare_for_lp_inference", respect_tied_workers=True
+            "prepare_for_inference",
+            respect_tied_workers=True,
+            offload_optimizer_and_buffers=offload_optimizer_and_buffers,
         )
         ray.get(futures)
 
-    def finish_generation(self, *args, **kwargs):
+    def finish_inference(self, *args, **kwargs):
         # We don't need to do anything here
         pass
 

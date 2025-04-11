@@ -201,7 +201,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         "train_global_batch_size": 4,
         "train_micro_batch_size": 1,
         "learning_rate": 5e-6,
-        "logprob_batch_size": 1,
+        "max_logprob_batch_size": 1,
         "max_new_tokens": 16,
         "do_sample": False,
         "precision": "float32",
@@ -264,14 +264,14 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         # Create both policies
         print("Creating vLLM policy...")
         vllm_policy = VllmGeneration(cluster, vllm_config)
-        vllm_policy.finish_generation()
+        vllm_policy.finish_inference()
 
         print("Creating HF policy...")
         hf_policy = HfPolicy(cluster, hf_config)
 
         print(f"refitting vllm policy...")
         ipc_handles = hf_policy.get_weights_ipc_handles()
-        vllm_policy.prepare_for_generation()
+        vllm_policy.prepare_for_inference()
         vllm_policy.update_weights(ipc_handles)
 
         # Step 1: Use vLLM for generation
@@ -304,7 +304,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
             }
         )
         # Get logprobs from HF policy
-        hf_policy.prepare_for_lp_inference()
+        hf_policy.prepare_for_inference()
         fprop_results = hf_policy.get_logprobs(fprop_logprob_data)
         # Zero out logprobs for input tokens
 
@@ -374,7 +374,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
 
         # Step 4: Use vLLM for generation again to complete the workflow
         print("Using vLLM for generation again...")
-        vllm_policy.prepare_for_generation()
+        vllm_policy.prepare_for_inference()
         final_generation = vllm_policy.generate(test_input_data)
         assert "output_ids" in final_generation, (
             "Final generation should contain output_ids"
@@ -426,8 +426,8 @@ def test_vllm_policy_tensor_parallel(cluster, tokenizer):
         # Test generation with tensor parallelism
         outputs = vllm_policy.generate(test_input_data)
 
-        vllm_policy.finish_generation()
-        vllm_policy.prepare_for_generation()
+        vllm_policy.finish_inference()
+        vllm_policy.prepare_for_inference()
         # Validate outputs
         # Test generation with tensor parallelism
         outputs = vllm_policy.generate(test_input_data)

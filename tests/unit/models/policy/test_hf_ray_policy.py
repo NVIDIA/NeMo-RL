@@ -33,7 +33,7 @@ basic_llama_test_config: PolicyConfig = {
     "train_global_batch_size": 4,
     "train_micro_batch_size": 1,
     "learning_rate": 5e-6,
-    "logprob_batch_size": 1,
+    "max_logprob_batch_size": 1,
     "precision": "float32",
     "generation": {
         "backend": "hf",
@@ -387,9 +387,9 @@ def test_hf_policy_generation(generation_setup, tokenizer, tracker):
     assert cluster is not None, "Generation cluster was not created properly"
     assert data is not None, "Test data was not created properly"
 
-    # Call prepare_for_generation if available
+    # Call prepare_for_inference if available
     print("Preparing for generation...")
-    policy.prepare_for_generation()
+    policy.prepare_for_inference()
 
     # Generate text
     print("Generating text...")
@@ -463,9 +463,9 @@ def test_hf_policy_generation(generation_setup, tokenizer, tracker):
     assert mean_lps > -1.7, "Expected logprobs should be greater than -1.7"
     assert mean_lps < -1.4, "Expected logprobs should be less than -1.4"
 
-    # Call finish_generation if available
+    # Call finish_inference if available
     print("Finishing generation...")
-    policy.finish_generation()
+    policy.finish_inference()
 
 
 @pytest.mark.timeout(180)

@@ -201,3 +201,122 @@ def test_shard_by_batch_size_matches_example():
     # Element 1: [A B C D] (second elements from each chunk)
     assert sharded[0]["data"] == ["A", "B", "C", "D"]
     assert sharded[1]["data"] == ["A", "B", "C", "D"]
+
+
+def test_make_microbatch_iterator_perfect_division():
+    """Test make_microbatch_iterator when batch size is perfectly divisible by microbatch_size."""
+    # Create a batch with 8 elements (perfectly divisible by microbatch_size=2)
+    batch = BatchedDataDict(
+        {"tensor_data": torch.arange(8), "list_data": [f"item_{i}" for i in range(8)]}
+    )
+
+    # Create microbatch iterator with microbatch_size=2
+    iterator = batch.make_microbatch_iterator(max_microbatch_size=2)
+    microbatches = list(iterator)
+
+    # Verify we get exactly 4 microbatches
+    assert len(microbatches) == 4, f"Expected 4 microbatches, got {len(microbatches)}"
+
+    # Verify contents of each microbatch
+    for i, microbatch in enumerate(microbatches):
+        start_idx = i * 2
+        end_idx = start_idx + 2
+        assert torch.equal(microbatch["tensor_data"], torch.arange(start_idx, end_idx))
+        assert microbatch["list_data"] == [
+            f"item_{j}" for j in range(start_idx, end_idx)
+        ]
+
+    # Also test with microbatch_size=4
+    iterator = batch.make_microbatch_iterator(max_microbatch_size=4)
+    microbatches = list(iterator)
+
+    # Verify we get exactly 2 microbatches
+    assert len(microbatches) == 2
+
+    # Verify contents
+    assert torch.equal(microbatches[0]["tensor_data"], torch.arange(0, 4))
+    assert torch.equal(microbatches[1]["tensor_data"], torch.arange(4, 8))
+    assert microbatches[0]["list_data"] == ["item_0", "item_1", "item_2", "item_3"]
+    assert microbatches[1]["list_data"] == ["item_4", "item_5", "item_6", "item_7"]
+
+
+def test_make_microbatch_iterator_smaller_than_microbatch():
+    """Test make_microbatch_iterator when batch size is smaller than microbatch_size."""
+    # Create a batch with 3 elements (smaller than microbatch_size=5)
+    batch = BatchedDataDict(
+        {"tensor_data": torch.arange(3), "list_data": ["A", "B", "C"]}
+    )
+
+    # Create microbatch iterator with microbatch_size=5 (larger than batch)
+    iterator = batch.make_microbatch_iterator(max_microbatch_size=5)
+    microbatches = list(iterator)
+
+    # Verify we get exactly 1 microbatch containing the entire batch
+    assert len(microbatches) == 1
+    assert torch.equal(microbatches[0]["tensor_data"], torch.arange(3))
+    assert microbatches[0]["list_data"] == ["A", "B", "C"]
+
+    # Edge case: batch size 0
+    empty_batch = BatchedDataDict({"tensor_data": torch.tensor([]), "list_data": []})
+    iterator = empty_batch.make_microbatch_iterator(max_microbatch_size=3)
+    microbatches = list(iterator)
+
+    # Should either return an empty list or a single empty microbatch
+    # (assuming the implementation handles empty batches)
+    if microbatches:
+        assert len(microbatches) == 1
+        assert len(microbatches[0]["tensor_data"]) == 0
+        assert len(microbatches[0]["list_data"]) == 0
+
+
+def test_make_microbatch_iterator_with_leftovers():
+    """Test make_microbatch_iterator with leftovers in the final microbatch."""
+    # Create a batch with 11 elements (not perfectly divisible by microbatch_size=4)
+    batch = BatchedDataDict(
+        {
+            "tensor_data": torch.arange(11),
+            "list_data": [f"item_{i}" for i in range(11)],
+            "dict_data": [{"id": i} for i in range(11)],
+        }
+    )
+
+    # Create microbatch iterator with microbatch_size=4
+    iterator = batch.make_microbatch_iterator(max_microbatch_size=4)
+    microbatches = list(iterator)
+
+    # Verify we get 3 microbatches (2 full, 1 with leftovers)
+    assert len(microbatches) == 3
+
+    # Verify first two microbatches have size 4
+    assert len(microbatches[0]["tensor_data"]) == 4
+    assert len(microbatches[1]["tensor_data"]) == 4
+
+    # Verify last microbatch has the leftover 3 elements
+    assert len(microbatches[2]["tensor_data"]) == 3
+
+    # Verify contents
+    assert torch.equal(microbatches[0]["tensor_data"], torch.tensor([0, 1, 2, 3]))
+    assert torch.equal(microbatches[1]["tensor_data"], torch.tensor([4, 5, 6, 7]))
+    assert torch.equal(microbatches[2]["tensor_data"], torch.tensor([8, 9, 10]))
+
+    assert microbatches[0]["list_data"] == ["item_0", "item_1", "item_2", "item_3"]
+    assert microbatches[1]["list_data"] == ["item_4", "item_5", "item_6", "item_7"]
+    assert microbatches[2]["list_data"] == ["item_8", "item_9", "item_10"]
+
+    assert microbatches[0]["dict_data"] == [{"id": 0}, {"id": 1}, {"id": 2}, {"id": 3}]
+    assert microbatches[1]["dict_data"] == [{"id": 4}, {"id": 5}, {"id": 6}, {"id": 7}]
+    assert microbatches[2]["dict_data"] == [{"id": 8}, {"id": 9}, {"id": 10}]
+
+    # Test with a different microbatch_size that produces a small leftover
+    iterator = batch.make_microbatch_iterator(max_microbatch_size=5)
+    microbatches = list(iterator)
+
+    # Verify we get 3 microbatches (2 full, 1 with single leftover)
+    assert len(microbatches) == 3
+    assert len(microbatches[0]["tensor_data"]) == 5
+    assert len(microbatches[1]["tensor_data"]) == 5
+    assert len(microbatches[2]["tensor_data"]) == 1
+
+    assert torch.equal(microbatches[2]["tensor_data"], torch.tensor([10]))
+    assert microbatches[2]["list_data"] == ["item_10"]
+    assert microbatches[2]["dict_data"] == [{"id": 10}]

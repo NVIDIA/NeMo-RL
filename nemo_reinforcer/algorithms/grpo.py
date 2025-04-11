@@ -226,9 +226,10 @@ def setup(
         print(f"  ✓ Using HF backend for generation with {policy_config['model_name']}")
     elif backend == "vllm":
         policy_generation = VllmGeneration(cluster=cluster, config=generation_config)
+        # https://github.com/NVIDIA/reinforcer/issues/52
         # Worker groups are not initialized until the first call to run something on workergroups.
         # vllm 0.8 fails in initialization if its called in the first training step since it has no clean view of the GPU memory (HF is sharing the same memory).
-        policy_generation.finish_generation()
+        policy_generation.finish_inference()
         print(
             f"  ✓ Using vLLM backend for generation with {policy_config['model_name']}"
         )
@@ -271,13 +272,13 @@ def setup(
 
 
 def refit_policy_generation(
-    policy: PolicyInterface,
+    policy: HfPolicy,
     policy_generation: GenerationInterface,
 ):
     """Refit the policy generation interface with the latest policy weights."""
     policy.offload_before_refit()
     ipc_handles = policy.get_weights_ipc_handles()
-    policy_generation.prepare_for_generation()
+    policy_generation.prepare_for_inference()
     policy_generation.update_weights(ipc_handles)
     policy.offload_after_refit()
 
@@ -437,7 +438,7 @@ def grpo_train(
             refit_policy_generation(policy, policy_generation)
             POLICY_GENERATION_STALE = False
         else:
-            policy_generation.prepare_for_generation()
+            policy_generation.prepare_for_inference()
         val_metrics, validation_timings = validate(
             policy_generation,
             val_dataloader,
@@ -446,7 +447,7 @@ def grpo_train(
             step=0,
             master_config=master_config,
         )
-        policy_generation.finish_generation()
+        policy_generation.finish_inference()
         logger.log_metrics(val_metrics, step, prefix="validation")
         logger.log_metrics(validation_timings, step, prefix="timing/validation")
 
@@ -480,12 +481,12 @@ def grpo_train(
 
             # Generate responses - this updates the LLMMessageLogType in repeated_batch
             print(f"▶ Generating responses for batch of size {len(input_ids)}...")
-            with timer.time("prepare_for_generation"):
+            with timer.time("prepare_for_inference"):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
                     refit_policy_generation(policy, policy_generation)
                     POLICY_GENERATION_STALE = False
                 else:
-                    policy_generation.prepare_for_generation()
+                    policy_generation.prepare_for_inference()
             with timer.time("generation"):
                 repeated_batch, _, gen_metrics = generate_responses(
                     policy_generation,
@@ -494,7 +495,7 @@ def grpo_train(
                     tokenizer,
                     input_lengths,
                 )
-                policy_generation.finish_generation()
+                policy_generation.finish_inference()
 
             # Calculate rewards & advantages based on the updated LLMMessageLogType
             print("▶ Calculating rewards...")
@@ -560,7 +561,7 @@ def grpo_train(
 
             print("▶ Preparing for logprob inference...")
             with timer.time("logprob_inference_prep"):
-                policy.prepare_for_lp_inference()
+                policy.prepare_for_inference()
 
             print("▶ Computing logprobs...")
             with timer.time("policy_and_reference_logprobs"):
@@ -586,7 +587,7 @@ def grpo_train(
                     refit_policy_generation(policy, policy_generation)
                     POLICY_GENERATION_STALE = False
                 else:
-                    policy_generation.prepare_for_generation()
+                    policy_generation.prepare_for_inference()
                 val_metrics, validation_timings = validate(
                     policy_generation,
                     val_dataloader,
@@ -595,7 +596,7 @@ def grpo_train(
                     step=step + 1,
                     master_config=master_config,
                 )
-                policy_generation.finish_generation()
+                policy_generation.finish_inference()
                 logger.log_metrics(
                     validation_timings, step + 1, prefix="timing/validation"
                 )

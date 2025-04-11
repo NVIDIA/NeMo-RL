@@ -135,6 +135,7 @@ class VllmGenerationWorker:
 
         try:
             from vllm import LLM, SamplingParams
+
             from nemo_reinforcer.models.generation.vllm_backend import (
                 UpdatableVllmInternalWorker,
             )
@@ -195,13 +196,17 @@ class VllmGenerationWorker:
         return True
 
     def generate(
-        self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
+        self,
+        data: BatchedDataDict[GenerationDatumSpec],
+        greedy: bool = False,
+        sampling_param_overrides: Optional[dict] = None,
     ) -> BatchedDataDict[GenerationOutputSpec]:
         """Generate a batch of data using vLLM generation.
 
         Args:
             data: BatchedDataDict containing input_ids and input_lengths tensors
             greedy: Whether to use greedy decoding instead of sampling
+            sampling_param_overrides: overrides specific sampling parameters for vLLM that were provided during initialization
 
         Returns:
             BatchedDataDict conforming to GenerationOutputSpec:
@@ -247,17 +252,24 @@ class VllmGenerationWorker:
 
         # Read generation parameters from config
         top_k = self.cfg["top_k"] if self.cfg["top_k"] is not None else -1
-        sampling_params = self.SamplingParams(
-            temperature=self.cfg["temperature"] if not greedy else 0,
-            top_p=self.cfg["top_p"],
-            top_k=top_k
+        sampling_kwargs = {
+            "temperature": self.cfg["temperature"] if not greedy else 0,
+            "top_p": self.cfg["top_p"],
+            "top_k": top_k
             if not greedy
             else 1,  # we use a default of -1 if unset so that 'null'/None is a common disable value
-            max_tokens=self.cfg["max_new_tokens"],
-            logprobs=0,  # Return logprobs for the generated tokens
-            stop=None,
-            stop_token_ids=self.cfg["stop_token_ids"],
-        )
+            "max_tokens": self.cfg["max_new_tokens"],
+            "logprobs": 0,  # Return logprobs for the generated tokens
+            "stop": None,
+            "stop_token_ids": self.cfg["stop_token_ids"],
+        }
+        if sampling_param_overrides:
+            print(f"sampling_kwargs (before overrides): {sampling_kwargs}")
+            sampling_kwargs.update(sampling_param_overrides)
+            print(f"sampling_kwargs (after overrides): {sampling_kwargs}")
+        else:
+            print(f"sampling_kwargs: {sampling_kwargs}")
+        sampling_params = self.SamplingParams(**sampling_kwargs)
 
         # Generate outputs
         outputs = self.llm.generate(prompts, sampling_params)
@@ -442,6 +454,10 @@ class VllmGeneration(GenerationInterface):
         if self.tensor_parallel_size > 1:
             # For tensor parallelism, create node-aware worker groups
             node_bundle_indices = self._get_tied_worker_bundle_indices(cluster)
+            if workers_per_node:
+                print(
+                    f"WARNING: workers_per_node({workers_per_node}) is provided, but is ignored since we are using tensor_parallel_size({self.tensor_parallel_size})."
+                )
 
             self.worker_group = RayWorkerGroup(
                 cluster,
@@ -491,7 +507,10 @@ class VllmGeneration(GenerationInterface):
         return tied_worker_groups
 
     def generate(
-        self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
+        self,
+        data: BatchedDataDict[GenerationDatumSpec],
+        greedy: bool = False,
+        sampling_param_overrides: Optional[dict] = None,
     ) -> BatchedDataDict[GenerationOutputSpec]:
         """Generate a batch of data using vLLM."""
         assert isinstance(data, BatchedDataDict), (
@@ -508,7 +527,10 @@ class VllmGeneration(GenerationInterface):
         future_bundle = self.worker_group.run_all_workers_multiple_data(
             "generate",
             sharded_data,
-            common_kwargs={"greedy": greedy},
+            common_kwargs={
+                "greedy": greedy,
+                "sampling_param_overrides": sampling_param_overrides,
+            },
             respect_tied_workers=True,
         )
 
@@ -573,7 +595,7 @@ class VllmGeneration(GenerationInterface):
 
         return combined
 
-    def prepare_for_generation(self, *args, **kwargs):
+    def prepare_for_inference(self, *args, **kwargs):
         """Abstract method that must be implemented by subclasses."""
         try:
             # Use run_all_workers_single_data for methods that don't need data
@@ -587,7 +609,7 @@ class VllmGeneration(GenerationInterface):
             print(f"Error during policy preparation: {e}")
             return False
 
-    def finish_generation(self, *args, **kwargs):
+    def finish_inference(self, *args, **kwargs):
         """Abstract method that must be implemented by subclasses."""
         try:
             # Use run_all_workers_single_data for methods that don't need data

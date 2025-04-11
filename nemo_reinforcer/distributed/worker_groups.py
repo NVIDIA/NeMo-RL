@@ -81,7 +81,7 @@ class MultiWorkerFuture:
 
 
 class RayWorkerBuilder:
-    def __init__(self, ray_actor_class: type, *args, **kwargs):
+    def __init__(self, ray_actor_class: ray.actor.ActorClass, *args, **kwargs):
         self.ray_actor_class = ray_actor_class
         self.args = args
         self.kwargs = kwargs

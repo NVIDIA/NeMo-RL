@@ -50,11 +50,11 @@ The core of the generation system is defined in `interfaces.py`, which establish
            pass
 
        @abstractmethod
-       def prepare_for_generation(self, *args, **kwargs):
+       def prepare_for_inference(self, *args, **kwargs):
            pass
 
        @abstractmethod
-       def finish_generation(self, *args, **kwargs):
+       def finish_inference(self, *args, **kwargs):
            pass
    ```
 
@@ -128,9 +128,9 @@ generator = VllmGeneration(cluster, config)
 input_data = BatchedDataDict(...)
 
 # Generate text
-generator.prepare_for_generation()
+generator.prepare_for_inference()
 output = generator.generate(input_data, greedy=False)
-generator.finish_generation()
+generator.finish_inference()
 ```
 
 ## Extending with New Backends
@@ -138,7 +138,7 @@ generator.finish_generation()
 To add a new generation backend:
 
 1. Create a new class that implements {py:class}`GenerationInterface <nemo_reinforcer.models.generation.interfaces.GenerationInterface>`
-2. Implement the required methods: {py:method}`generate <nemo_reinforcer.models.generation.interfaces.GenerationInterface.generate>`, {py:method}`prepare_for_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.prepare_for_generation>`, and {py:method}`finish_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.finish_generation>`
+2. Implement the required methods: {py:method}`generate <nemo_reinforcer.models.generation.interfaces.GenerationInterface.generate>`, {py:method}`prepare_for_inference <nemo_reinforcer.models.generation.interfaces.GenerationInterface.prepare_for_inference>`, and {py:method}`finish_inference <nemo_reinforcer.models.generation.interfaces.GenerationInterface.finish_inference>`
 3. Ensure your implementation works with the standard {py:class}`GenerationConfig <nemo_reinforcer.models.generation.interfaces.GenerationConfig>` and {py:class}`GenerationDatumSpec <nemo_reinforcer.models.generation.interfaces.GenerationDatumSpec>` structures
 4. Register your backend with the system (if needed) to make it accessible
 

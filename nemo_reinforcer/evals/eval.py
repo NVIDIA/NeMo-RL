@@ -28,14 +28,13 @@ from nemo_reinforcer.environments.math_environment import MathEnvConfig
 from nemo_reinforcer.models.generation.interfaces import GenerationConfig
 from nemo_reinforcer.models.generation.vllm import VllmGeneration
 
-
 # ===============================================================================
 # Configuration
 # ===============================================================================
 
 
 class MasterConfig(TypedDict):
-    generate: GenerationConfig
+    generation: GenerationConfig
     data: MathDataConfig
     env: MathEnvConfig
     cluster: ClusterConfig
@@ -127,7 +126,12 @@ def setup(
 # ===============================================================================
 
 
-def run_env_eval(vllm_generation, dataloader, env, master_config):
+def run_env_eval(
+    vllm_generation: VllmGeneration,
+    dataloader: DataLoader,
+    env,
+    master_config: MasterConfig,
+):
     """Main entry point for running evaluation using environment.
 
     Generates model responses and evaluates them by env.

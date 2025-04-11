@@ -1,6 +1,21 @@
 # Adding New Models
 
+- [Adding New Models](#adding-new-models)
+  - [Importance of Log Probability Consistency in Training and Inference](#importance-of-log-probability-consistency-in-training-and-inference)
+  - [Understanding Discrepancies Between Backends](#understanding-discrepancies-between-backends)
+  - [1. Hugging Face–Based Models](#1-hugging-facebased-models)
+    - [Validation Workflow](#validation-workflow)
+  - [2. Megatron Models](#2-megatron-models)
+    - [Additional Validation](#additional-validation)
+  - [3. Expected Error Threshold](#3-expected-error-threshold)
+  - [4. Stress Testing Your Model in Reinforcer](#4-stress-testing-your-model-in-reinforcer)
+
 This guide outlines how to integrate and validate a new model within **NeMo-Reinforcer**. Each new model must pass a standard set of compatibility tests before being considered ready to be used in RL pipelines.
+
+:::{tip}
+Jump to [Stress Testing Your Model in Reinforcer](#4-stress-testing-your-model-in-reinforcer) if 
+you are looking for the script to test models.
+:::
 
 ## Importance of Log Probability Consistency in Training and Inference
 
@@ -121,3 +136,53 @@ When validating your model, you should analyze the results across different conf
 ---
 
 By following these validation steps and ensuring your model's outputs remain consistent across backends, you can confirm that your new model meets **NeMo-Reinforcer**'s requirements.
+
+## 4. Stress Testing Your Model in Reinforcer
+
+We provide a script to help stress test your model by running generation and computing the multiplicative probability error between 
+the generation log probabilities and those produced by the training framework. You can use it like so:
+
+```bash
+# Download and test a model (hf backend vs vllm backend)
+uv run examples/stress_test_model.py generation.model_name=meta-llama/Llama-3.2-1B-Instruct
+
+# Test a model and also adjust max_seq_len (relevant for models like qwen with max_position_embeddings=4096)
+uv run examples/stress_test_model.py generation.model_name=Qwen/Qwen2.5-Math-1.5B-Instruct generation.vllm_cfg.max_model_len=4096
+
+# Test a huggingface model trained by Reinforcer or one on local disk
+uv run examples/stress_test_model.py generation.model_name=/path/to/huggingface/checkpoint
+
+# Test the huggingface backend for generation (Note: this is much slower, so consider making your configuration and experiment smaller)
+uv run examples/stress_test_model.py generation.model_name=meta-llama/Llama-3.2-1B-Instruct generation.backend=hf
+
+# Providing --test_refit will also test the refit code path
+uv run examples/stress_test_model.py --test_refit generation.model_name=meta-llama/Llama-3.2-1B-Instruct
+```
+
+After the script completes, it will display the following, in this order:
+
+1. All the examples it processed 
+2. A summary table of results
+3. Location of the log and JSON files to review the results (with the model_name and datetime as part of the filename)
+
+The summary will look something like this and will depend on your configuration:
+```SUMMARY RESULTS TABLE
+                                                                                                                      
+  ISL (avg)   OSL (avg)   Max New Tokens   Data Type   Generation Method   Batch Size   Refit        HF vs vllm(gen)  
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 
+     233.00      512.00              512   numbers     greedy                       8   no_refit              1.0001  
+      88.94      466.50              512   random      greedy                       8   no_refit              1.0033  
+      10.88      399.00              512   literal     greedy                       8   no_refit              1.0053  
+     233.00      512.00              512   numbers     default                      8   no_refit              1.0001  
+      88.94      466.50              512   random      default                      8   no_refit              1.0033  
+      10.88      399.00              512   literal     default                      8   no_refit              1.0053  
+     233.00     7960.00             8192   numbers     greedy                       8   no_refit              1.0000  
+      88.94     6627.81             8192   random      greedy                       8   no_refit              1.0024  
+      10.88     6154.38             8192   literal     greedy                       8   no_refit              1.0032  
+     233.00     7960.00             8192   numbers     default                      8   no_refit              1.0000  
+      88.94     6627.81             8192   random      default                      8   no_refit              1.0024  
+      10.88     6154.38             8192   literal     default                      8   no_refit              1.0032  
+```
+
+To configure the default data used for this test, see the examples in [stress.yaml](../examples/configs/stress.yaml) under the `data.*` key.
+

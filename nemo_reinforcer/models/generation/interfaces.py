@@ -222,9 +222,9 @@ class GenerationInterface(ABC):
         pass
 
     @abstractmethod
-    def prepare_for_generation(self, *args, **kwargs):
+    def prepare_for_inference(self, *args, **kwargs):
         pass
 
     @abstractmethod
-    def finish_generation(self, *args, **kwargs):
+    def finish_inference(self, *args, **kwargs):
         pass

@@ -29,7 +29,7 @@ policy:
   train_global_batch_size: 512
   train_micro_batch_size: 4
   generation_batch_size: 32 # Only used when generating using HF backend
-  logprob_batch_size: 4
+  max_logprob_batch_size: 4
   max_total_sequence_length: 512
   precision: "bfloat16"
 

@@ -116,7 +116,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 batch_set.add(len(val))
 
         assert len(batch_set) == 1, (
-            "batch sizes are not the same across the rollout batch"
+            f"batch sizes are not the same across the rollout batch: {batch_set}"
         )
         B = batch_set.pop()
         assert B % chunks == 0, (
@@ -153,6 +153,33 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
         Returns:
             List[BatchedDataDict]: A list of BatchedDataDicts, length equal to shards.
+
+        Examples:
+        ```{doctest}
+        >>> import torch
+        >>> from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+        >>> # Create a batch with 8 elements
+        >>> batch = BatchedDataDict({
+        ...     "list_data": ["A", "B", "C", "D", "E", "F", "G", "H"]
+        ... })
+        >>>
+        >>> # Shard into 2 parts (each shard gets 4 elements)
+        >>> sharded = batch.shard_by_batch_size(shards=2)
+        >>> len(sharded)
+        2
+        >>> assert sharded[0]["list_data"] == ["A", "B", "C", "D"]
+        >>> assert sharded[1]["list_data"] == ["E", "F", "G", "H"]
+        >>>
+        >>> # These are equivalent
+        >>> assert sharded == batch.shard_by_batch_size(shards=2, batch_size=8)
+        >>> assert sharded == batch.shard_by_batch_size(shards=2, batch_size=None)
+        >>>
+        >>> sharded = batch.shard_by_batch_size(shards=2, batch_size=4)
+        >>> len(sharded)
+        2
+        >>> assert sharded[0]["list_data"] == ["A", "B", "E", "F"]
+        >>> assert sharded[1]["list_data"] == ["C", "D", "G", "H"]
+        ```
         """
         # Get the total batch size
         batch_sizes = set()
@@ -163,7 +190,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 batch_sizes.add(len(val))
 
         assert len(batch_sizes) == 1, (
-            "Batch sizes are not the same across the rollout batch"
+            f"Batch sizes are not the same across the rollout batch: {batch_sizes}"
         )
         total_batch_size = batch_sizes.pop()
         if batch_size is None:
@@ -253,15 +280,15 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         return repeated_batch
 
     def make_microbatch_iterator(
-        self, microbatch_size: int
+        self, max_microbatch_size: int
     ) -> Iterator["SlicedDataDict"]:
-        """Make an iterator over the batch that yields microbatches of size microbatch_size."""
+        """Make an iterator over the batch that yields microbatches of size max_microbatch_size.
+
+        If the batch size is not a multiple of max_microbatch_size, the last microbatch will be smaller.
+        """
         bsize = self.size
-        assert bsize % microbatch_size == 0, (
-            f"Data dict size ({bsize}) is not a multiple of the provided microbatch size ({microbatch_size})"
-        )
-        for i in range(0, bsize, microbatch_size):
-            yield self.slice(i, i + microbatch_size)
+        for i in range(0, bsize, max_microbatch_size):
+            yield self.slice(i, i + max_microbatch_size)
 
     @property
     def size(self) -> int:
