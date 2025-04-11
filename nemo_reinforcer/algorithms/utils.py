@@ -137,15 +137,71 @@ def set_seed(seed: int):
 
 
 def get_tokenizer(tokenizer_config: TokenizerConfig) -> AutoTokenizer:
-    """Get the tokenizer and set pad token to eos token if it is not already set."""
+    """Get the tokenizer and set pad token to eos token if it is not already set.
+
+    This function initializes a tokenizer from the Hugging Face transformers library
+    and configures it with appropriate chat templates and padding tokens.
+
+    Args:
+        tokenizer_config: A dictionary containing tokenizer configuration.
+            Required keys:
+                - name: The name or path of the pretrained tokenizer
+            Optional keys:
+                - chat_template: The chat template to use. Can be:
+                    - None: Uses a passthrough template that just returns message content
+                    - "default": Uses the tokenizer's default template
+                    - A custom jinja2 template string
+                    If not specified, the tokenizer's default template will be used.
+
+    Returns:
+        AutoTokenizer: The configured tokenizer instance
+
+    Examples:
+        >>> from transformers import AutoTokenizer
+        >>> from nemo_reinforcer.models.policy import TokenizerConfig
+        >>> # not specifying a chat template uses the tokenizer's default
+        >>> config = {"name": "meta-llama/Llama-3.2-1B-Instruct"}
+        >>> tokenizer = get_tokenizer(config)
+        >>> messages = [
+        ...     {"role": "system", "content": "You are a helpful AI assistant."},
+        ...     {"role": "user", "content": "Hello!"}
+        ... ]
+        >>> formatted = tokenizer.apply_chat_template(messages, tokenize=False)
+        >>> assert formatted == AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct").apply_chat_template(messages, tokenize=False)
+
+        >>> # Using a passthrough template
+        >>> config = {
+        ...     "name": "meta-llama/Llama-3.2-1B-Instruct",
+        ...     "chat_template": None
+        ... }
+        >>> tokenizer = get_tokenizer(config)
+        >>> formatted = tokenizer.apply_chat_template(messages, tokenize=False)
+        >>> assert formatted == "".join(msg["content"] for msg in messages)
+
+        >>> # Using a custom template
+        >>> config = {
+        ...     "name": "meta-llama/Llama-3.2-1B-Instruct",
+        ...     "chat_template": "{% for message in messages %}{{ ' START: ' + message['content'] + ' END.' }}{% endfor %}"
+        ... }
+        >>> tokenizer = get_tokenizer(config)
+        >>> formatted = tokenizer.apply_chat_template(messages, tokenize=False)
+        >>> assert formatted == " START: You are a helpful AI assistant. END. START: Hello! END."
+    """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_config["name"])
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     if "chat_template" in tokenizer_config:
         if tokenizer_config["chat_template"] is None:
+            print("Using passthrough chat template")
             tokenizer.chat_template = (
                 hf_datasets.COMMON_CHAT_TEMPLATES.passthrough_prompt_response
             )
+        elif tokenizer_config["chat_template"].lower() == "default":
+            print("Using tokenizer's default chat template")
         else:
+            print("Using custom chat template")
             tokenizer.chat_template = tokenizer_config["chat_template"]
+    else:
+        print("No chat template provided, using tokenizer's default")
+
     return tokenizer
