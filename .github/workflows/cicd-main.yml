@@ -137,7 +137,7 @@ jobs:
     if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 15
+      TIMEOUT: 20
       UNIT_TEST_SCRIPT: |
         cd /opt/reinforcer
         uv run --no-sync bash -x ./tests/run_unit.sh
