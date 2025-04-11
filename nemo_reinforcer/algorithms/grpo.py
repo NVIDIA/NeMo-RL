@@ -289,7 +289,7 @@ def generate_responses(
     tokenizer,
     input_lengths: torch.Tensor,
     include_logprobs: bool = True,
-) -> Tuple[List[torch.Tensor], List[str], torch.Tensor]:
+) -> Tuple[BatchedDataDict[DatumSpec], List[List[int]], Dict[str, float | int]]:
     """Generate responses from policy."""
     # Generate responses
     generation_outputs = policy_generation.generate(generation_input_data)
@@ -451,6 +451,7 @@ def grpo_train(
         logger.log_metrics(validation_timings, step, prefix="timing/validation")
 
     # Run grpo training (single-turn)
+    batch: BatchedDataDict[DatumSpec]
     for batch in dataloader:
         print(
             f"\n{'=' * 25} Step {step + 1}/{min(len(dataloader), master_config['grpo']['max_num_steps'])} {'=' * 25}"
@@ -638,6 +639,14 @@ def grpo_train(
                 policy.offload_after_refit()
 
         # Logging
+        # Log training data
+        log_data = {"content": flat_messages["content"]}
+        log_data["rewards"] = rewards.tolist()
+        log_data["generation_logprobs"] = train_data["generation_logprobs"].tolist()
+        log_data["prev_logprobs"] = train_data["prev_logprobs"].tolist()
+        log_data["input_lengths"] = input_lengths.tolist()
+        logger.log_batched_dict_as_jsonl(log_data, f"train_data_step{step}.jsonl")
+
         print("\n📊 Training Results:")
         metrics = {
             "loss": train_results["loss"].numpy(),
