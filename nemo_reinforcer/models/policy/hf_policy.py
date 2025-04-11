@@ -80,7 +80,6 @@ class HfPolicyWorker:
         rank = torch.distributed.get_rank()
         world_size = torch.distributed.get_world_size()
         model_name = self.cfg["model_name"]
-        tokenizer_name = self.cfg["tokenizer"]["name"]
         if self.cfg["precision"] == "float32":
             self.dtype = torch.float32
         elif self.cfg["precision"] == "bfloat16":
