@@ -14,7 +14,7 @@
 import pytest
 
 from transformers import AutoTokenizer
-from nemo_reinforcer.data.hf_dataset.chat_templates import COMMON_CHAT_TEMPLATES
+from nemo_reinforcer.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
 from nemo_reinforcer.data.hf_datasets.squad import SquadDataset
 
 
