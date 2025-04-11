@@ -44,15 +44,6 @@ basic_vllm_test_config: VllmConfig = {
 
 
 @pytest.fixture(scope="module")
-def check_vllm_available():
-    """Skip tests if vLLM is not installed."""
-    try:
-        import vllm  # noqa: F401
-    except ImportError:
-        pytest.skip("vLLM not installed")
-
-
-@pytest.fixture(scope="module")
 def cluster():
     """Create a virtual cluster for testing."""
     # Create a cluster with 1 node that has 2 GPU bundles
@@ -76,7 +67,7 @@ def tokenizer():
 
 
 @pytest.fixture(scope="function")
-def policy(cluster, tokenizer, check_vllm_available):
+def policy(cluster, tokenizer):
     """Initialize the vLLM policy."""
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
@@ -126,7 +117,7 @@ def test_input_data(tokenizer):
     )
 
 
-def test_vllm_missing_required_config_key(cluster, check_vllm_available):
+def test_vllm_missing_required_config_key(cluster):
     """Test that an assertion error is raised when a required config key is missing."""
     # Create a config missing a required key by removing 'model_name'
     incomplete_config = basic_vllm_test_config.copy()
