@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import warnings
 from typing import Dict, List
 
 import torch
@@ -378,7 +379,7 @@ def get_formatted_message_log(
         if i == 0:
             if add_bos_token:
                 if tokenizer.bos_token is None:
-                    logging.warning(
+                    warnings.warn(
                         "add_bos_token is True but the tokenizer does not have a BOS token. Skipping BOS token addition."
                     )
                 elif not message_chunk.startswith(tokenizer.bos_token):
@@ -388,7 +389,7 @@ def get_formatted_message_log(
             message_chunk = message_chunk.rstrip("\n")
             if add_eos_token:
                 if tokenizer.eos_token is None:
-                    logging.warning(
+                    warnings.warn(
                         "add_eos_token is True but the tokenizer does not have an EOS token. Skipping EOS token addition."
                     )
                 elif not message_chunk.endswith(tokenizer.eos_token):

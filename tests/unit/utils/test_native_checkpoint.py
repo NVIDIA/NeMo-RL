@@ -259,6 +259,7 @@ def test_save_and_load_hf_checkpoint(policy):
             os.path.join(tmp_dir, "test_hf_and_dcp"),
             save_hf=True,
             save_torch_dist=True,
+            tokenizer_path=os.path.join(tmp_dir, "test_hf_and_dcp_tokenizer"),
         )
 
         ## make sure we save both HF and DCP checkpoints
@@ -274,6 +275,9 @@ def test_save_and_load_hf_checkpoint(policy):
             "model-00001-of-00002.safetensors",
             "model-00002-of-00002.safetensors",
             "model.safetensors.index.json",
+        }
+
+        assert set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp_tokenizer"))) == {
             "tokenizer_config.json",
             "tokenizer.json",
             "special_tokens_map.json",

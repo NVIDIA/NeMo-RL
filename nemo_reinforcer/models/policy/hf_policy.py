@@ -1091,6 +1091,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         self,
         weights_path: str,
         optimizer_path: Optional[str] = None,
+        tokenizer_path: Optional[str] = None,
         save_torch_dist: bool = True,
         save_hf: bool = False,
     ):
@@ -1099,6 +1100,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             "save_checkpoint",
             weights_path,
             optimizer_path,
+            tokenizer_path,
             save_torch_dist,
             save_hf,
             respect_tied_workers=True,
