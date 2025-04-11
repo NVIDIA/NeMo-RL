@@ -13,14 +13,14 @@
 # limitations under the License.
 import torch
 
-# try:
-#     from vllm.worker.worker import Worker
-# except ImportError:
-#     raise ImportError(
-#         "vLLM is not installed. Please install it with `pip install nemo-reinforcer[vllm]` "
-#         "or `pip install vllm` separately. This issue may also occur if worker is using incorrect "
-#         "py_executable."
-#     )
+try:
+    import vllm
+except ImportError:
+    raise ImportError(
+        "vLLM is not installed. Please install it with `pip install nemo-reinforcer[vllm]` "
+        "or `pip install vllm` separately. This issue may also occur if worker is using incorrect "
+        "py_executable."
+    )
 
 
 class VllmInternalWorkerExtension:

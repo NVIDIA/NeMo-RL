@@ -18,7 +18,6 @@ import warnings
 
 import ray
 import torch
-from transformers import AutoTokenizer
 
 from nemo_reinforcer.models.generation.interfaces import (
     GenerationInterface,
@@ -94,8 +93,6 @@ class VllmGenerationWorker:
             env_vars["RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES"] = "1"
             init_kwargs["fraction_of_gpus"] = num_gpus
 
-        # Force vllm to use v0 runtime (will be enabled by default in #51)
-        # env_vars["VLLM_USE_V1"] = "0"
         env_vars["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
 
         return resources, env_vars, init_kwargs
@@ -136,10 +133,6 @@ class VllmGenerationWorker:
 
         try:
             import vllm
-            # from vllm import LLM, SamplingParams
-            # from nemo_reinforcer.models.generation.vllm_backend import (
-            #     UpdatableVllmInternalWorker,
-            # )
 
             self.SamplingParams = vllm.SamplingParams
         except ImportError:
@@ -184,7 +177,6 @@ class VllmGenerationWorker:
             max_model_len=self.cfg["vllm_cfg"]["max_model_len"],
             trust_remote_code=True,
             worker_extension_cls="nemo_reinforcer.models.generation.vllm_backend.VllmInternalWorkerExtension",
-            # worker_cls=UpdatableVllmInternalWorker,
             enable_sleep_mode=True,
             disable_log_stats=True,
             **vllm_kwargs,
