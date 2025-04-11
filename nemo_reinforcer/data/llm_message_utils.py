@@ -376,21 +376,23 @@ def get_formatted_message_log(
         message_chunk = formatted_message[prev_message_len_no_eos:]
 
         if i == 0:
-            if (
-                add_bos_token
-                and tokenizer.bos_token is not None
-                and not message_chunk.startswith(tokenizer.bos_token)
-            ):
-                message_chunk = tokenizer.bos_token + message_chunk
+            if add_bos_token:
+                if tokenizer.bos_token is None:
+                    logging.warning(
+                        "add_bos_token is True but the tokenizer does not have a BOS token. Skipping BOS token addition."
+                    )
+                elif not message_chunk.startswith(tokenizer.bos_token):
+                    message_chunk = tokenizer.bos_token + message_chunk
 
         if i == len(message_log) - 1:
             message_chunk = message_chunk.rstrip("\n")
-            if (
-                add_eos_token
-                and tokenizer.eos_token is not None
-                and not message_chunk.endswith(tokenizer.eos_token)
-            ):
-                message_chunk += tokenizer.eos_token
+            if add_eos_token:
+                if tokenizer.eos_token is None:
+                    logging.warning(
+                        "add_eos_token is True but the tokenizer does not have an EOS token. Skipping EOS token addition."
+                    )
+                elif not message_chunk.endswith(tokenizer.eos_token):
+                    message_chunk += tokenizer.eos_token
 
         new_message = message.copy()
         new_message["token_ids"] = tokenizer(

@@ -120,8 +120,8 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
         sft_task_spec,
         partial(
             sft_preprocessor,
-            add_bos=data_config.get("add_bos", True),
-            add_eos=data_config.get("add_eos", True),
+            add_bos=data_config["add_bos"],
+            add_eos=data_config["add_eos"],
         ),
         max_seq_length=data_config["max_input_seq_length"],
     )

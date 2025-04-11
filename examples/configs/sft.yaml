@@ -37,6 +37,8 @@ policy:
 data:
   max_input_seq_length: ${policy.max_total_sequence_length}
   dataset_name: "squad"
+  add_bos: true
+  add_eos: true
 
 logger:
   log_dir: "logs"  # Base directory for all logs

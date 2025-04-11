@@ -825,6 +825,7 @@ class HfPolicyWorker:
         self,
         weights_path: str,
         optimizer_path: Optional[str] = None,
+        tokenizer_path: Optional[str] = None,
         save_torch_dist: bool = True,
         save_hf: bool = False,
     ):
@@ -856,9 +857,10 @@ class HfPolicyWorker:
             optimizer=self.optimizer if optimizer_path else None,
             scheduler=self.scheduler if optimizer_path else None,
             optimizer_path=optimizer_path,
+            tokenizer=self.tokenizer,
+            tokenizer_path=tokenizer_path,
             save_torch_dist=save_torch_dist,
             save_hf=save_hf,
-            tokenizer=self.tokenizer if save_hf else None,
         )
 
     def load_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):

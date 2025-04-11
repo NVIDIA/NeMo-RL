@@ -157,6 +157,7 @@ def get_tokenizer(tokenizer_config: TokenizerConfig) -> AutoTokenizer:
         AutoTokenizer: The configured tokenizer instance
 
     Examples:
+        ```{doctest}
         >>> from transformers import AutoTokenizer
         >>> from nemo_reinforcer.models.policy import TokenizerConfig
         >>> # not specifying a chat template uses the tokenizer's default
@@ -186,6 +187,7 @@ def get_tokenizer(tokenizer_config: TokenizerConfig) -> AutoTokenizer:
         >>> tokenizer = get_tokenizer(config)
         >>> formatted = tokenizer.apply_chat_template(messages, tokenize=False)
         >>> assert formatted == " START: You are a helpful AI assistant. END. START: Hello! END."
+        ```
     """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_config["name"])
     if tokenizer.pad_token is None:
