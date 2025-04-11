@@ -1,3 +1,17 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import pytest
 from datetime import datetime
 from transformers import AutoTokenizer
@@ -95,9 +109,7 @@ def test_get_tokenizer_null_chat_template(conversation_messages):
 
     expected = "".join(msg["content"] for msg in conversation_messages)
 
-    assert (
-        formatted == expected
-    )  # Passthrough template should just return the last content
+    assert formatted == expected
 
 
 def test_get_tokenizer_custom_jinja_template(conversation_messages):
@@ -112,4 +124,4 @@ def test_get_tokenizer_custom_jinja_template(conversation_messages):
     # Verify that the custom template is used
     formatted = tokenizer.apply_chat_template(conversation_messages, tokenize=False)
     expected = get_format_with_simple_role_header(conversation_messages)
-    assert formatted == expected  # Should use our custom template
+    assert formatted == expected
