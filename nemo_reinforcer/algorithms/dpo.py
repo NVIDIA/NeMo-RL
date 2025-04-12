@@ -274,8 +274,8 @@ def validate(
                 val_batch,
                 loss_fn,
                 eval_mode=True,
-                gbs=val_batch_size,
-                mbs=val_mbs,
+                gbs=val_batch_size * 2,
+                mbs=val_mbs * 2,
             )
 
             ## TODO: this should already be averaged across microbatches.. why isn't it?

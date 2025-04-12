@@ -237,11 +237,12 @@ class DPOLossFn(LossFunction):
         ## TODO: provide the option to average over tokens
         rewards = diff.sum(-1)
 
-        ## TODO: make configurable
-        if True:  # average_log_probs:
-            # need to guard against divide by zero in case labels are all -100
-            num_tokens_for_loss = token_mask.sum(-1)
-            rewards = rewards / num_tokens_for_loss.clamp(min=1)
+        ## TODO: make configurable. For now, do not average across sequences
+        ## --> matches Aligner's default
+        #if average_log_probs:
+        #    # need to guard against divide by zero in case labels are all -100
+        #    num_tokens_for_loss = token_mask.sum(-1)
+        #    rewards = rewards / num_tokens_for_loss.clamp(min=1)
 
         ## ignore the batches whose sample_mask is 0
         #rewards = rewards[data["sample_mask"] == 1]
