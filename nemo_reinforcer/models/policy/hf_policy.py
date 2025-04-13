@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import contextlib
 import gc
 import warnings
 import os
@@ -265,97 +266,103 @@ class HfPolicyWorker:
         local_gbs = gbs // torch.distributed.get_world_size()
         dataset_size = data.get("input_ids").shape[0]
 
-        # Ensure model is in training mode
-        self.model.train()
+        if eval_mode:
+            ctx = torch.no_grad()
+            self.model.eval()
+        else:
+            ctx = contextlib.nullcontext()
+            # Ensure model is in training mode
+            self.model.train()
 
-        # Get data from batch and move to device
-        data.to("cuda")
+        with ctx:
+            # Get data from batch and move to device
+            data.to("cuda")
 
-        losses = []
-        all_mb_metrics = []
-        for gb_start in range(0, dataset_size, local_gbs):
-            self.optimizer.zero_grad()
-            mb_losses = []
+            losses = []
+            all_mb_metrics = []
+            for gb_start in range(0, dataset_size, local_gbs):
+                self.optimizer.zero_grad()
+                mb_losses = []
 
-            # Calculate number of microbatches to process
-            # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
-            # so its safe to not check for the case where the last data slice is smaller than mbs
-            num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
+                # Calculate number of microbatches to process
+                # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
+                # so its safe to not check for the case where the last data slice is smaller than mbs
+                num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
 
-            for mb in data.slice(
-                gb_start, gb_start + local_gbs
-            ).make_microbatch_iterator(mbs):
-                input_ids = mb.get("input_ids")
+                for mb in data.slice(
+                    gb_start, gb_start + local_gbs
+                ).make_microbatch_iterator(mbs):
+                    input_ids = mb.get("input_ids")
 
-                input_lengths = mb.get("input_lengths")
-                batch_size, seq_len = input_ids.shape
-                attention_mask = torch.ones(
-                    (batch_size, seq_len), dtype=torch.long, device=input_ids.device
-                )
-                for i, length in enumerate(input_lengths):
-                    # For right-padded sequence, set 1s at the beginning of the sequence
-                    attention_mask[i, :length] = 1
-
-                with torch.autocast(device_type="cuda", dtype=self.dtype):
-                    outputs = self.model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        use_cache=False,
+                    input_lengths = mb.get("input_lengths")
+                    batch_size, seq_len = input_ids.shape
+                    attention_mask = torch.ones(
+                        (batch_size, seq_len), dtype=torch.long, device=input_ids.device
                     )
-                    # Get logprobs
-                    if not hasattr(outputs, "logits"):
-                        logits = self.model.lm_head(outputs.last_hidden_state)
-                    else:
-                        logits = outputs.logits
+                    for i, length in enumerate(input_lengths):
+                        # For right-padded sequence, set 1s at the beginning of the sequence
+                        attention_mask[i, :length] = 1
 
-                loss, loss_metrics = loss_fn(logits, mb)
-                loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
+                    with torch.autocast(device_type="cuda", dtype=self.dtype):
+                        outputs = self.model(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            use_cache=False,
+                        )
+                        # Get logprobs
+                        if not hasattr(outputs, "logits"):
+                            logits = self.model.lm_head(outputs.last_hidden_state)
+                        else:
+                            logits = outputs.logits
 
-                # Backward pass
+                    loss, loss_metrics = loss_fn(logits, mb)
+                    loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
 
-                # Loss is accumulated across microbatches, so we need to scale by the number of microbatches
-                # loss = loss / num_microbatches
+                    # Backward pass
 
-                ## TODO: improve this
-                ## loss = 0 indicates that there are no valid examples in the microbatch
-                ## we should probably use a reserved value here
-                #if loss != 0:
+                    # Loss is accumulated across microbatches, so we need to scale by the number of microbatches
+                    # loss = loss / num_microbatches
+
+                    ## TODO: improve this
+                    ## loss = 0 indicates that there are no valid examples in the microbatch
+                    ## we should probably use a reserved value here
+                    #if loss != 0:
+                    if not eval_mode:
+                        loss.backward()
+                    mb_losses.append(loss.item())
+                    all_mb_metrics.append(loss_metrics)
+
+                # Clip gradients
                 if not eval_mode:
-                    loss.backward()
-                mb_losses.append(loss.item())
-                all_mb_metrics.append(loss_metrics)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
-            # Clip gradients
-            if not eval_mode:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    # Update parameters
+                    self.optimizer.step()
+                    self.scheduler.step()
 
-                # Update parameters
-                self.optimizer.step()
-                self.scheduler.step()
+                losses.append(torch.tensor(mb_losses).mean().item())
 
-            losses.append(torch.tensor(mb_losses).mean().item())
+            # Compute global loss across all ranks
+            with torch.no_grad():
+                local_loss = torch.tensor(losses, device="cuda")
+                global_loss = torch.zeros_like(local_loss)
+                torch.distributed.all_reduce(local_loss)
+                global_loss = local_loss / torch.distributed.get_world_size()
 
-        # Compute global loss across all ranks
-        with torch.no_grad():
-            local_loss = torch.tensor(losses, device="cuda")
-            global_loss = torch.zeros_like(local_loss)
-            torch.distributed.all_reduce(local_loss)
-            global_loss = local_loss / torch.distributed.get_world_size()
+            # Aggregate metrics across all microbatches
+            mb_metrics = defaultdict(list)
+            for m in all_mb_metrics:
+                for k, v in m.items():
+                    mb_metrics[k].append(v)
 
-        # Aggregate metrics across all microbatches
-        mb_metrics = defaultdict(list)
-        for m in all_mb_metrics:
-            for k, v in m.items():
-                mb_metrics[k].append(v)
+            metrics = {
+                "global_loss": global_loss.cpu(),
+                "local_loss": local_loss.cpu(),
+                "rank": torch.distributed.get_rank(),
+                "all_mb_metrics": dict(mb_metrics),
+            }
 
-        metrics = {
-            "global_loss": global_loss.cpu(),
-            "local_loss": local_loss.cpu(),
-            "rank": torch.distributed.get_rank(),
-            "all_mb_metrics": dict(mb_metrics),
-        }
-
-        return metrics
+            return metrics
 
     def get_logprobs(
         self, data: BatchedDataDict, micro_batch_size: int = None
