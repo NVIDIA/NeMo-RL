@@ -168,15 +168,16 @@ jobs:
         else
           echo "Skipping functional tests for level ${{ needs.pre-flight.outputs.test_level }}"
         fi
-      CONVERGENCE_TEST_SCRIPT: |
-        cd /opt/reinforcer
-        if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L2)$  ]]; then
-          echo "Running convergence tests"
-          # Add your convergence test commands here
-          # uv run --no-sync bash ./tests/convergence/test.sh
-        else
-          echo "Skipping convergence tests for level ${{ needs.pre-flight.outputs.test_level }}"
-        fi
+      # TODO: enable once we have convergence tests in CI
+      #CONVERGENCE_TEST_SCRIPT: |
+      #  cd /opt/reinforcer
+      #  if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L2)$  ]]; then
+      #    echo "Running convergence tests"
+      #    # Add your convergence test commands here
+      #    # uv run --no-sync bash ./tests/convergence/test.sh
+      #  else
+      #    echo "Skipping convergence tests for level ${{ needs.pre-flight.outputs.test_level }}"
+      #  fi
       AFTER_SCRIPT: |
         cd /opt/reinforcer
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
