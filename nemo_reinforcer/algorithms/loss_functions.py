@@ -184,11 +184,11 @@ class NLLLoss(LossFunction):
             if num_unmasked_tokens == 0:
                 # prevent division by zero
                 num_unmasked_tokens = torch.tensor(1)
-            loss = (-torch.sum(token_logprobs * mask) / num_unmasked_tokens).item()
+            loss = -torch.sum(token_logprobs * mask) / num_unmasked_tokens
             num_unmasked_tokens = num_unmasked_tokens.item()
 
         return loss, {
-            "loss": loss,
+            "loss": loss.item() if loss.ndim == 0 else loss,
             "num_unmasked_tokens": num_unmasked_tokens,
             "total_tokens": mask.numel(),
         }
@@ -226,8 +226,6 @@ class DPOLossFn(LossFunction):
     def preference_loss(
         self, next_token_logits: torch.Tensor, data: BatchedDataDict[DPOLossDataDict]
     ) -> torch.Tensor:
-        ## TODO: make sure this token mask only includes the chosen / rejected responses
-        ## and not prior assistant tokens
         ## TODO: there's some duplicate code here with the NLLLoss function. We should refactor
         token_mask = data["token_mask"][:, 1:]
         sample_mask = data["sample_mask"]
@@ -268,7 +266,9 @@ class DPOLossFn(LossFunction):
                 dpo_loss=True,
                 dpo_average_log_probs=self.sft_average_log_probs,
             )
+            print(f"{sft_loss.shape=}")
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
+            print(f"{sft_loss_chosen.shape=}")
             sft_loss_chosen = sft_loss_chosen.mean(0)
 
         preference_loss, accuracy = self.preference_loss(next_token_logits, data)
