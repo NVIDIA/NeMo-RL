@@ -20,7 +20,7 @@ mkdir -p $LOG_DIR
 cd $PROJECT_ROOT
 python -u $PROJECT_ROOT/examples/run_dpo.py \
     cluster.gpus_per_node=2 \
-    dpo.max_num_steps=10 \
+    dpo.max_num_steps=5 \
     dpo.val_batches=1 \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \

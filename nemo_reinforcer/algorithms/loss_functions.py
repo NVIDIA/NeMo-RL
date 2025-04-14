@@ -148,6 +148,8 @@ class ClippedPGLossFn(LossFunction):
 
 
 class NLLLoss(LossFunction):
+    """Negative Log Likelihood Loss function."""
+
     def __call__(
         self,
         next_token_logits: torch.Tensor,
@@ -212,6 +214,61 @@ class DPOLossDataDict(TypedDict):
 
 
 class DPOLossFn(LossFunction):
+    """Direct Preference Optimization (DPO) loss function.
+
+    This loss function implements the DPO algorithm as described in:
+    "Direct Preference Optimization: Your Language Model is Secretly a Reward Model"
+    (https://arxiv.org/abs/2305.18290)
+
+    The loss combines two main components:
+    1. Preference Loss: Optimizes the model to prefer chosen responses over rejected ones
+    2. SFT Loss (optional): Auxiliary supervised fine-tuning loss on chosen responses
+
+    The total loss is computed as:
+    L(θ) = w_p * L_pref(θ) + w_s * L_sft(θ)
+
+    where:
+    - w_p is the preference_loss_weight
+    - w_s is the sft_loss_weight
+    - L_pref(θ) is the preference loss term
+    - L_sft(θ) is the supervised fine-tuning loss term
+
+    The preference loss term is computed as:
+    L_pref(θ) = -E[log(σ(β * (r_chosen - r_rejected)))]
+
+    where:
+    - σ is the sigmoid function
+    - β is the reference_policy_kl_penalty
+    - r_chosen and r_rejected are the rewards for chosen and rejected responses
+    - The rewards are computed as the sum of log probability differences between
+      the current policy and reference policy
+
+    If preference_average_log_probs is True, the rewards are averaged over tokens:
+    r = (1/n) * Σ_t (log π_θ(a_t|s_t) - log π_ref(a_t|s_t))
+
+    Otherwise, the rewards are summed over tokens.
+
+    The SFT loss term is a standard negative log likelihood loss on the chosen responses.
+    If sft_average_log_probs is True, the loss is averaged over tokens.
+
+    Args:
+        cfg (DPOLossConfig): Configuration dictionary containing:
+            - reference_policy_kl_penalty (float): Strength of the KL penalty term (β)
+            - preference_loss_weight (float): Weight for the preference loss term (w_p)
+            - sft_loss_weight (float): Weight for the SFT loss term (w_s)
+            - preference_average_log_probs (bool): Whether to average log probs across tokens in preference loss
+            - sft_average_log_probs (bool): Whether to average log probs across tokens in SFT loss
+
+    Returns:
+        Tuple[torch.Tensor, dict]: A tuple containing:
+            - The total loss value
+            - A dictionary with metrics including:
+                - loss: Total loss value
+                - sft_loss: SFT loss component
+                - preference_loss: Preference loss component
+                - accuracy: Fraction of examples where chosen response has higher reward
+    """
+
     def __init__(self, cfg: DPOLossConfig):
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.preference_loss_weight = cfg["preference_loss_weight"]
@@ -226,7 +283,7 @@ class DPOLossFn(LossFunction):
     def preference_loss(
         self, next_token_logits: torch.Tensor, data: BatchedDataDict[DPOLossDataDict]
     ) -> torch.Tensor:
-        ## TODO: there's some duplicate code here with the NLLLoss function. We should refactor
+        ## TODO(@ashors): there's some duplicate code here with the NLLLoss function. We should refactor
         token_mask = data["token_mask"][:, 1:]
         sample_mask = data["sample_mask"]
         mask = token_mask * sample_mask.unsqueeze(-1)

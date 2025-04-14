@@ -320,13 +320,7 @@ class HfPolicyWorker:
 
                     # Backward pass
 
-                    # Loss is accumulated across microbatches, so we need to scale by the number of microbatches
-                    # loss = loss / num_microbatches
-
-                    ## TODO: improve this
-                    ## loss = 0 indicates that there are no valid examples in the microbatch
-                    ## we should probably use a reserved value here
-                    #if loss != 0:
+                    ## TODO(@ashors): improve this
                     if not eval_mode:
                         loss.backward()
                     mb_losses.append(loss.item())
@@ -334,7 +328,9 @@ class HfPolicyWorker:
 
                 # Clip gradients
                 if not eval_mode:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), max_norm=1.0
+                    )
 
                     # Update parameters
                     self.optimizer.step()
@@ -488,7 +484,6 @@ class HfPolicyWorker:
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
-        ## TODO: investigate this. This is super slow
         with self.use_reference_model():
             reference_logprobs = self.get_logprobs(data, micro_batch_size)
 

@@ -130,7 +130,13 @@ def add_loss_mask_to_message_log(
 def add_dpo_loss_mask_to_message_log(
     message_log: LLMMessageLogType,
 ) -> None:
-    """Only unmask the final assistant message in the log."""
+    """Add token-level loss masks to each message in a message log.
+
+    This function differs from add_loss_mask_to_message_log in that it only unmasks the final assistant message in the log.
+
+    Args:
+        message_log (LLMMessageLogType): List of message dictionaries containing token IDs and metadata
+    """
     for message in message_log:
         for i, sentence in enumerate(message):
             if i == len(message) - 1:

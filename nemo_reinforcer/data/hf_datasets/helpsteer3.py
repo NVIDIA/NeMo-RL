@@ -28,6 +28,8 @@ def format_helpsteer3(data):
 
 
 class HelpSteer3Dataset(HfDataset):
+    """HelpSteer3 preference dataset for DPO training."""
+
     def __init__(self):
         ds = load_dataset("nvidia/HelpSteer3", "preference")
         self.formatted_ds = ds.map(format_helpsteer3)

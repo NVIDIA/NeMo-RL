@@ -16,19 +16,24 @@ from datasets import load_dataset
 from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset
 
 
-## assumptions about DPO dataset:
-## json files should have the following keys:
-## "prompt"
-## "chosen_response"
-## "rejected_response"
 class DPODataset(HfDataset):
-    def __init__(self, train_data_path: str, val_data_path: str):
-        ## TODO: assuming for now that data has been split into train and val
-        ## as an offline preprocessing step
+    """Dataset class for Direct Preference Optimization (DPO) training.
 
-        ## TODO: update the keys to match with what's expected from apply_chat_template
-        ## we need to do this outisde of the data class because we want to keep
-        ## chosen and rejected responses for a given prompt together when shuffling
+    This class handles loading of preference data for DPO training.
+    The input JSON files should contain examples with the following structure:
+    {
+        "prompt": str,           # The input prompt/context
+        "chosen_response": str,  # The preferred/winning response
+        "rejected_response": str # The non-preferred/losing response
+    }
+
+    Args:
+        train_data_path (str): Path to the JSON file containing training data
+        val_data_path (str): Path to the JSON file containing validation data
+
+    """
+
+    def __init__(self, train_data_path: str, val_data_path: str):
         self.formatted_ds = {
             "train": load_dataset("json", data_files=train_data_path, split="train"),
             "validation": load_dataset("json", data_files=val_data_path, split="train"),

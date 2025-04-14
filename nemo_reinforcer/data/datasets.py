@@ -191,7 +191,7 @@ def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
     """Collate function for DPO training.
 
     This function separates the chosen and rejected responses to create
-    two examples per prompt. The chosen and rejected examples are concatenated
+    two examples per prompt. The chosen and rejected examples are interleaved
     along the batch dimension, resulting in a batch size of 2 * len(data_batch).
     """
     message_log = []
@@ -210,9 +210,6 @@ def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
         task_names.extend([datum_spec.get("task_name", None)] * 2)
     length = torch.tensor(length)
     loss_multiplier = torch.tensor(loss_multiplier)
-
-    ## TODO
-    # extra_env_info = [datum_spec["extra_env_info"] for datum_spec in data_batch]
 
     batch_max_length = torch.ones_like(length) * length.max()
 
@@ -233,8 +230,7 @@ def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
 
     cat_and_padded, input_lengths = batched_message_log_to_flat_message(
         batch["message_log"],
-        ## TODO: update pad value
-        pad_value_dict={"token_ids": tokenizer.eos_token_id},
+        pad_value_dict={"token_ids": tokenizer.pad_token_id},
     )
 
     train_data: BatchedDataDict = BatchedDataDict(
