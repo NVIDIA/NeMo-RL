@@ -138,7 +138,7 @@ The policy we use to draw samples, $\pi_{\theta_{\text{old}}}$, is used in both 
 
 $$
 \begin{align*}
-E_{x \sim \pi_\text{training}}(x) f_\theta(x) &= \frac{1}{N}\sum_x \pi_\text{training}(x) f_\theta(x) \\
+E_{x \sim \pi_\text{training}} f_\theta(x) &= \frac{1}{N}\sum_x \pi_\text{training}(x) f_\theta(x) \\
 &= \frac{1}{N}\sum_x \pi_\text{inference}(x) \frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)} f_\theta(x) \\
 &= E_{x \sim \pi_\text{inference}} \frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)} f_\theta(x)
 \end{align*}
