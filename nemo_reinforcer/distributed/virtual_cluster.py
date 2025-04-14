@@ -52,8 +52,7 @@ def _get_node_ip_and_free_port():
     import socket
 
     # Get the IP address of the current node
-    # Use socket.gethostbyname(socket.gethostname()) as a fallback
-    node_ip = socket.gethostbyname(socket.gethostname())
+    node_ip = ray._private.services.get_node_ip_address()
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))  # Bind to port 0 to get a random free port

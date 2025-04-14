@@ -250,13 +250,13 @@ class VllmGenerationWorker:
         sampling_params = self.SamplingParams(
             temperature=self.cfg["temperature"] if not greedy else 0,
             top_p=self.cfg["top_p"],
-            top_k=top_k
-            if not greedy
-            else 1,  # we use a default of -1 if unset so that 'null'/None is a common disable value
+            # we use a default of -1 if unset so that 'null'/None is a common disable value
+            top_k=top_k if not greedy else 1,
             max_tokens=self.cfg["max_new_tokens"],
             logprobs=0,  # Return logprobs for the generated tokens
-            stop=None,
             stop_token_ids=self.cfg["stop_token_ids"],
+            stop=self.cfg["stop_strings"],
+            include_stop_str_in_output=True,  # returning stop strings like hf
         )
 
         # Generate outputs
@@ -352,7 +352,9 @@ class VllmGenerationWorker:
             top_p=self.cfg["top_p"],
             top_k=top_k if not greedy else 1,
             max_tokens=self.cfg["max_new_tokens"],
-            stop=self.cfg.get("stop_sequences", None),
+            stop_token_ids=self.cfg["stop_token_ids"],
+            stop=self.cfg["stop_strings"],
+            include_stop_str_in_output=True,  # returning stop strings like hf
         )
 
         # Generate outputs

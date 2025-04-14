@@ -562,8 +562,10 @@ class HfPolicyWorker:
                     temperature=gen_cfg["temperature"],
                     top_p=gen_cfg["top_p"],
                     top_k=gen_cfg["top_k"],
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
+                    pad_token_id=gen_cfg["pad_token_id"],
+                    eos_token_id=gen_cfg["stop_token_ids"],
+                    stop_strings=gen_cfg["stop_strings"],
+                    tokenizer=self.tokenizer,  # needs for stop_strings
                     return_dict_in_generate=True,
                     output_scores=True,
                     synced_gpus=True,

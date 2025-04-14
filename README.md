@@ -28,7 +28,7 @@ What you can expect:
 
 ## Features
 
-_✅ Available now | 🔜 Coming in v0.2_
+✅ _Available now_ | 🔜 _Coming in v0.2_
 
 - ✅ **Fast Generation** - vLLM backend for optimized inference
 - ✅ **HuggingFace Integration** - Works with 1-8B models (Qwen1.5, Llama)
@@ -54,7 +54,7 @@ uv pip install -e .[vllm]
 # Install NeMo-Reinforcer with dev/test dependencies
 uv pip install -e '.[dev,test]'
 
-# Use uv run to launch any runs. 
+# Use uv run to launch any runs.
 # Note that it is recommended to not activate the venv and instead use `uv run` since
 # it ensures consistent environment usage across different shells and sessions.
 # Example: uv run python examples/run_grpo_math.py
@@ -88,13 +88,14 @@ uv run python examples/run_sft.py \
   cluster.gpus_per_node=8
 ```
 
-Refer to [sft.yaml](examples/configs/sft.yaml) for a full list of parameters that can be overridden.
+Refer to `examples/configs/sft.yaml` for a full list of parameters that can be overridden.
 
 #### Multi-node
 
 For distributed training across multiple nodes:
 
 Set `UV_CACHE_DIR` to a directory that can be read from all workers before running any uv run command.
+
 ```sh
 export UV_CACHE_DIR=/path/that/all/workers/can/access/uv_cache
 ```
