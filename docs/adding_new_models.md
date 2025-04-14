@@ -8,7 +8,7 @@ In on-policy RL, we sample tokens (actions) from the latest version of the polic
 
 As an example, we would see errors in naive KL estimation:
 
-$$\text{KL} = E_{x \sim \pi}[\pi(x) - \pi_{\text{ref}}(x)]$$  
+$$\text{KL} = \mathbb{E}_{x \sim \pi}[\pi(x) - \pi_{\text{ref}}(x)]$$
 
 When summed/integrated, replacing the $x \sim \pi$ with $x \sim \pi_{\text{wrong}}$ leads to an error of:
 
@@ -17,12 +17,12 @@ $$\sum_{x} \left( \pi(x) - \pi_{\text{ref}}(x) \right) \left( \pi_{\text{wrong}}
 So, to verify correctness, we calculate
 
 $$
-\frac{1}{n}\sum_{i=1}^{n\text{(tokens)}}\exp\left(\left\|\text{logprobs-train-fwk}_i - \text{logprobs-sampling-fwk}_i\right\|\right)
+\frac{1}{n}\sum_{i=1}^{n\text{(tokens)}}\exp\left(\left\|\text{logprobs-train-fwk}_i - \text{logprobs-inference-fwk}_i\right\|\right)
 $$
 
-where samples are drawn as $x \sim \pi_{\text{sampling-framework}}$
+where samples are drawn as $x \sim \pi_{\text{inference-framework}}$
 
-as a measure of multiplicative probability error for sampled tokens. Note that this is not exhaustive (the sampling framework could lack distribution support and we wouldn't catch it here, as $x \sim \pi_{\text{sampling-framework}}$). To get a much stricter guarantee on correctness, you should run this metric twice and average the results, where in the second run, you sample $x \sim \pi_{\text{training-framework}}$. In practice, we use just the former in our tests and find it sufficient.
+as a measure of multiplicative probability error for sampled tokens. Note that this is not exhaustive (the inference framework could lack distribution support and we wouldn't catch it here, as $x \sim \pi_{\text{inference-framework}}$). To get a much stricter guarantee on correctness, you should run this metric twice and average the results, where in the second run, you sample $x \sim \pi_{\text{training-framework}}$. In practice, we use just the former in our tests and find it sufficient.
 
 ## Understanding Discrepancies Between Backends
 
