@@ -482,7 +482,7 @@ def sft_train(
             total_steps += 1
 
             if total_steps >= master_config["sft"]["max_num_steps"]:
-                break
+                return
 
         current_epoch += 1
         current_step = 0  # Reset step counter for new epoch
