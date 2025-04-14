@@ -124,10 +124,12 @@ The policy we use to draw samples, $\pi_{\theta_{\text{old}}}$, is used in both 
 $$
 \begin{align*}
 L(\theta) &= E_{x \sim \pi_\text{training}}(x) f_\theta(x) \\
-&= \frac{1}{N}\sum \pi_\text{training}(x) f_\theta(x) \\
-&= \frac{1}{N}\sum \pi_\text{inference}(x) \frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)} f_\theta(x) \\
+&= \frac{1}{N}\sum_x \pi_\text{training}(x) f_\theta(x) \\
+&= \frac{1}{N}\sum_x \pi_\text{inference}(x) \frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)} f_\theta(x) \\
 &= E_{x \sim \pi_\text{inference}} \frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)} f_\theta(x)
 \end{align*}
 $$
 
 By multiplying the loss terms by the importance weights $\frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)}$, we can correct for the distribution mismatch between $\pi_{\text{training}}$ and $\pi_{\text{inference}}$ while still sampling from $\pi_{\text{inference}}$.
+
+To enable the importance sampling correction, set the config `use_importance_sampling_correction=True` in the `ClippedPGLossConfig`.

@@ -27,6 +27,7 @@ class ClippedPGLossConfig(TypedDict):
     reference_policy_kl_penalty: float
     ratio_eps_min: float
     ratio_eps_max: float
+    use_importance_sampling_correction: bool
 
 
 class ClippedPGLossDataDict(TypedDict):
@@ -68,7 +69,7 @@ class ClippedPGLossFn(LossFunction):
     For REINFORCE/RLOO (when disable_ppo_ratio=True), the formula simplifies to:
     L(θ) = E_t [ π_θ(a_t|s_t) * A_t ] - β * KL(π_θ || π_ref)
 
-    If the generation policy π_θ_gen is off policy, we can enable importance sampling by setting importance_sampling_enabled=True.
+    If the generation policy π_θ_gen is off policy, we can enable importance sampling by setting use_importance_sampling_correction=True.
     This multiplies the loss by the importance weights:
     importance_weights_t = π_θ_old(a_t|s_t) / π_θ_gen(a_t|s_t)
     """
@@ -78,7 +79,7 @@ class ClippedPGLossFn(LossFunction):
         self.ratio_eps_max = cfg["ratio_eps_max"]
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.disable_ppo_ratio = cfg.get("disable_ppo_ratio", False)
-        self.importance_sampling_enabled = cfg["importance_sampling_enabled"]
+        self.use_importance_sampling_correction = cfg["use_importance_sampling_correction"]
 
     def __call__(
         self,
@@ -106,7 +107,7 @@ class ClippedPGLossFn(LossFunction):
             dim=-1, index=next_tokens.unsqueeze(-1)
         ).squeeze(-1)
 
-        if self.importance_sampling_enabled:
+        if self.use_importance_sampling_correction:
             importance_weights = torch.exp(prev_logprobs - generation_logprobs)
         else:
             importance_weights = torch.ones_like(prev_logprobs)
