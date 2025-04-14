@@ -277,9 +277,12 @@ def refit_policy_generation(
 ):
     """Refit the policy generation interface with the latest policy weights."""
     policy.offload_before_refit()
-    ipc_handles = policy.get_weights_ipc_handles()
     policy_generation.prepare_for_generation()
-    policy_generation.update_weights(ipc_handles)
+    # Streaming update weights to save memory
+    param_keys = policy.prepare_weights_for_ipc()
+    for key in param_keys:
+        ipc_handles = policy.get_weights_ipc_handles(key)
+        policy_generation.update_weights(ipc_handles)
     policy.offload_after_refit()
 
 

@@ -250,7 +250,19 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         # Placeholder implementation
         pass
 
-    def get_weights_ipc_handles(self):
+    def prepare_weights_for_ipc(self):
+        """Prepare the weights for IPC.
+
+        Returns:
+            dict: A dictionary containing the keys of the parameters.
+        """
+        futures = self.worker_group.run_all_workers_single_data(
+            "prepare_weights_for_ipc", only_on="all_tied_workers"
+        )
+        # only get the first worker's result is enough since all workers will have the same result
+        return ray.get(futures)[0]
+
+    def get_weights_ipc_handles(self, key):
         """Fetch weight IPC handles from all workers.
 
         Returns:
@@ -259,7 +271,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         # Collect IPC handles from all workers
         worker_handles = ray.get(
             [
-                worker.get_weight_ipc_handles.remote()
+                worker.get_weights_ipc_handles.remote(key)
                 for worker in self.worker_group.workers
             ]
         )

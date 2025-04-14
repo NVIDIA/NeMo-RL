@@ -18,6 +18,7 @@ import pytest
 import torch
 import ray
 
+from nemo_reinforcer.algorithms.grpo import refit_policy_generation
 from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
@@ -270,9 +271,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
     print(f"refitting vllm policy...")
-    ipc_handles = hf_policy.get_weights_ipc_handles()
-    policy.prepare_for_generation()
-    policy.update_weights(ipc_handles)
+    refit_policy_generation(hf_policy, policy)
 
     try:
         # Generate with duplicated prompts
@@ -435,9 +434,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print(f"refitting vllm policy...")
-        ipc_handles = hf_policy.get_weights_ipc_handles()
-        vllm_policy.prepare_for_generation()
-        vllm_policy.update_weights(ipc_handles)
+        refit_policy_generation(hf_policy, vllm_policy)
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
@@ -709,9 +706,11 @@ def test_vllm_weight_update_and_prefix_cache_reset(
         )
 
         print("Updating vLLM weights from HF policy...")
-        ipc_handles = hf_policy.get_weights_ipc_handles()
-        update_success = vllm_policy.update_weights(ipc_handles)
-        assert update_success, "Weight update should succeed"
+        param_keys = hf_policy.prepare_weights_for_ipc()
+        for key in param_keys:
+            ipc_handles = hf_policy.get_weights_ipc_handles(key)
+            update_success = vllm_policy.update_weights(ipc_handles)
+            assert update_success, "Weight update should succeed"
         print("vLLM weights successfully updated.")
 
         print("Running Generation 2 (Weights Updated, Cache Still Active)...")
@@ -785,9 +784,7 @@ def test_vllm_generation_with_stop(
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print(f"refitting vllm policy...")
-        ipc_handles = hf_policy.get_weights_ipc_handles()
-        vllm_generation.prepare_for_generation()
-        vllm_generation.update_weights(ipc_handles)
+        refit_policy_generation(hf_policy, vllm_generation)
 
     # test generate
     outputs = vllm_generation.generate(test_input_data, greedy=True)
