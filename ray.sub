@@ -122,8 +122,8 @@ cat <<EOFINNER | tee /launch-worker.sh
 ray start --address "$ip_head" \
           --disable-usage-stats \
           --resources="{\"worker_units\": $gpus_per_node}" \
-          --min-worker-port=$min_worker_port \
-          --max-worker-port=$max_worker_port \
+          --min-worker-port=${MIN_WORKER_PORT} \
+          --max-worker-port=${MAX_WORKER_PORT} \
           --block
 EOFINNER
 
