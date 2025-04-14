@@ -165,6 +165,7 @@ def test_clipped_pg_loss_ppo_clipping():
         "ratio_eps_max": ratio_eps,
         "reference_policy_kl_penalty": 0.0,  # Disable KL
         "disable_ppo_ratio": False,
+        "importance_sampling_enabled": False,
     }
     loss_fn = ClippedPGLossFn(cfg)
 
@@ -217,6 +218,7 @@ def test_clipped_pg_loss_reinforce_mode():
         "reference_policy_kl_penalty": 0.0,
         "ratio_eps_min": 0.0,  # Placeholder, ignored
         "ratio_eps_max": 0.0,  # Placeholder, ignored
+        "importance_sampling_enabled": False,
     }
     loss_fn = ClippedPGLossFn(cfg)
 
@@ -256,6 +258,7 @@ def test_clipped_pg_loss_kl_penalty():
         "ratio_eps_min": 0.2,
         "ratio_eps_max": 0.2,
         "disable_ppo_ratio": False,
+        "importance_sampling_enabled": False,
     }
     loss_fn = ClippedPGLossFn(cfg)
 
@@ -315,6 +318,7 @@ def test_clipped_pg_loss_masking():
         "ratio_eps_max": 0.2,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
+        "importance_sampling_enabled": False,
     }
     loss_fn = ClippedPGLossFn(cfg)  # Use original loss fn
 
@@ -376,6 +380,7 @@ def test_clipped_pg_loss_zero_mask():
         "ratio_eps_max": 0.2,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
+        "importance_sampling_enabled": False,
     }
     loss_fn = ClippedPGLossFn(cfg)  # Use original loss fn
 
@@ -386,3 +391,88 @@ def test_clipped_pg_loss_zero_mask():
 
     # Loss should be exactly zero
     torch.testing.assert_close(loss, torch.tensor(0.0, device=device))
+
+
+def test_clipped_pg_loss_importance_sampling():
+    """Tests PPO loss with KL penalty and importance sampling enabled."""
+    if not torch.cuda.is_available():
+        pytest.skip("No GPU available")
+
+    device = "cuda"
+    data, seq_len, vocab_size = _setup_clipped_pg_test_data(device=device)
+
+    ratio_eps = 0.2
+    kl_beta = 0.1
+
+    cfg = {
+        "ratio_eps_min": ratio_eps,
+        "ratio_eps_max": ratio_eps,
+        "reference_policy_kl_penalty": kl_beta,
+        "disable_ppo_ratio": False,
+        "importance_sampling_enabled": True,
+    }
+    loss_fn = ClippedPGLossFn(cfg)
+
+    adv_masked = torch.tensor([[1.0, -1.0, 2.0]], device=device)
+    prev_lp_masked = torch.tensor([[-1.0, -1.0, -1.0]], device=device)
+    curr_lp_masked = torch.tensor(
+        [[-1.69315, -1.0, -0.59453]], device=device
+    )  # approx log(0.5)-1, log(1)-1, log(1.5)-1
+
+    ref_lp_masked = torch.tensor([[-1.0, -1.0, -1.0]], device=device)
+
+    # For Importance Sampling
+    gen_lp_masked = torch.tensor([[-0.5, -1.5, -0.8]], device=device)
+
+    # Fill full tensors
+    data["advantages"][0, 1:] = adv_masked
+    data["prev_logprobs"][0, 1:] = prev_lp_masked
+    data["generation_logprobs"][0, 1:] = gen_lp_masked
+    data["reference_policy_logprobs"][0, 1:] = ref_lp_masked
+
+    # --- Hand Calculation ---
+    importance_weights = torch.exp(
+        prev_lp_masked - gen_lp_masked
+    )  # exp([-1 - (-0.5), -1 - (-1.5), -1 - (-0.8)]) = [0.6065, 1.6487, 0.8187]
+
+    # Actor Loss Calculation
+    ratios = torch.exp(curr_lp_masked - prev_lp_masked)  # [0.5, 1.0, 1.5]
+    ratios_clamped = torch.clamp(
+        ratios, 1.0 - ratio_eps, 1.0 + ratio_eps
+    )  # [0.8, 1.0, 1.2]
+    loss1 = -adv_masked * ratios  # [-0.5, 1.0, -3.0]
+    loss2 = -adv_masked * ratios_clamped  # [-0.8, 1.0, -2.4]
+    max_loss = torch.maximum(loss1, loss2)  # [-0.5, 1.0, -2.4]
+    importance_weighted_max_loss = (
+        importance_weights * max_loss
+    )  # [-0.5*0.6065, 1.0*1.6487, -2.4*0.8187] = [-0.30325, 1.6487, -1.96488]
+    expected_actor_loss = torch.mean(importance_weighted_max_loss)  # -0.2065
+
+    # KL Loss Calculation
+    r = (
+        ref_lp_masked - curr_lp_masked
+    )  # [-1.0 - (-1.69), -1.0 - (-1.0), -1.0 - (-0.59)] = [0.69, 0.0, -0.41]
+    kl_term_per_token = (
+        torch.exp(r) - r - 1
+    )  # [exp(0.69)-0.69-1, exp(0)-0-1, exp(-0.41)-(-0.41)-1] = [0.3037, 0.0, 0.0737]
+    # Apply importance weights to KL loss
+    # kl_term = importance_weights * kl_beta * kl_indiv
+    importance_weighted_kl_term_per_token = (
+        importance_weights * kl_term_per_token
+    )  # [0.3037*0.6065, 0.0*1.6487, 0.0737*0.8187] = [0.184194, 0.0, 0.06034]
+    expected_kl_mean = torch.mean(
+        importance_weighted_kl_term_per_token
+    )  # mean([0.184194, 0.0, 0.06034]) = 0.0815
+    expected_kl_loss = kl_beta * expected_kl_mean  # 0.1 * 0.0815 = 0.00815
+
+    expected_total_loss = (
+        expected_actor_loss + expected_kl_loss
+    )  # -0.2065 + 0.00815 = -0.19835
+
+    input_ids = data["input_ids"]
+    dummy_logits = _create_exact_logits(
+        curr_lp_masked, input_ids, seq_len, vocab_size, device
+    )
+
+    actual_loss, _ = loss_fn(dummy_logits, data)
+    torch.testing.assert_close(actual_loss, expected_total_loss, atol=1e-4, rtol=1e-3)

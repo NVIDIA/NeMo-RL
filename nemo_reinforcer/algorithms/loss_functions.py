@@ -67,6 +67,10 @@ class ClippedPGLossFn(LossFunction):
 
     For REINFORCE/RLOO (when disable_ppo_ratio=True), the formula simplifies to:
     L(θ) = E_t [ π_θ(a_t|s_t) * A_t ] - β * KL(π_θ || π_ref)
+
+    If the generation policy π_θ_gen is off policy, we can enable importance sampling by setting importance_sampling_enabled=True.
+    This multiplies the loss by the importance weights:
+    importance_weights_t = π_θ_old(a_t|s_t) / π_θ_gen(a_t|s_t)
     """
 
     def __init__(self, cfg: ClippedPGLossConfig):
@@ -74,6 +78,7 @@ class ClippedPGLossFn(LossFunction):
         self.ratio_eps_max = cfg["ratio_eps_max"]
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.disable_ppo_ratio = cfg.get("disable_ppo_ratio", False)
+        self.importance_sampling_enabled = cfg["importance_sampling_enabled"]
 
     def __call__(
         self,
@@ -101,11 +106,20 @@ class ClippedPGLossFn(LossFunction):
             dim=-1, index=next_tokens.unsqueeze(-1)
         ).squeeze(-1)
 
+        if self.importance_sampling_enabled:
+            importance_weights = torch.exp(prev_logprobs - generation_logprobs)
+        else:
+            importance_weights = torch.ones_like(prev_logprobs)
+
         # Calculate KL regularization.
         if self.reference_policy_kl_penalty != 0:
-            kl = self.reference_policy_kl_penalty * calculate_kl_penalty_joschu2020(
-                logprobs_policy=curr_logprobs,
-                logprobs_reference=reference_policy_logprobs,
+            kl = (
+                importance_weights
+                * self.reference_policy_kl_penalty
+                * calculate_kl_penalty_joschu2020(
+                    logprobs_policy=curr_logprobs,
+                    logprobs_reference=reference_policy_logprobs,
+                )
             )
             kl = masked_mean(kl, mask)
         else:
@@ -125,7 +139,7 @@ class ClippedPGLossFn(LossFunction):
         loss2 = -advantages * ratios_clamped
 
         if mask.sum() > 0:
-            actor_loss = masked_mean(torch.max(loss1, loss2), mask)
+            actor_loss = masked_mean(importance_weights * torch.max(loss1, loss2), mask)
             loss = actor_loss + kl
         else:
             # disable this update since there are no valid tokens
