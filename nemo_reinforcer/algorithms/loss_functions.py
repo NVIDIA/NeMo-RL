@@ -152,7 +152,8 @@ class NLLLoss(LossFunction):
         self,
         next_token_logits: torch.Tensor,
         data: BatchedDataDict,
-        average_log_probs: bool = False,
+        dpo_loss: bool = False,
+        dpo_average_log_probs: bool = False,
     ) -> Tuple[torch.Tensor, dict]:
         # logits shape: [batch_size, seq_len, vocab_size]
         # Get the next token logits for each position
@@ -169,16 +170,22 @@ class NLLLoss(LossFunction):
             dim=-1, index=next_tokens.unsqueeze(-1)
         ).squeeze(-1)
 
-        # Only compute loss on generated tokens (not input tokens)
-        # by applying the token_loss_mask (shifted by 1 since we're predicting next tokens)
-        num_unmasked_tokens = torch.sum(mask, -1)
-        num_unmasked_tokens[num_unmasked_tokens == 0] = 1
-
-        if average_log_probs:
-            num_unmasked_tokens = num_unmasked_tokens.sum().item()
-            loss = (-torch.sum(token_logprobs * mask) / num_unmasked_tokens).item()
-        else:
+        if dpo_loss:
+            ## shape: [batch_size]
+            num_unmasked_tokens = torch.sum(mask, -1)
             loss = -torch.sum(token_logprobs * mask, dim=-1)
+            if dpo_average_log_probs:
+                loss = loss / num_unmasked_tokens.clamp(min=1)
+        else:
+            ## single scalar loss
+            # Only compute loss on generated tokens (not input tokens)
+            # by applying the token_loss_mask
+            num_unmasked_tokens = torch.sum(mask)
+            if num_unmasked_tokens == 0:
+                # prevent division by zero
+                num_unmasked_tokens = torch.tensor(1)
+            loss = (-torch.sum(token_logprobs * mask) / num_unmasked_tokens).item()
+            num_unmasked_tokens = num_unmasked_tokens.item()
 
         return loss, {
             "loss": loss,
@@ -256,7 +263,10 @@ class DPOLossFn(LossFunction):
         sft_loss_chosen = torch.tensor(0.0)
         if self.sft_loss_weight > 0:
             sft_loss, _ = self.sft_loss(
-                next_token_logits, data, average_log_probs=self.sft_average_log_probs
+                next_token_logits,
+                data,
+                dpo_loss=True,
+                dpo_average_log_probs=self.sft_average_log_probs,
             )
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
             sft_loss_chosen = sft_loss_chosen.mean(0)
