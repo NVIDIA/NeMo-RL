@@ -99,7 +99,7 @@ The function [grpo_train](../../nemo_reinforcer/algorithms/grpo.py) contains the
 We use the [ClippedPGLossFn](../../nemo_reinforcer/algorithms/loss_functions.py) to calculate the loss for GRPO. Formally,
 
 $$
-\mathcal{L(\theta)} = \mathbb{E}_{x \sim \pi_{\theta_{\text{old}}}} \Big[ \min \Big(\frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}A_t, \text{clip} \big( \frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}, 1 - \varepsilon, 1 + \varepsilon \big) A_t \Big)  \Big] - \beta \mathbb{D}_{\text{KL}} (\pi_\theta \| \pi_\text{ref})
+L(\theta) = E_{x \sim \pi_{\theta_{\text{old}}}} \Big[ \min \Big(\frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}A_t, \text{clip} \big( \frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}, 1 - \varepsilon, 1 + \varepsilon \big) A_t \Big)  \Big] - \beta D_{\text{KL}} (\pi_\theta \| \pi_\text{ref})
 $$
 
 where:
@@ -114,7 +114,7 @@ where:
 In practice, we calculate the KL divergence using the estimator from Schulman 2020 (http://joschu.net/blog/kl-approx.html), which is unbiased and guaranteed to be positive, lowering variance:
 
 $$
-\mathbb{D}_{\text{KL}} (\pi_\theta \| \pi_\text{ref}) = \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - \log \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - 1
+D_{\text{KL}} (\pi_\theta \| \pi_\text{ref}) = \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - \log \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - 1
 $$
 
 
@@ -122,7 +122,7 @@ $$
 The policy we use to draw samples, $\pi_{\theta_{\text{old}}}$, is used in both the inference framework and the training framework. To account for this distinction, we refer to the inference framework policy as $\pi_{\text{inference}}$ and the training framework policy as $\pi_{\text{training}}$. As noted in [Adding New Models](../adding_new_models.md#understanding-discrepancies-between-backends), it is possible that the token probabilities from $\pi_{\text{training}}$ and $\pi_{\text{inference}}$ to have discrepancies, leading to off-policy samples. We can correct for this by introducing importance weights $\frac{\pi_\text{training}}{\pi_\text{inference}}$ to the loss function. Using $f_\theta(x)$ to represent the loss terms inside the expectation,
 
 $$
-\mathcal{L(\theta)} = \mathbb{E}_{x \sim \pi_\text{training}} f_\theta(x) = \frac{1}{N}\sum \pi_\text{training} f_\theta(x) = \frac{1}{N}\sum \pi_\text{inference} \frac{\pi_\text{training}}{\pi_\text{inference}} f_\theta(x) = \mathbb{E}_{x \sim \pi_\text{inference}} \frac{\pi_\text{training}}{\pi_\text{inference}} f_\theta(x)
+L(\theta) = E_{x \sim \pi_\text{training}} f_\theta(x) = \frac{1}{N}\sum \pi_\text{training} f_\theta(x) = \frac{1}{N}\sum \pi_\text{inference} \frac{\pi_\text{training}}{\pi_\text{inference}} f_\theta(x) = E_{x \sim \pi_\text{inference}} \frac{\pi_\text{training}}{\pi_\text{inference}} f_\theta(x)
 $$
 
 By multiplying the loss terms by these importance weights, we can correct for the distribution mismatch between $\pi_{\text{training}}$ and $\pi_{\text{inference}}$.

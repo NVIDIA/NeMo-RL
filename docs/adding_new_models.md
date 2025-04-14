@@ -8,7 +8,7 @@ In on-policy RL, we sample tokens (actions) from the latest version of the polic
 
 As an example, we would see errors in naive KL estimation:
 
-$$\text{KL} = \mathbb{E}_{x \sim \pi}[\pi(x) - \pi_{\text{ref}}(x)]$$
+$$\text{KL} = E_{x \sim \pi}[\pi(x) - \pi_{\text{ref}}(x)]$$
 
 When summed/integrated, replacing the $x \sim \pi$ with $x \sim \pi_{\text{wrong}}$ leads to an error of:
 
