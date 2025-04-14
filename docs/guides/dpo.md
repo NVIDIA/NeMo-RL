@@ -63,6 +63,7 @@ Adding a new DPO dataset is straightforward. Your custom dataset class should:
 Here's a minimal example which simply re-keys an existing jsonl dataset:
 
 ```python
+from datasets import load_dataset
 from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset
 from nemo_reinforcer.data.interfaces import TaskDataSpec
 
@@ -90,13 +91,23 @@ class CustomDPODataset:
         chosen_key: str,
         rejected_key: str,
     ):
-        # Load and format your dataset
-        formatted_ds = {
-            "train": load_dataset("json", data_files=train_data_path, split="train"),
-            "validation": load_dataset("json", data_files=val_data_path, split="train"),
-        }
 
-        self.formatted_ds = formatted_ds.map()
+        # Load and format your dataset
+        fn_kwargs={
+                "prompt_key": prompt_key, 
+                "chosen_key": chosen_key, 
+                "rejected_key": rejected_key
+            }
+        formatted_ds = {
+            "train": load_dataset("json", data_files=train_data_path, split="train").map(
+                self.preprocess_dataset, 
+                fn_kwargs=fn_kwargs,
+            ),
+            "validation": load_dataset("json", data_files=val_data_path, split="train").map(
+                self.preprocess_dataset, 
+                fn_kwargs=fn_kwargs,
+            ),
+        }
         
         # Initialize task spec with dataset name
         self.task_spec = TaskDataSpec(
