@@ -119,10 +119,15 @@ $$
 
 
 #### Importance Sampling Correction
-The policy we use to draw samples, $\pi_{\theta_{\text{old}}}$, is used in both the inference framework and the training framework. To account for this distinction, we refer to the inference framework policy as $\pi_{\text{inference}}$ and the training framework policy as $\pi_{\text{training}}$. As noted in [Adding New Models](../adding_new_models.md#understanding-discrepancies-between-backends), it is possible that the token probabilities from $\pi_{\text{training}}$ and $\pi_{\text{inference}}$ to have discrepancies, leading to off-policy samples. We can correct for this by introducing importance weights $\frac{\pi_\text{training}}{\pi_\text{inference}}$ to the loss function. Using $f_\theta(x)$ to represent the loss terms inside the expectation,
+The policy we use to draw samples, $\pi_{\theta_{\text{old}}}$, is used in both the inference framework and the training framework. To account for this distinction, we refer to the inference framework policy as $\pi_{\text{inference}}$ and the training framework policy as $\pi_{\text{training}}$. As noted in [Adding New Models](../adding_new_models.md#understanding-discrepancies-between-backends), it is possible that the token probabilities from $\pi_{\text{training}}$ and $\pi_{\text{inference}}$ to have discrepancies, leading to off-policy samples. We can correct for this by introducing importance weights to the loss function. Using $f_\theta(x)$ to represent the loss terms inside the expectation and $N$ to represent the total number of samples,
 
 $$
-L(\theta) = E_{x \sim \pi_\text{training}} f_\theta(x) = \frac{1}{N}\sum \pi_\text{training} f_\theta(x) = \frac{1}{N}\sum \pi_\text{inference} \frac{\pi_\text{training}}{\pi_\text{inference}} f_\theta(x) = E_{x \sim \pi_\text{inference}} \frac{\pi_\text{training}}{\pi_\text{inference}} f_\theta(x)
+\begin{align*}
+L(\theta) &= E_{x \sim \pi_\text{training}}(x) f_\theta(x) \\
+&= \frac{1}{N}\sum \pi_\text{training}(x) f_\theta(x) \\
+&= \frac{1}{N}\sum \pi_\text{inference}(x) \frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)} f_\theta(x) \\
+&= E_{x \sim \pi_\text{inference}} \frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)} f_\theta(x)
+\end{align*}
 $$
 
-By multiplying the loss terms by these importance weights, we can correct for the distribution mismatch between $\pi_{\text{training}}$ and $\pi_{\text{inference}}$.
+By multiplying the loss terms by the importance weights $\frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)}$, we can correct for the distribution mismatch between $\pi_{\text{training}}$ and $\pi_{\text{inference}}$ while still sampling from $\pi_{\text{inference}}$.
