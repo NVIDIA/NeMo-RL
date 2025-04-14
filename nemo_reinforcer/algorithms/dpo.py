@@ -43,14 +43,18 @@ from nemo_reinforcer.utils.timer import Timer
 
 
 class DPOSaveState(TypedDict):
-    step: int
+    epoch: int  # Track current epoch
+    step: int  # Track step within current epoch
+    total_steps: int  # Track total number of steps across all epochs
     val_loss: float
     consumed_samples: int
 
 
 def _default_dpo_save_state() -> DPOSaveState:
     return {
+        "epoch": 0,
         "step": 0,
+        "total_steps": 0,
         "consumed_samples": 0,
     }
 
@@ -320,7 +324,7 @@ def dpo_train(
     loss_fn,
     master_config,
     logger,
-    dpo_task_spec,  ### TODO: flesh out
+    dpo_task_spec,  ## TODO: do we need?
     checkpointer,
     dpo_save_state,
 ):
@@ -329,20 +333,23 @@ def dpo_train(
 
     if dpo_save_state is None:
         dpo_save_state = _default_dpo_save_state()
-        step = 0
+        current_epoch = 0
+        current_step = 0
+        total_steps = 0
     else:
-        step = dpo_save_state["step"]
+        current_epoch = dpo_save_state["epoch"]
+        current_step = dpo_save_state["step"]
+        total_steps = dpo_save_state["total_steps"]
 
     dpo_config = master_config["dpo"]
     # Validation configuration
     val_period = dpo_config["val_period"]
     val_at_start = dpo_config["val_at_start"]
+    max_num_epochs = dpo_config["max_num_epochs"]
 
     # Run validation at the start if configured
-    if val_at_start and step == 0:
+    if val_at_start and total_steps == 0:
         print("\n🔍 Running initial validation...")
-
-        ## TODO
         val_metrics, validation_timings = validate(
             policy,
             val_dataloader,
@@ -356,14 +363,18 @@ def dpo_train(
             val_mbs=dpo_config["val_micro_batch_size"],
         )
 
-        logger.log_metrics(val_metrics, step, prefix="validation")
-        logger.log_metrics(validation_timings, step, prefix="timing/validation")
+        logger.log_metrics(val_metrics, total_steps, prefix="validation")
+        logger.log_metrics(validation_timings, total_steps, prefix="timing/validation")
 
     policy.prepare_for_training()
 
-    for epoch in range(master_config["dpo"]["max_num_epochs"]):
+    while current_epoch < max_num_epochs:
+        print(f"\n{'=' * 25} Epoch {current_epoch + 1}/{max_num_epochs} {'=' * 25}")
+
         for batch in augment_dataloader(train_dataloader, policy, master_config):
-            print(f"\n{'=' * 25} Step {step + 1}/{len(train_dataloader)} {'=' * 25}")
+            print(
+                f"\n{'=' * 25} Step {current_step + 1}/{min(len(train_dataloader), master_config['dpo']['max_num_steps'])} {'=' * 25}"
+            )
 
             with timer.time("total_step_time"):
                 print("▶ Taking a training step...")
@@ -376,13 +387,13 @@ def dpo_train(
                 )
 
                 # Run validation if it's a validation step
-                if val_period > 0 and (step + 1) % val_period == 0:
+                if val_period > 0 and (total_steps + 1) % val_period == 0:
                     val_metrics, validation_timings = validate(
                         policy,
                         val_dataloader,
                         tokenizer,
                         loss_fn,
-                        step=step + 1,
+                        step=total_steps + 1,
                         master_config=master_config,
                         dpo_task_spec=dpo_task_spec,
                         val_batches=dpo_config["val_batches"],
@@ -390,9 +401,11 @@ def dpo_train(
                         val_mbs=dpo_config["val_micro_batch_size"],
                     )
                     logger.log_metrics(
-                        validation_timings, step + 1, prefix="timing/validation"
+                        validation_timings, total_steps + 1, prefix="timing/validation"
                     )
-                    logger.log_metrics(val_metrics, step + 1, prefix="validation")
+                    logger.log_metrics(
+                        val_metrics, total_steps + 1, prefix="validation"
+                    )
 
                 ## Checkpointing
                 dpo_save_state["consumed_samples"] += master_config["policy"][
@@ -400,28 +413,34 @@ def dpo_train(
                 ]
                 if (
                     master_config["checkpointing"]["enabled"]
-                    and (step + 1) % master_config["checkpointing"]["save_period"] == 0
+                    and (total_steps + 1)
+                    % master_config["checkpointing"]["save_period"]
+                    == 0
                 ):  # +1 because step is 0-indexed
-                    dpo_save_state["step"] = step + 1
+                    is_last_checkpoint = (
+                        min(
+                            len(train_dataloader) * max_num_epochs,
+                            master_config["dpo"]["max_num_steps"],
+                        )
+                        - (total_steps + 1)
+                        < master_config["checkpointing"]["save_period"]
+                    )
+                    dpo_save_state["step"] = (current_step + 1) % len(train_dataloader)
+                    dpo_save_state["total_steps"] = total_steps + 1
+                    dpo_save_state["epoch"] = current_epoch
                     dpo_save_state["val_loss"] = val_metrics["loss"]
                     with timer.time("checkpointing"):
-                        print(f"Saving checkpoint for step {step + 1}...")
-                        is_last_checkpoint = (
-                            min(
-                                len(train_dataloader)
-                                * master_config["dpo"]["max_num_epochs"],
-                                master_config["dpo"]["max_num_steps"],
-                            )
-                            - (step + 1)
-                            < master_config["checkpointing"]["save_period"]
-                        )
+                        print(f"Saving checkpoint for step {total_steps + 1}...")
                         checkpoint_path = checkpointer.init_tmp_checkpoint(
-                            step + 1, dpo_save_state, master_config
+                            total_steps + 1, dpo_save_state, master_config
                         )
-                        ## TODO: move checkpointing logic elsewhere?
                         policy.save_checkpoint(
-                            os.path.join(checkpoint_path, "policy.pt"),
-                            os.path.join(checkpoint_path, "policy_optimizer.pt"),
+                            weights_path=os.path.join(
+                                checkpoint_path, "policy", "weights"
+                            ),
+                            optimizer_path=os.path.join(
+                                checkpoint_path, "policy", "optimizer"
+                            ),
                             save_hf=is_last_checkpoint,
                         )
                         torch.save(
@@ -430,8 +449,6 @@ def dpo_train(
                         )
                         checkpointer.finalize_checkpoint(checkpoint_path)
 
-            ## TODO: add more DPO metrics
-            ## accuracy, sft loss, preference loss, etc.
             losses = train_results["loss"]
             metrics = {
                 "loss": train_results["loss"].numpy(),
@@ -455,11 +472,15 @@ def dpo_train(
                     percent = (v / total_time * 100) if total_time > 0 else 0
                     print(f"  • {k}: {v:.2f}s ({percent:.1f}%)")
 
-            logger.log_metrics(metrics, step + 1, prefix="train")
-            logger.log_metrics(timing_metrics, step + 1, prefix="timing/train")
+            logger.log_metrics(metrics, total_steps + 1, prefix="train")
+            logger.log_metrics(timing_metrics, total_steps + 1, prefix="timing/train")
 
             timer.reset()
-            step += 1
+            current_step += 1
+            total_steps += 1
 
-            if step >= master_config["dpo"]["max_num_steps"]:
-                break
+            if total_steps >= master_config["dpo"]["max_num_steps"]:
+                return
+
+        current_epoch += 1
+        current_step = 0  # Reset step counter for new epoch
