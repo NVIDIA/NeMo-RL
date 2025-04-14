@@ -1,0 +1,33 @@
+default:
+  image: ${DOC_BUILD_IMAGE}
+  tags:
+    - os/linux
+    - type/docker
+
+stages:
+  - build
+  - deploy
+
+.sphinx-build: &sphinx-build
+  - cd docs
+  - uv run --group docs sphinx-build --fail-on-warning --builder html . _build/html
+
+build-docs:
+  stage: build
+  script:
+    - *sphinx-build
+  artifacts:
+    name: ${CI_PROJECT_NAME}-${CI_COMMIT_SHORT_SHA}
+    paths:
+      - docs/_build
+
+pages:
+  stage: deploy
+  needs: ["build-docs"]
+  script:
+    - echo "Publishing HTML to GitLab Pages"
+    - cp -r docs/_build/html/* public/
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH
+  environment: main
