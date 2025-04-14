@@ -165,7 +165,7 @@ def test_clipped_pg_loss_ppo_clipping():
         "ratio_eps_max": ratio_eps,
         "reference_policy_kl_penalty": 0.0,  # Disable KL
         "disable_ppo_ratio": False,
-        "use_online_kl_approximation": False,
+        "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
     }
     loss_fn = ClippedPGLossFn(cfg)
@@ -242,7 +242,7 @@ def test_clipped_pg_loss_reinforce_mode():
         "reference_policy_kl_penalty": 0.0,
         "ratio_eps_min": 0.0,  # Placeholder, ignored
         "ratio_eps_max": 0.0,  # Placeholder, ignored
-        "use_online_kl_approximation": False,
+        "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
     }
     loss_fn = ClippedPGLossFn(cfg)
@@ -290,7 +290,7 @@ def test_clipped_pg_loss_kl_penalty():
         "ratio_eps_min": 0.2,
         "ratio_eps_max": 0.2,
         "disable_ppo_ratio": False,
-        "use_online_kl_approximation": False,
+        "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
     }
     loss_fn = ClippedPGLossFn(cfg)
@@ -362,7 +362,7 @@ def test_clipped_pg_loss_masking():
         "ratio_eps_max": 0.2,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
-        "use_online_kl_approximation": False,
+        "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
     }
     loss_fn = ClippedPGLossFn(cfg)  # Use original loss fn
@@ -425,7 +425,7 @@ def test_clipped_pg_loss_zero_mask():
         "ratio_eps_max": 0.2,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
-        "use_online_kl_approximation": False,
+        "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
     }
     loss_fn = ClippedPGLossFn(cfg)  # Use original loss fn
@@ -455,7 +455,7 @@ def test_clipped_pg_loss_online_kl_importance_sampling():
         "ratio_eps_max": ratio_eps,
         "reference_policy_kl_penalty": kl_beta,
         "disable_ppo_ratio": False,
-        "use_online_kl_approximation": True,
+        "use_on_policy_kl_approximation": True,
         "use_importance_sampling_correction": True,
     }
     loss_fn = ClippedPGLossFn(cfg)

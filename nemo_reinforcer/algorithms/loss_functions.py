@@ -27,7 +27,7 @@ class ClippedPGLossConfig(TypedDict):
     reference_policy_kl_penalty: float
     ratio_eps_min: float
     ratio_eps_max: float
-    use_online_kl_approximation: bool
+    use_on_policy_kl_approximation: bool
     use_importance_sampling_correction: bool
 
 
@@ -76,7 +76,7 @@ class ClippedPGLossFn(LossFunction):
         self.ratio_eps_max = cfg["ratio_eps_max"]
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.disable_ppo_ratio = cfg.get("disable_ppo_ratio", False)
-        self.use_online_kl_approximation = cfg["use_online_kl_approximation"]
+        self.use_on_policy_kl_approximation = cfg["use_on_policy_kl_approximation"]
         self.use_importance_sampling_correction = cfg[
             "use_importance_sampling_correction"
         ]
@@ -109,7 +109,7 @@ class ClippedPGLossFn(LossFunction):
 
         # Calculate KL regularization.
         if self.reference_policy_kl_penalty != 0:
-            if self.use_online_kl_approximation:
+            if self.use_on_policy_kl_approximation:
                 kl_importance_weights = torch.exp(curr_logprobs - generation_logprobs)
             else:
                 kl_importance_weights = torch.ones_like(curr_logprobs)
