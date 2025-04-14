@@ -30,9 +30,6 @@ from nemo_reinforcer.data.llm_message_utils import get_formatted_message_log
 from transformers import AutoTokenizer
 from nemo_reinforcer.models.policy import PolicyConfig
 
-# from nemo_reinforcer.data.hf_datasets.helpsteer3 import HelpSteer3Dataset
-from nemo_reinforcer.data.hf_datasets.dpo import DPODataset
-
 
 def parse_args():
     """Parse command line arguments."""
@@ -62,8 +59,8 @@ def dpo_preprocessor(
 ) -> DatumSpec:
     """Process a datum dictionary for DPO training."""
     if isinstance(datum_dict["prompt"], list):
-        messages_chosen = datum_dict["prompt"]
-        messages_rejected = datum_dict["prompt"]
+        messages_chosen = datum_dict["prompt"].copy()
+        messages_rejected = datum_dict["prompt"].copy()
     else:
         messages_chosen = [
             {
@@ -78,8 +75,6 @@ def dpo_preprocessor(
             },
         ]
 
-    ## TODO: sometimes the context above includes assistant, but we don't want to train
-    ## on that. Only want to train on the chosen and rejected responses... right? How do we ensure this?
     messages_chosen.append(
         {
             "role": "assistant",
@@ -94,7 +89,6 @@ def dpo_preprocessor(
         },
     )
 
-    ## TODO: DO NOT APPLY CHAT TEMPLATE!
     message_log_chosen = get_formatted_message_log(
         messages_chosen, tokenizer, task_data_spec
     )
@@ -132,14 +126,14 @@ def dpo_preprocessor(
 
 def setup_data(data_config: DataConfig, policy_config: PolicyConfig):
     print("\n▶ Setting up data...")
-    # data = HelpSteer3Dataset()
-    # train_dataset = data.formatted_ds["train"]
-    # val_dataset = data.formatted_ds["validation"]
 
-    data = DPODataset(
-        train_data_path=data_config["train_data_path"],
-        val_data_path=data_config["val_data_path"],
-    )
+    if data_config["dataset_name"] == "HelpSteer3":
+        data = hf_datasets.HelpSteer3Dataset()
+    else:
+        data = hf_datasets.DPODataset(
+            train_data_path=data_config["train_data_path"],
+            val_data_path=data_config["val_data_path"],
+        )
     train_dataset = data.formatted_ds["train"]
     val_dataset = data.formatted_ds["validation"]
 

@@ -16,7 +16,6 @@ from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset
 
 
 def format_helpsteer3(data):
-    context = data["context"]
     response_1 = data["response1"]
     response_2 = data["response2"]
     overall_preference = data["overall_preference"]

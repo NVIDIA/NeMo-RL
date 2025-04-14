@@ -127,7 +127,6 @@ def add_loss_mask_to_message_log(
                 sentence["token_loss_mask"] = torch.zeros_like(sentence["token_ids"])
 
 
-## TODO: VERIFY
 def add_dpo_loss_mask_to_message_log(
     message_log: LLMMessageLogType,
 ) -> None:
