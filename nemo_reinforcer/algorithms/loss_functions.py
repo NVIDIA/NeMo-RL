@@ -266,9 +266,7 @@ class DPOLossFn(LossFunction):
                 dpo_loss=True,
                 dpo_average_log_probs=self.sft_average_log_probs,
             )
-            print(f"{sft_loss.shape=}")
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
-            print(f"{sft_loss_chosen.shape=}")
             sft_loss_chosen = sft_loss_chosen.mean(0)
 
         preference_loss, accuracy = self.preference_loss(next_token_logits, data)

@@ -28,6 +28,7 @@ from nemo_reinforcer.algorithms.utils import (
 
 
 def setup_dpo_loss_test_data(vocab_size=16, batch_size=1):
+    seq_len = 4
     data = {
         "input_ids": torch.arange(vocab_size / 2)
         .reshape(2 * batch_size, 4)
@@ -35,26 +36,10 @@ def setup_dpo_loss_test_data(vocab_size=16, batch_size=1):
         .to("cuda"),
         "token_mask": torch.tensor([[0, 0, 1, 1], [0, 0, 1, 1]]).to("cuda"),
         "sample_mask": torch.tensor([1, 1]).to("cuda"),
-        "reference_policy_logprobs": torch.zeros((2 * batch_size, 4)).to("cuda"),
+        "reference_policy_logprobs": torch.zeros((2 * batch_size, seq_len)).to("cuda"),
     }
 
-    next_token_logits = torch.tensor(
-        [
-            [
-                [0.0] * vocab_size,
-                [0.0] * vocab_size,
-                [0.0] * vocab_size,
-                [0.0] * vocab_size,
-            ],
-            [
-                [0.0] * vocab_size,
-                [0.0] * vocab_size,
-                [0.0] * vocab_size,
-                [0.0] * vocab_size,
-            ],
-        ]
-    ).to("cuda")
-
+    next_token_logits = torch.zeros((2 * batch_size, seq_len, vocab_size)).to("cuda")
     return data, next_token_logits
 
 
@@ -122,7 +107,6 @@ def test_dpo_loss():
         vocab_size=vocab_size,
         batch_size=batch_size,
     )
-    print(f"dpo {next_token_logits=}")
     loss_fn = DPOLossFn(
         cfg={
             "reference_policy_kl_penalty": 0.0,
@@ -165,6 +149,8 @@ def test_dpo_loss():
         loss_fn_with_sft(next_token_logits, data)[0].cpu(),
         0.5 * expected_sft_loss + expected_preference_loss,
     )
+
+    ## TODO: test with a batch of varying sequence lengths
 
 
 def _setup_clipped_pg_test_data(batch_size=1, seq_len=4, vocab_size=8, device="cuda"):
