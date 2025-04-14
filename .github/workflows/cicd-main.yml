@@ -128,7 +128,7 @@ jobs:
         run: |
           pip install uv
           cd docs/
-          uv run --group docs sphinx-build . _build/html
+          uv run --group docs sphinx-build --fail-on-warning --builder html . _build/html
 
   build-container:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
