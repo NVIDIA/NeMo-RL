@@ -955,7 +955,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         # Shard and replicate the batch
         shards = self.dp_size
         sharded_data = data.shard_by_batch_size(
-            shards, batch_size=self.cfg["train_global_batch_size"]
+            shards, batch_size=gbs or self.cfg["train_global_batch_size"]
         )
 
         # Train each shard in parallel
