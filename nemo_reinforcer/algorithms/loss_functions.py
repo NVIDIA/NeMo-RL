@@ -152,7 +152,7 @@ class NLLLoss(LossFunction):
         self,
         next_token_logits: torch.Tensor,
         data: BatchedDataDict,
-        reduce_across_batch: bool = True,
+        average_log_probs: bool = False,
     ) -> Tuple[torch.Tensor, dict]:
         # logits shape: [batch_size, seq_len, vocab_size]
         # Get the next token logits for each position
@@ -174,11 +174,11 @@ class NLLLoss(LossFunction):
         num_unmasked_tokens = torch.sum(mask, -1)
         num_unmasked_tokens[num_unmasked_tokens == 0] = 1
 
-        if reduce_across_batch:
+        if average_log_probs:
             num_unmasked_tokens = num_unmasked_tokens.sum().item()
             loss = (-torch.sum(token_logprobs * mask) / num_unmasked_tokens).item()
         else:
-            loss = -torch.sum(token_logprobs * mask, dim=-1) / num_unmasked_tokens
+            loss = -torch.sum(token_logprobs * mask, dim=-1)
 
         return loss, {
             "loss": loss,
@@ -191,6 +191,8 @@ class DPOLossConfig(TypedDict):
     reference_policy_kl_penalty: float
     preference_loss_weight: float = 1.0
     sft_loss_weight: float = 0.0
+    preference_average_log_probs: bool = False
+    sft_average_log_probs: bool = False
 
 
 class DPOLossDataDict(TypedDict):
@@ -207,6 +209,8 @@ class DPOLossFn(LossFunction):
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.preference_loss_weight = cfg["preference_loss_weight"]
         self.sft_loss_weight = cfg["sft_loss_weight"]
+        self.preference_average_log_probs = cfg["preference_average_log_probs"]
+        self.sft_average_log_probs = cfg["sft_average_log_probs"]
         self.sft_loss = NLLLoss()
 
     def split_output_tensor(self, tensor: torch.Tensor):
@@ -234,21 +238,10 @@ class DPOLossFn(LossFunction):
         ref_logprobs = data["reference_policy_logprobs"][:, :-1]
 
         diff = (token_logprobs - ref_logprobs) * token_mask
-        ## TODO: provide the option to average over tokens
+
         rewards = diff.sum(-1)
-
-        ## TODO: make configurable. For now, do not average across sequences
-        ## --> matches Aligner's default
-        #if average_log_probs:
-        #    # need to guard against divide by zero in case labels are all -100
-        #    num_tokens_for_loss = token_mask.sum(-1)
-        #    rewards = rewards / num_tokens_for_loss.clamp(min=1)
-
-        ## ignore the batches whose sample_mask is 0
-        #rewards = rewards[data["sample_mask"] == 1]
-
-        #if len(rewards) == 0:
-        #    return torch.tensor(0.0), torch.tensor(0.0)
+        if self.preference_average_log_probs:
+            rewards = rewards / mask.sum(-1).clamp(min=1)
 
         rewards_chosen, rewards_rejected = self.split_output_tensor(rewards)
         rewards_delta = rewards_chosen - rewards_rejected
@@ -263,16 +256,9 @@ class DPOLossFn(LossFunction):
         sft_loss_chosen = torch.tensor(0.0)
         if self.sft_loss_weight > 0:
             sft_loss, _ = self.sft_loss(
-                next_token_logits, data, reduce_across_batch=False
+                next_token_logits, data, average_log_probs=self.sft_average_log_probs
             )
-            ## ignore the batches whose sample_mask is 0
-            #sft_loss = sft_loss[data["sample_mask"] == 1]
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
-
-            #if len(sft_loss_chosen) == 0:
-            #    sft_loss_chosen = torch.tensor(0.0)
-
-            ## average over the batch dimension
             sft_loss_chosen = sft_loss_chosen.mean(0)
 
         preference_loss, accuracy = self.preference_loss(next_token_logits, data)

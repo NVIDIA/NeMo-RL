@@ -1,5 +1,6 @@
 # DPO Algorithm Configuration
 dpo:
+  max_num_epochs: 1
   max_num_steps: 500
   val_period: 5
   val_batches: 8
@@ -9,11 +10,12 @@ dpo:
   seed: 42
 
   reference_policy_kl_penalty: 0.1
-  ## TODO: support below
-  #preference_average_log_probs: False # whether normalizing log probs according to the sequence length in preference_loss
-  #sft_average_log_probs: ${.preference_average_log_probs} # whether normalizing log probs according to the sequence length in sft_loss
-  #gt_reward_scale: 1. # the scale of the rewards in RPO
+  preference_average_log_probs: False # whether normalizing log probs according to the sequence length in preference_loss
+  sft_average_log_probs: ${.preference_average_log_probs} # whether normalizing log probs according to the sequence length in sft_loss
+
+  ## TODO(@ashors) support other loss functions
   #preference_loss: dpo # the preference loss, we support dpo, ipo, rpo_sq, rpo_bwd_kl, rpo_fwd_kl
+  #gt_reward_scale: 1. # the scale of the rewards in RPO
   preference_loss_weight: 1 # the coefficient of the preference loss
   sft_loss_weight: 0 # the coefficient of the SFT loss
 

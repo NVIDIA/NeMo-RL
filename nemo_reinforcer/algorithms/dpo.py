@@ -56,6 +56,7 @@ def _default_dpo_save_state() -> DPOSaveState:
 
 
 class DPOConfig(TypedDict):
+    max_num_epochs: int
     max_num_steps: int
     val_period: int
     val_batches: int
@@ -65,11 +66,11 @@ class DPOConfig(TypedDict):
     seed: int
 
     reference_policy_kl_penalty: float
-    ## TODO: support below
-    # preference_average_log_probs: False
-    # sft_average_log_probs: ${.preference_average_log_probs}
-    # gt_reward_scale: 1.
-    # preference_loss: dpo
+    preference_average_log_probs: bool
+    sft_average_log_probs: bool
+    ## TODO(@ashors) support other loss functions
+    # preference_loss: str
+    # gt_reward_scale: float
     preference_loss_weight: float
     sft_loss_weight: float
 
@@ -359,102 +360,105 @@ def dpo_train(
 
     policy.prepare_for_training()
 
-    for batch in augment_dataloader(train_dataloader, policy, master_config):
-        print(f"\n{'=' * 25} Step {step + 1}/{len(train_dataloader)} {'=' * 25}")
+    for epoch in range(master_config["dpo"]["max_num_epochs"]):
+        for batch in augment_dataloader(train_dataloader, policy, master_config):
+            print(f"\n{'=' * 25} Step {step + 1}/{len(train_dataloader)} {'=' * 25}")
 
-        with timer.time("total_step_time"):
-            print("▶ Taking a training step...")
-            train_results = policy.train(
-                batch,
-                loss_fn,
-                eval_mode=False,
-                gbs=master_config["policy"]["train_global_batch_size"] * 2,
-                mbs=master_config["policy"]["train_micro_batch_size"] * 2,
-            )
-
-            # Run validation if it's a validation step
-            if val_period > 0 and (step + 1) % val_period == 0:
-                val_metrics, validation_timings = validate(
-                    policy,
-                    val_dataloader,
-                    tokenizer,
+            with timer.time("total_step_time"):
+                print("▶ Taking a training step...")
+                train_results = policy.train(
+                    batch,
                     loss_fn,
-                    step=step + 1,
-                    master_config=master_config,
-                    dpo_task_spec=dpo_task_spec,
-                    val_batches=dpo_config["val_batches"],
-                    val_batch_size=dpo_config["val_global_batch_size"],
-                    val_mbs=dpo_config["val_micro_batch_size"],
+                    eval_mode=False,
+                    gbs=master_config["policy"]["train_global_batch_size"] * 2,
+                    mbs=master_config["policy"]["train_micro_batch_size"] * 2,
                 )
-                logger.log_metrics(
-                    validation_timings, step + 1, prefix="timing/validation"
-                )
-                logger.log_metrics(val_metrics, step + 1, prefix="validation")
 
-            ## Checkpointing
-            dpo_save_state["consumed_samples"] += master_config["policy"][
-                "train_global_batch_size"
-            ]
-            if (
-                master_config["checkpointing"]["enabled"]
-                and (step + 1) % master_config["checkpointing"]["save_period"] == 0
-            ):  # +1 because step is 0-indexed
-                dpo_save_state["step"] = step + 1
-                dpo_save_state["val_loss"] = val_metrics["loss"]
-                with timer.time("checkpointing"):
-                    print(f"Saving checkpoint for step {step + 1}...")
-                    is_last_checkpoint = (
-                        min(
-                            len(train_dataloader), master_config["dpo"]["max_num_steps"]
+                # Run validation if it's a validation step
+                if val_period > 0 and (step + 1) % val_period == 0:
+                    val_metrics, validation_timings = validate(
+                        policy,
+                        val_dataloader,
+                        tokenizer,
+                        loss_fn,
+                        step=step + 1,
+                        master_config=master_config,
+                        dpo_task_spec=dpo_task_spec,
+                        val_batches=dpo_config["val_batches"],
+                        val_batch_size=dpo_config["val_global_batch_size"],
+                        val_mbs=dpo_config["val_micro_batch_size"],
+                    )
+                    logger.log_metrics(
+                        validation_timings, step + 1, prefix="timing/validation"
+                    )
+                    logger.log_metrics(val_metrics, step + 1, prefix="validation")
+
+                ## Checkpointing
+                dpo_save_state["consumed_samples"] += master_config["policy"][
+                    "train_global_batch_size"
+                ]
+                if (
+                    master_config["checkpointing"]["enabled"]
+                    and (step + 1) % master_config["checkpointing"]["save_period"] == 0
+                ):  # +1 because step is 0-indexed
+                    dpo_save_state["step"] = step + 1
+                    dpo_save_state["val_loss"] = val_metrics["loss"]
+                    with timer.time("checkpointing"):
+                        print(f"Saving checkpoint for step {step + 1}...")
+                        is_last_checkpoint = (
+                            min(
+                                len(train_dataloader)
+                                * master_config["dpo"]["max_num_epochs"],
+                                master_config["dpo"]["max_num_steps"],
+                            )
+                            - (step + 1)
+                            < master_config["checkpointing"]["save_period"]
                         )
-                        - (step + 1)
-                        < master_config["checkpointing"]["save_period"]
-                    )
-                    checkpoint_path = checkpointer.init_tmp_checkpoint(
-                        step + 1, dpo_save_state, master_config
-                    )
-                    ## TODO: move checkpointing logic elsewhere?
-                    policy.save_checkpoint(
-                        os.path.join(checkpoint_path, "policy.pt"),
-                        os.path.join(checkpoint_path, "policy_optimizer.pt"),
-                        save_hf=is_last_checkpoint,
-                    )
-                    torch.save(
-                        train_dataloader.state_dict(),
-                        os.path.join(checkpoint_path, "train_dataloader.pt"),
-                    )
-                    checkpointer.finalize_checkpoint(checkpoint_path)
+                        checkpoint_path = checkpointer.init_tmp_checkpoint(
+                            step + 1, dpo_save_state, master_config
+                        )
+                        ## TODO: move checkpointing logic elsewhere?
+                        policy.save_checkpoint(
+                            os.path.join(checkpoint_path, "policy.pt"),
+                            os.path.join(checkpoint_path, "policy_optimizer.pt"),
+                            save_hf=is_last_checkpoint,
+                        )
+                        torch.save(
+                            train_dataloader.state_dict(),
+                            os.path.join(checkpoint_path, "train_dataloader.pt"),
+                        )
+                        checkpointer.finalize_checkpoint(checkpoint_path)
 
-        ## TODO: add more DPO metrics
-        ## accuracy, sft loss, preference loss, etc.
-        losses = train_results["loss"]
-        metrics = {
-            "loss": train_results["loss"].numpy(),
-        }
-        metrics.update(train_results["all_mb_metrics"])
-        metrics = {k: np.mean(v).item() for k, v in metrics.items()}
-        timing_metrics = timer.get_timing_metrics(reduction_op="sum")
+            ## TODO: add more DPO metrics
+            ## accuracy, sft loss, preference loss, etc.
+            losses = train_results["loss"]
+            metrics = {
+                "loss": train_results["loss"].numpy(),
+            }
+            metrics.update(train_results["all_mb_metrics"])
+            metrics = {k: np.mean(v).item() for k, v in metrics.items()}
+            timing_metrics = timer.get_timing_metrics(reduction_op="sum")
 
-        print("\n📊 Training Results:")
-        print(f"  • Loss: {float(metrics['loss']):.4f}")
-        print("\n⏱️  Timing:")
-        # Display total time first, separately
-        total_time = timing_metrics.get("total_step_time", 0)
-        print(f"  • Total step time: {total_time:.2f}s")
+            print("\n📊 Training Results:")
+            print(f"  • Loss: {float(metrics['loss']):.4f}")
+            print("\n⏱️  Timing:")
+            # Display total time first, separately
+            total_time = timing_metrics.get("total_step_time", 0)
+            print(f"  • Total step time: {total_time:.2f}s")
 
-        # Display all other timing metrics (if any)
-        for k, v in sorted(
-            timing_metrics.items(), key=lambda item: item[1], reverse=True
-        ):
-            if k != "total_step_time":
-                percent = (v / total_time * 100) if total_time > 0 else 0
-                print(f"  • {k}: {v:.2f}s ({percent:.1f}%)")
+            # Display all other timing metrics (if any)
+            for k, v in sorted(
+                timing_metrics.items(), key=lambda item: item[1], reverse=True
+            ):
+                if k != "total_step_time":
+                    percent = (v / total_time * 100) if total_time > 0 else 0
+                    print(f"  • {k}: {v:.2f}s ({percent:.1f}%)")
 
-        logger.log_metrics(metrics, step + 1, prefix="train")
-        logger.log_metrics(timing_metrics, step + 1, prefix="timing/train")
+            logger.log_metrics(metrics, step + 1, prefix="train")
+            logger.log_metrics(timing_metrics, step + 1, prefix="timing/train")
 
-        timer.reset()
-        step += 1
+            timer.reset()
+            step += 1
 
-        if step >= master_config["dpo"]["max_num_steps"]:
-            break
+            if step >= master_config["dpo"]["max_num_steps"]:
+                break
