@@ -21,6 +21,10 @@ from nemo_reinforcer.data.interfaces import (
     TaskDataProcessFnCallable,
     DatumSpec,
 )
+from nemo_reinforcer.data.llm_message_utils import (
+    add_dpo_loss_mask_to_message_log,
+    batched_message_log_to_flat_message,
+)
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 
 
@@ -181,12 +185,6 @@ def eval_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
         idx=idx,
     )
     return output
-
-
-from nemo_reinforcer.data.llm_message_utils import (
-    add_dpo_loss_mask_to_message_log,
-    batched_message_log_to_flat_message,
-)
 
 
 def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
