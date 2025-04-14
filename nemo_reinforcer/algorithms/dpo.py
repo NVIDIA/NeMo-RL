@@ -153,6 +153,7 @@ def setup(
         batch_size=policy_config["train_global_batch_size"],
         shuffle=True,
         collate_fn=partial(dpo_collate_fn, tokenizer=tokenizer),
+        drop_last=True,
     )
 
     if last_checkpoint_path is not None:
