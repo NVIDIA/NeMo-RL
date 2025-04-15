@@ -42,11 +42,13 @@ policy:
     temperature: 1.0
     top_p: 1.0
     top_k: null
+    stop_token_ids: null
+    stop_strings: null
     vllm_cfg:
       tensor_parallel_size: 1
       gpu_memory_utilization: 0.6
       max_model_len: ${policy.max_total_sequence_length}
-    
+
 cluster:
   gpus_per_node: 8
   num_nodes: 1
