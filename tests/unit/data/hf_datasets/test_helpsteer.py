@@ -45,6 +45,20 @@ def test_format_helpsteer3():
     assert result2["chosen_response"] == "The capital of France is Paris."
     assert result2["rejected_response"] == "The capital of France is London."
 
+    # Test case 3: no preference (overall_preference = 0)
+    data3 = {
+        "context": "What is the weather like?",
+        "response1": "It's sunny today.",
+        "response2": "The weather is sunny.",
+        "overall_preference": 0,
+    }
+    result3 = format_helpsteer3(data3)
+    assert result3["prompt"] == "What is the weather like?"
+    # When preference is 0, neither response is preferred, so
+    # response 1 is used for both chosen and rejected
+    assert result3["chosen_response"] == "It's sunny today."
+    assert result3["rejected_response"] == "It's sunny today."
+
 
 def test_helpsteer3_dataset_initialization():
     """Test that HelpSteer3Dataset initializes correctly."""
