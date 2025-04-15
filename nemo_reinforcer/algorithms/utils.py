@@ -118,9 +118,11 @@ def surpress_user_warnings(f):
 
 # need to surpress the masked tensor warnings from pytorch
 @surpress_user_warnings
-def masked_mean(values, mask, dim=None):
+def masked_mean(values, mask, dim=None, check_all_zero_mask=True):
     """Masks values with mask, and computes the mean of the values using the masked values."""
     if dim is None:
+        if check_all_zero_mask and mask.sum() == 0:
+            return values.sum() * 0
         return values[mask.bool()].mean()
     return as_masked_tensor(values, mask.bool()).mean(dim=dim).to_tensor(torch.nan)
 

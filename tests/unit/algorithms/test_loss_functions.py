@@ -386,3 +386,17 @@ def test_clipped_pg_loss_zero_mask():
 
     # Loss should be exactly zero
     torch.testing.assert_close(loss, torch.tensor(0.0, device=device))
+
+
+def test_masked_mean_all_zeros():
+    """Test masked_mean function with all zeros mask."""
+    values = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    mask = torch.zeros_like(values)
+
+    # With check_zero_mask=True (default)
+    result = masked_mean(values, mask)
+    assert torch.assert_allclose(result, torch.tensor(0.0))
+
+    # With check_zero_mask=False
+    result = masked_mean(values, mask, check_all_zero_mask=False)
+    assert torch.isnan(result)  # Should be nan when mask is all zeros
