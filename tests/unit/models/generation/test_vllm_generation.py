@@ -622,7 +622,7 @@ def test_vllm_generation_with_stop(cluster, test_input_data, tokenizer, is_eval)
 
         print("Creating HF policy...")
         hf_config = basic_hf_test_config.copy()
-        hf_policy = HfPolicy(cluster, hf_config)
+        hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print(f"refitting vllm policy...")
         ipc_handles = hf_policy.get_weights_ipc_handles()

@@ -591,7 +591,7 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
     )
 
     # Create policy
-    policy = HfPolicy(cluster=cluster, config=config)
+    policy = HfPolicy(cluster=cluster, config=config, tokenizer=tokenizer)
 
     # Call prepare_for_generation if available
     print("Preparing for generation...")
