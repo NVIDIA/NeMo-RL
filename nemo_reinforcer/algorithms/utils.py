@@ -159,7 +159,7 @@ def get_tokenizer(tokenizer_config: TokenizerConfig) -> AutoTokenizer:
     Examples:
         ```{doctest}
         >>> from transformers import AutoTokenizer
-        >>> from nemo_reinforcer.models.policy import TokenizerConfig
+        >>> from nemo_reinforcer.algorithms.utils import get_tokenizer
         >>> # not specifying a chat template uses the tokenizer's default
         >>> config = {"name": "meta-llama/Llama-3.2-1B-Instruct"}
         >>> tokenizer = get_tokenizer(config)
