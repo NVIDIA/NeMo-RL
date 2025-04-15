@@ -17,12 +17,11 @@ from tqdm import tqdm
 
 import numpy as np
 import torch
-from transformers import AutoTokenizer
 from torchdata.stateful_dataloader import StatefulDataLoader
 from nemo_reinforcer.algorithms.loss_functions import (
     DPOLossFn,
 )
-from nemo_reinforcer.algorithms.utils import set_seed
+from nemo_reinforcer.algorithms.utils import set_seed, get_tokenizer
 from nemo_reinforcer.data import DataConfig
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, dpo_collate_fn
 from nemo_reinforcer.data.interfaces import TaskDataSpec
@@ -145,7 +144,7 @@ def setup(
     #           Data
     # ==========================
     ## TODO: clean up
-    tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
+    tokenizer = get_tokenizer(policy_config["model_name"])
     train_dataloader = StatefulDataLoader(
         train_dataset,
         batch_size=policy_config["train_global_batch_size"],

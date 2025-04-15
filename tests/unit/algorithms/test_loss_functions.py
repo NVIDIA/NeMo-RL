@@ -150,7 +150,86 @@ def test_dpo_loss():
         0.5 * expected_sft_loss + expected_preference_loss,
     )
 
-    ## TODO: test with a batch of varying sequence lengths
+
+def test_dpo_loss_varying_sequence_lengths():
+    """Test DPO loss with varying sequence lengths and preference_average_log_probs=True."""
+    # Create DPO loss function with preference_average_log_probs=True
+    dpo_loss_fn_no_avg = DPOLossFn(
+        {
+            "reference_policy_kl_penalty": 0.1,
+            "preference_loss_weight": 1.0,
+            "sft_loss_weight": 0.5,
+            "preference_average_log_probs": False,
+            "sft_average_log_probs": False,
+        }
+    )
+    dpo_loss_fn_avg = DPOLossFn(
+        {
+            "reference_policy_kl_penalty": 0.1,
+            "preference_loss_weight": 1.0,
+            "sft_loss_weight": 0.5,
+            "preference_average_log_probs": True,
+            "sft_average_log_probs": True,
+        }
+    )
+
+    # Create test data with varying sequence lengths
+    # Batch size 4 (2 pairs of chosen/rejected)
+    # Sequence lengths: [3, 5, 4, 6]
+    batch_size = 4
+    max_seq_len = 6
+    vocab_size = 10
+
+    # Create input_ids with varying lengths
+    input_ids = torch.zeros((batch_size, max_seq_len), dtype=torch.long).to("cuda")
+    input_ids[0, :3] = torch.arange(3)  # length 3
+    input_ids[1, :5] = torch.arange(5)  # length 5
+    input_ids[2, :4] = torch.arange(4)  # length 4
+    input_ids[3, :6] = torch.arange(6)  # length 6
+
+    # Create token masks based on sequence lengths
+    token_mask = torch.zeros((batch_size, max_seq_len)).to("cuda")
+    token_mask[0, :3] = 1.0
+    token_mask[1, :5] = 1.0
+    token_mask[2, :4] = 1.0
+    token_mask[3, :6] = 1.0
+
+    # Create sample mask (all valid)
+    sample_mask = torch.ones(batch_size).to("cuda")
+
+    # Create reference policy logprobs
+    # Make chosen responses have slightly higher logprobs than rejected
+    reference_policy_logprobs = torch.zeros((batch_size, max_seq_len)).to("cuda")
+    # Create next token logits
+    next_token_logits = torch.zeros((batch_size, max_seq_len, vocab_size)).to("cuda")
+
+    # Create batched data dictionary
+    data = BatchedDataDict(
+        {
+            "input_ids": input_ids,
+            "reference_policy_logprobs": reference_policy_logprobs,
+            "token_mask": token_mask,
+            "sample_mask": sample_mask,
+        }
+    )
+
+    # Compute loss
+    loss, metrics = dpo_loss_fn_no_avg(next_token_logits, data)
+    loss_avg, metrics_avg = dpo_loss_fn_avg(next_token_logits, data)
+
+    num_unmasked_tokens = token_mask[:, 1:][::2].sum().item()
+    logprobs = torch.nn.functional.log_softmax(next_token_logits[:, 1:], dim=-1)
+    token_logprobs = logprobs.gather(
+        dim=-1, index=input_ids[:, 1:].unsqueeze(-1)
+    ).squeeze(-1)
+    expected_per_token_sft_loss = -(token_logprobs[::2] * token_mask[:, 1:][::2])
+    ## sum across tokens in an example, average across examples
+    expected_sft_loss_no_avg = expected_per_token_sft_loss.sum(-1).mean()
+    ## average across tokens in an example, then average across examples
+    expected_sft_loss_avg = expected_per_token_sft_loss.sum() / num_unmasked_tokens
+
+    assert torch.isclose(torch.tensor(metrics["sft_loss"]), expected_sft_loss_no_avg)
+    assert torch.isclose(torch.tensor(metrics_avg["sft_loss"]), expected_sft_loss_avg)
 
 
 def _setup_clipped_pg_test_data(batch_size=1, seq_len=4, vocab_size=8, device="cuda"):
