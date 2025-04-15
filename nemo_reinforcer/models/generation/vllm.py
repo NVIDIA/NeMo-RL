@@ -83,25 +83,26 @@ class VllmGenerationWorker:
         init_kwargs = {}
         env_vars = {}
 
-        node_idx = bundle_indices[0]
-        bundle_indices = bundle_indices[1]
+        local_bundle_indices = None
+        if bundle_indices is not None:
+            node_idx = bundle_indices[0]
+            local_bundle_indices = bundle_indices[1]
+            init_kwargs["bundle_indices"] = local_bundle_indices
 
-        init_kwargs["bundle_indices"] = bundle_indices
-
-        """
-        compute a unique seed from the node_idx and bundle_indices:
-        node_idx = 0, bundle_indices = [0, 1, 2, 3] -> seed = 0*1024 + 0
-        node_idx = 0, bundle_indices = [4, 5, 6, 7] -> seed = 0*1024 + 1
-        node_idx = 1, bundle_indices = [0, 1, 2, 3] -> seed = 1*1024 + 0
-        node_idx = 1, bundle_indices = [4, 5, 6, 7] -> seed = 1*1024 + 1
-        """
-        bundle_id = bundle_indices[0] // len(bundle_indices)
-        seed = node_idx * 1024 + bundle_id
-        init_kwargs["seed"] = seed
+            """
+            compute a unique seed from the node_idx and bundle_indices:
+            node_idx = 0, bundle_indices = [0, 1, 2, 3] -> seed = 0*1024 + 0
+            node_idx = 0, bundle_indices = [4, 5, 6, 7] -> seed = 0*1024 + 1
+            node_idx = 1, bundle_indices = [0, 1, 2, 3] -> seed = 1*1024 + 0
+            node_idx = 1, bundle_indices = [4, 5, 6, 7] -> seed = 1*1024 + 1
+            """
+            bundle_id = local_bundle_indices[0] // len(local_bundle_indices)
+            seed = node_idx * 1024 + bundle_id
+            init_kwargs["seed"] = seed
 
         is_part_of_tp_workers = (
-            bundle_indices is not None and len(bundle_indices) > 1
-        ) or bundle_indices is None
+            local_bundle_indices is not None and len(local_bundle_indices) > 1
+        ) or local_bundle_indices is None
         if is_part_of_tp_workers:
             # Ray + vllm likes to manage GPU assignment internally
             resources["num_gpus"] = 0
