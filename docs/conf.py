@@ -53,7 +53,7 @@ myst_enable_extensions = [
     "fieldlist",  # Enables field lists for metadata like :author: Name
     "tasklist",  # Adds support for GitHub-style task lists with [ ] and [x]
 ]
-myst_heading_anchors = 3  # Generates anchor links for headings up to level 3
+myst_heading_anchors = 4  # Generates anchor links for headings up to level 4
 
 # -- Options for Autodoc2 ---------------------------------------------------
 sys.path.insert(0, os.path.abspath(".."))
@@ -67,7 +67,7 @@ autodoc2_output_dir = "apidocs"  # Output directory for autodoc2 (relative to do
 # render google style docstrings.
 # Related Issue: https://github.com/sphinx-extensions2/sphinx-autodoc2/issues/33
 autodoc2_docstring_parser_regexes = [
-    (r".*", "autodoc2_docstrings_parser"),
+    (r".*", "docs.autodoc2_docstrings_parser"),
 ]
 
 # -- Options for HTML output -------------------------------------------------

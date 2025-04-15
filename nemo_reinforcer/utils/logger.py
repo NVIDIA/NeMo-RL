@@ -589,6 +589,7 @@ def flatten_dict(d: Dict[str, Any], sep: str = ".") -> Dict[str, Any]:
 
     Examples:
         ```{doctest}
+        >>> from nemo_reinforcer.utils.logger import flatten_dict
         >>> flatten_dict({"a": 1, "b": {"c": 2}})
         {'a': 1, 'b.c': 2}
 
