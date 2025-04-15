@@ -30,8 +30,13 @@ checkpointing:
 policy:
   model_name: "meta-llama/Llama-3.2-1B-Instruct"
   tokenizer_name: "meta-llama/Llama-3.2-1B-Instruct"
+
+  # number of preference samples per batch
+  # each preference sample corresponds to a pair of chosen and rejected responses
+  # so the actual batch size processed by the model is train_global_batch_size * 2
   train_global_batch_size: 128
   train_micro_batch_size: 2
+
   ## TODO(@ashors) support
   #logprob_batch_size: ${policy.train_micro_batch_size}
   max_total_sequence_length: 1024
