@@ -217,7 +217,6 @@ def main():
         loss_fn,
         master_config,
         logger,
-        dpo_task_spec,
         checkpointer,
         dpo_save_state,
     )
