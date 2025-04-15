@@ -215,7 +215,7 @@ def convert_dcp_to_hf(
 ):
     """Convert a Torch DCP checkpoint to a Hugging Face checkpoint.
 
-    This does not an optimized utility. If checkpoint is too large, consider saving DCP during training
+    This is not an optimized utility. If checkpoint is too large, consider saving DCP during training
     and using this utility to convert to HF format.
 
     Args:
