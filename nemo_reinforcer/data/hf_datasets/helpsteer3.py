@@ -22,7 +22,7 @@ def format_helpsteer3(data):
 
     return {
         "prompt": data["context"],
-        "chosen_response": response_1 if overall_preference < 0 else response_2,
+        "chosen_response": response_1 if overall_preference <= 0 else response_2,
         "rejected_response": response_2 if overall_preference < 0 else response_1,
     }
 

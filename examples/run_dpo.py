@@ -15,6 +15,7 @@
 import argparse
 import os
 import pprint
+import warnings
 from typing import Dict, Any
 
 from omegaconf import OmegaConf
@@ -102,6 +103,9 @@ def dpo_preprocessor(
 
     loss_multiplier = 1.0
     if max(length_chosen, length_rejected) > max_seq_length:
+        warnings.warn(
+            f"Sequence length {max(length_chosen, length_rejected)} exceeds max_seq_length {max_seq_length}. Ignoring example."
+        )
         # make smaller and mask out
         for message in message_log_chosen:
             message["token_ids"] = message["token_ids"][

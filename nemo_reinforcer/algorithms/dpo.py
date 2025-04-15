@@ -67,6 +67,7 @@ class DPOConfig(TypedDict):
     preference_average_log_probs: bool
     sft_average_log_probs: bool
     ## TODO(@ashors) support other loss functions
+    ## https://github.com/NVIDIA/reinforcer/issues/193
     # preference_loss: str
     # gt_reward_scale: float
     preference_loss_weight: float
@@ -87,7 +88,7 @@ class MasterConfig(TypedDict):
 # =======================================================
 def setup(
     master_config: MasterConfig,
-    train_dataset: AllTaskProcessedDataset,  ## TODO: figure out dataset stuff for DPO
+    train_dataset: AllTaskProcessedDataset,
     val_dataset: AllTaskProcessedDataset,
 ) -> Tuple[
     HfPolicy,
@@ -249,7 +250,6 @@ def validate(
     loss_fn,
     step: int,
     master_config: MasterConfig,
-    dpo_task_spec: TaskDataSpec,
     val_batches: int,
     val_batch_size: int,
     val_mbs: int,
@@ -263,9 +263,6 @@ def validate(
 
     with timer.time("total_validation_time"):
         print(f"▶ Starting validation at step {step}...")
-
-        # Show a progress indicator for validation
-        # val_total = len(val_dataloader)
 
         for batch_idx, val_batch in enumerate(
             augment_dataloader(val_dataloader, policy, master_config)
@@ -318,7 +315,6 @@ def dpo_train(
     loss_fn,
     master_config,
     logger,
-    dpo_task_spec,  ## TODO: do we need?
     checkpointer,
     dpo_save_state,
 ):
@@ -351,7 +347,6 @@ def dpo_train(
             loss_fn,
             step=0,
             master_config=master_config,
-            dpo_task_spec=dpo_task_spec,
             val_batches=dpo_config["val_batches"],
             val_batch_size=dpo_config["val_global_batch_size"],
             val_mbs=dpo_config["val_micro_batch_size"],
@@ -376,6 +371,8 @@ def dpo_train(
                     batch,
                     loss_fn,
                     eval_mode=False,
+                    ## NOTE: we double the batch size here because each preference example corresponds to a pair of
+                    ## examples, chosen and rejected, and the pair needs to be processed as part of the same microbatch.
                     gbs=master_config["policy"]["train_global_batch_size"] * 2,
                     mbs=master_config["policy"]["train_micro_batch_size"] * 2,
                 )
@@ -389,7 +386,6 @@ def dpo_train(
                         loss_fn,
                         step=total_steps + 1,
                         master_config=master_config,
-                        dpo_task_spec=dpo_task_spec,
                         val_batches=dpo_config["val_batches"],
                         val_batch_size=dpo_config["val_global_batch_size"],
                         val_mbs=dpo_config["val_micro_batch_size"],
