@@ -118,17 +118,18 @@ def configure_generation_config(
     """Apply specific configurations to generation config."""
     # tokenizer setting
     config["pad_token_id"] = tokenizer.pad_token_id
-    # When https://github.com/NVIDIA/reinforcer/issues/57 is fixed, we should update stop_token_ids below.
-    config["stop_token_ids"] = [tokenizer.eos_token_id]
+    if config["stop_token_ids"] is None:
+        config["stop_token_ids"] = [tokenizer.eos_token_id]
 
     # vllm setting
     if config["backend"] == "vllm":
-        if is_eval:
+        # set load_format
+        config["vllm_cfg"]["load_format"] = "auto" if is_eval else "dummy"
+        # set skip_tokenizer_init
+        if is_eval or config["stop_strings"] is not None:
             config["vllm_cfg"]["skip_tokenizer_init"] = False
-            config["vllm_cfg"]["load_format"] = "auto"
         else:
             config["vllm_cfg"]["skip_tokenizer_init"] = True
-            config["vllm_cfg"]["load_format"] = "dummy"
 
     return config
 
