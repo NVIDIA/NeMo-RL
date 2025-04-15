@@ -13,12 +13,10 @@
 # limitations under the License.
 
 import argparse
-import os
 import json
-
-from nemo_reinforcer.distributed.virtual_cluster import init_ray, RayVirtualCluster
-from nemo_reinforcer.models.policy.hf_policy import HfPolicy
-from nemo_reinforcer.utils.config import load_config
+import os
+import torch
+from nemo_reinforcer.utils.native_checkpoint import convert_dcp_to_hf
 
 
 def parse_args():
@@ -51,41 +49,22 @@ def main():
     with open(args.config, "r") as f:
         config = json.load(f)
 
-    dcp_ckpt = args.dcp_ckpt_path
-    hf_ckpt = args.hf_ckpt_path
+    model_name_or_path = config["policy"]["model_name"]
+    # TODO: After the following PR gets merged:
+    # https://github.com/NVIDIA/reinforcer/pull/148/files
+    # tokenizer should be copied from policy/tokenizer/* instead of relying on the model name
+    # We can expose a arg at the top level --tokenizer_path to plumb that through.
+    # This is more stable than relying on the current NeMo-RL get_tokenizer() which can
+    # change release to release.
+    tokenizer_name_or_path = config["policy"]["model_name"]
 
-    # Extract individual configs for easier access
-    policy_config = config["policy"]
-    cluster_config = config["cluster"]
-
-    init_ray()
-
-    cluster = RayVirtualCluster(
-        name="convert_cluster",
-        bundle_ct_per_node_list=[cluster_config["gpus_per_node"]]
-        * cluster_config["num_nodes"],
-        use_gpus=True,
-        num_gpus_per_node=cluster_config["gpus_per_node"],
-        max_colocated_worker_groups=1,
+    hf_ckpt = convert_dcp_to_hf(
+        dcp_ckpt_path=args.dcp_ckpt_path,
+        hf_ckpt_path=args.hf_ckpt_path,
+        model_name_or_path=model_name_or_path,
+        tokenizer_name_or_path=tokenizer_name_or_path,
     )
-
-    policy = HfPolicy(
-        cluster=cluster,
-        config=policy_config,
-        weights_path=dcp_ckpt,
-        init_optimizer=False,
-    )
-
-    policy.save_checkpoint(
-        weights_path=os.path.abspath(hf_ckpt),
-        save_hf=True,
-        save_torch_dist=False,
-    )
-
-    print(f"Saved HF checkpoint to: {hf_ckpt}-hf")
-
-    cluster.shutdown()
-    policy.worker_group.shutdown()
+    print(f"Saved HF checkpoint to: {hf_ckpt}")
 
 
 if __name__ == "__main__":
