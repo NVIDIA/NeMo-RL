@@ -91,7 +91,7 @@ class ClippedPGLossFn(LossFunction):
         mask = token_mask * sample_mask.unsqueeze(-1)
 
         lp_error = torch.abs(generation_logprobs - prev_logprobs)  # noqa: F841  (precommit ignore for now)
-        mult_prob_error = masked_mean(lp_error, mask).item()
+        mult_prob_error = masked_mean(torch.exp(lp_error), mask).item()
 
         next_token_logits = next_token_logits[:, :-1]  # Remove last position's logits
         next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
