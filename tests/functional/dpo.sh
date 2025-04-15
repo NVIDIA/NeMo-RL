@@ -32,7 +32,6 @@ python -u $PROJECT_ROOT/examples/run_dpo.py \
 cd $SCRIPT_DIR
 python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
-## TODO: add loss check once config is finalized
-#python check_metrics.py $JSON_METRICS \
-#  'data["train/loss"]["9"] < 1500' \
+python check_metrics.py $JSON_METRICS \
+  'data["train/loss"]["4"] < 0.694' \
 

@@ -308,9 +308,14 @@ class DPOLossFn(LossFunction):
         rewards_chosen, rewards_rejected = self.split_output_tensor(rewards)
         rewards_delta = rewards_chosen - rewards_rejected
 
-        return -torch.nn.functional.logsigmoid(
-            self.reference_policy_kl_penalty * rewards_delta
-        ).mean(0), (rewards_chosen > rewards_rejected).float().mean(0)
+        return (
+            -torch.nn.functional.logsigmoid(
+                self.reference_policy_kl_penalty * rewards_delta
+            ).mean(0),
+            (rewards_chosen > rewards_rejected).float().mean(0),
+            rewards_chosen.mean(),
+            rewards_rejected.mean(),
+        )
 
     def __call__(
         self, next_token_logits: torch.Tensor, data: BatchedDataDict[DPOLossDataDict]
@@ -326,7 +331,12 @@ class DPOLossFn(LossFunction):
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
             sft_loss_chosen = sft_loss_chosen.mean(0)
 
-        preference_loss, accuracy = self.preference_loss(next_token_logits, data)
+        (
+            preference_loss,
+            accuracy,
+            rewards_chosen_mean,
+            rewards_rejected_mean,
+        ) = self.preference_loss(next_token_logits, data)
 
         dpo_loss = (
             self.sft_loss_weight * sft_loss_chosen
@@ -338,4 +348,6 @@ class DPOLossFn(LossFunction):
             "sft_loss": sft_loss_chosen.item(),
             "preference_loss": preference_loss.item(),
             "accuracy": accuracy.item(),
+            "rewards_chosen_mean": rewards_chosen_mean.item(),
+            "rewards_rejected_mean": rewards_rejected_mean.item(),
         }

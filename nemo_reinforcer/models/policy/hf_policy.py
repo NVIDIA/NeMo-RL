@@ -449,7 +449,6 @@ class HfPolicyWorker:
         On exit: Restores original references and re-flips cuda/cpu
 
         """
-        # yield
         try:
             # Save original references
             original_model = self.model
@@ -828,14 +827,12 @@ class HfPolicyWorker:
         )
 
     def move_to_cpu(self, model):
-        ## this is the slowest part
         for param in model.parameters():
             param.data = param.data.to("cpu", non_blocking=True, copy=True)
 
         for buffer in model.buffers():
             buffer.data = buffer.data.to("cpu", non_blocking=True, copy=True)
 
-        ## commenting this out improves perf by 3x
         if hasattr(model, "_fsdp_wrapped_module"):
             model._fsdp_wrapped_module.to("cpu")
         return model

@@ -217,7 +217,6 @@ def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
         message_log=message_log,
         length=length,
         loss_multiplier=loss_multiplier,
-        # extra_env_info=extra_env_info,
         task_name=task_names,
         idx=idx,
         batch_max_length=batch_max_length,

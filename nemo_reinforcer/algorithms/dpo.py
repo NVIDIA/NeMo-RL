@@ -188,10 +188,10 @@ def setup(
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
-        weights_path=Path(last_checkpoint_path) / "policy.pt"
+        weights_path=Path(last_checkpoint_path) / "policy" / "weights"
         if last_checkpoint_path
         else None,
-        optimizer_path=Path(last_checkpoint_path) / "policy_optimizer.pt"
+        optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
         if last_checkpoint_path
         else None,
         init_optimizer=True,
@@ -226,9 +226,10 @@ def augment_dataloader(dataloader, policy, master_config):
             ## append ref policy logprobs to batch
             logprobs = policy.get_reference_policy_logprobs(
                 batch,
-                ## TODO: make more robust
                 micro_batch_size=master_config["policy"]["train_micro_batch_size"] * 2,
             )["reference_logprobs"].to("cpu")
+            ## want logprobs for batch to correspond to the log probabilities of the next tokens
+            ## so we roll the logprobs to the left by one
             batch["reference_policy_logprobs"] = torch.roll(logprobs, -1, dims=-1)
 
             yield batch
@@ -277,7 +278,6 @@ def validate(
                 mbs=val_mbs * 2,
             )
 
-            ## TODO: this should already be averaged across microbatches.. why isn't it?
             val_metrics = {
                 "loss": val_results["loss"].numpy(),
             }
