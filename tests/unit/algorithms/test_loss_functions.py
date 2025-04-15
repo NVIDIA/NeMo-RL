@@ -439,7 +439,7 @@ def test_clipped_pg_loss_zero_mask():
     torch.testing.assert_close(loss, torch.tensor(0.0, device=device))
 
 
-def test_clipped_pg_loss_online_kl_importance_sampling():
+def test_clipped_pg_loss_on_policy_kl_importance_sampling():
     """Tests PPO loss with KL penalty and importance sampling enabled."""
     if not torch.cuda.is_available():
         pytest.skip("No GPU available")
