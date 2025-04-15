@@ -91,7 +91,9 @@ class ClippedPGLossFn(LossFunction):
         mask = token_mask * sample_mask.unsqueeze(-1)
 
         lp_error = torch.abs(generation_logprobs - prev_logprobs)  # noqa: F841  (precommit ignore for now)
-        mult_prob_error = ((torch.exp(lp_error) * mask).sum() / mask.sum()).item()
+        mult_prob_error = (
+            (torch.exp(lp_error) * mask).sum() / (mask.sum() + 1e-10)
+        ).item()
 
         next_token_logits = next_token_logits[:, :-1]  # Remove last position's logits
         next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
@@ -127,13 +129,14 @@ class ClippedPGLossFn(LossFunction):
         if mask.sum() > 0:
             actor_loss = masked_mean(torch.max(loss1, loss2), mask)
             loss = actor_loss + kl
+            with torch.no_grad():
+                probs_ratio = masked_mean(ratios.detach(), mask).item()
+                probs_ratio_clamped = masked_mean(ratios_clamped.detach(), mask).item()
         else:
             # disable this update since there are no valid tokens
             loss = loss1.view(-1)[0] * 0
-
-        with torch.no_grad():
-            probs_ratio = masked_mean(ratios.detach(), mask).item()
-            probs_ratio_clamped = masked_mean(ratios_clamped.detach(), mask).item()
+            probs_ratio = 0
+            probs_ratio_clamped = 0
 
         return (
             loss,
