@@ -393,10 +393,18 @@ def test_masked_mean_all_zeros():
     values = torch.tensor([1.0, 2.0, 3.0, 4.0])
     mask = torch.zeros_like(values)
 
-    # With check_zero_mask=True (default)
+    # All zeros mask should return 0
     result = masked_mean(values, mask)
-    assert torch.assert_allclose(result, torch.tensor(0.0))
+    print(result)
+    torch.testing.assert_allclose(result, torch.tensor(0.0))
 
     # With check_zero_mask=False
-    result = masked_mean(values, mask, check_all_zero_mask=False)
-    assert torch.isnan(result)  # Should be nan when mask is all zeros
+    mask[0] = 1
+    result = masked_mean(values, mask)
+    torch.testing.assert_allclose(result, torch.tensor(1.0))
+
+    # Case 2: dim is not None
+    values = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    mask = torch.zeros_like(values)
+    result = masked_mean(values, mask, dim=1)
+    torch.testing.assert_allclose(result, torch.tensor([0.0, 0.0]))
