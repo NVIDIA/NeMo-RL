@@ -25,7 +25,7 @@ def test_dpo_collate_fn():
     """Test that dpo_collate_fn correctly processes DPO training data."""
     # Create mock tokenizer
     mock_tokenizer = MagicMock()
-    mock_tokenizer.eos_token_id = 0
+    mock_tokenizer.pad_token_id = 0
 
     # Create test data with varying sequence lengths
     data_batch = [
