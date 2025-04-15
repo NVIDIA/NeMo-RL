@@ -61,7 +61,7 @@ class VllmGenerationWorker:
 
     @staticmethod
     def configure_worker(
-        num_gpus: int | float, bundle_indices: Optional[list] = None
+        num_gpus: int | float, bundle_indices: Optional[tuple] = None
     ) -> tuple[dict, dict, dict]:
         """Provides complete worker configuration for vLLM tensor parallelism.
 
@@ -70,7 +70,7 @@ class VllmGenerationWorker:
 
         Args:
             num_gpus: Original GPU allocation for this worker based on the placement group
-            bundle_indices: Bundle indices for tensor parallelism (if applicable)
+            bundle_indices: Tuple of (node_idx, local_bundle_indices) for tensor parallelism (if applicable)
 
         Returns:
             tuple with complete worker configuration:
@@ -83,11 +83,26 @@ class VllmGenerationWorker:
         init_kwargs = {}
         env_vars = {}
 
-        init_kwargs["bundle_indices"] = bundle_indices
+        local_bundle_indices = None
+        if bundle_indices is not None:
+            node_idx = bundle_indices[0]
+            local_bundle_indices = bundle_indices[1]
+            init_kwargs["bundle_indices"] = local_bundle_indices
+
+            """
+            compute a unique seed from the node_idx and bundle_indices:
+            node_idx = 0, bundle_indices = [0, 1, 2, 3] -> seed = 0*1024 + 0
+            node_idx = 0, bundle_indices = [4, 5, 6, 7] -> seed = 0*1024 + 1
+            node_idx = 1, bundle_indices = [0, 1, 2, 3] -> seed = 1*1024 + 0
+            node_idx = 1, bundle_indices = [4, 5, 6, 7] -> seed = 1*1024 + 1
+            """
+            bundle_id = local_bundle_indices[0] // len(local_bundle_indices)
+            seed = node_idx * 1024 + bundle_id
+            init_kwargs["seed"] = seed
 
         is_part_of_tp_workers = (
-            bundle_indices is not None and len(bundle_indices) > 1
-        ) or bundle_indices is None
+            local_bundle_indices is not None and len(local_bundle_indices) > 1
+        ) or local_bundle_indices is None
         if is_part_of_tp_workers:
             # Ray + vllm likes to manage GPU assignment internally
             resources["num_gpus"] = 0
@@ -104,6 +119,7 @@ class VllmGenerationWorker:
         config: VllmConfig,
         bundle_indices: Optional[list] = None,
         fraction_of_gpus: float = 1.0,
+        seed: Optional[int] = None,
     ):
         """Initialize a vLLM worker for distributed inference.
 
@@ -177,6 +193,7 @@ class VllmGenerationWorker:
             gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
             enable_prefix_caching=True,
             dtype="auto",
+            seed=seed,
             # Don't use cuda-graph by default as it leads to convergence issue (see https://github.com/NVIDIA/reinforcer/issues/186)
             enforce_eager=True,
             max_model_len=self.cfg["vllm_cfg"]["max_model_len"],
