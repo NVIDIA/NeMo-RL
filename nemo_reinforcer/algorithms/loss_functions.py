@@ -111,6 +111,9 @@ class ClippedPGLossFn(LossFunction):
         if self.reference_policy_kl_penalty != 0:
             if self.use_on_policy_kl_approximation:
                 kl_importance_weights = torch.exp(curr_logprobs - generation_logprobs)
+                kl_importance_weights = torch.nan_to_num(
+                    kl_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
+                )
             else:
                 kl_importance_weights = torch.ones_like(curr_logprobs)
             kl = (
@@ -142,6 +145,9 @@ class ClippedPGLossFn(LossFunction):
             if self.use_importance_sampling_correction:
                 actor_importance_weights = torch.exp(
                     prev_logprobs - generation_logprobs
+                )
+                actor_importance_weights = torch.nan_to_num(
+                    actor_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
                 )
             else:
                 actor_importance_weights = torch.ones_like(prev_logprobs)
