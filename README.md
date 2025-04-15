@@ -83,8 +83,7 @@ If you have access to more GPUs, you can update the experiment accordingly. To r
 ```sh
 uv run python examples/run_sft.py \
   policy.model_name="meta-llama/Meta-Llama-3-8B" \
-  policy.train_global_batch_size=128 \
-  sft.val_global_batch_size=128 \
+  policy.train_global_batch_size=256 \
   cluster.gpus_per_node=8
 ```
 
