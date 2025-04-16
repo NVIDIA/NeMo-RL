@@ -84,7 +84,7 @@ jobs:
             # For doc-only changes, run only doc tests
             TEST_LEVEL="docs"
           elif [[ "$LABEL" == "CI:L0" || "$IS_PULLREQUEST" == "false" || "$MERGE_GROUP" == "true" ]]; then
-            # For labeled PRs, pushes to main (IS_PULL_REQUEST=false), run L0 by default
+            # For labeled PRs, pushes to main (IS_PULL_REQUEST=false), or merge group events, run L0 by default
             TEST_LEVEL="L0"
           elif [[ "$LABEL" == "CI:L1" ]]; then
             TEST_LEVEL="L1"
