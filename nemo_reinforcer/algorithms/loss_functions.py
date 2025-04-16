@@ -217,7 +217,7 @@ class DPOLossDataDict(TypedDict):
 
 
 def average_valid_samples(tensor: torch.Tensor, sample_mask: torch.Tensor):
-    return tensor.sum(-1) / sample_mask.sum(-1).clamp(min=1)
+    return tensor.sum() / sample_mask.sum().clamp(min=1)
 
 
 class DPOLossFn(LossFunction):
