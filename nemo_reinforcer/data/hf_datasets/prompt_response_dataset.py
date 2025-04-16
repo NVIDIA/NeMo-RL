@@ -33,7 +33,6 @@ class PromptResponseDataset:
         formatted_train_dataset = train_original_dataset.map(self.add_messages_key)
         formatted_val_dataset = val_original_dataset.map(self.add_messages_key)
 
-        ## just duplicating the dataset for train and validation for simplicity
         self.formatted_ds = {
             "train": formatted_train_dataset,
             "validation": formatted_val_dataset,
