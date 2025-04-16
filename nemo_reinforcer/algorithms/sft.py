@@ -350,7 +350,10 @@ def sft_train(
 
     policy.prepare_for_training()
 
-    while current_epoch < max_num_epochs:
+    while (
+        current_epoch < max_num_epochs
+        and total_steps < master_config["sft"]["max_num_steps"]
+    ):
         print(f"\n{'=' * 25} Epoch {current_epoch + 1}/{max_num_epochs} {'=' * 25}")
 
         for batch in train_dataloader:
@@ -382,7 +385,6 @@ def sft_train(
                         }
                     )
 
-                ## train_data.to("cpu")
                 print("▶ Taking a training step...")
                 train_results = policy.train(train_data, loss_fn)
 

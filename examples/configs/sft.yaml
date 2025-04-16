@@ -1,7 +1,10 @@
 # SFT Algorithm Configuration
 sft:
+  ## total number of steps to train will equal
+  ## min((max_num_epochs * len(train_dataloader)), max_num_steps)
   max_num_epochs: 1
   max_num_steps: 60
+
   val_period: 10
   val_batches: 8
   val_global_batch_size: 32
