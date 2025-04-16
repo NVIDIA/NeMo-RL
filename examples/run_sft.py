@@ -15,6 +15,7 @@
 import argparse
 import os
 import pprint
+from functools import partial
 from typing import Dict, Any
 
 from omegaconf import OmegaConf
@@ -56,10 +57,16 @@ def sft_preprocessor(
     tokenizer,
     max_seq_length: int,
     idx: int,
+    add_bos: bool = True,
+    add_eos: bool = True,
 ) -> DatumSpec:
     """Process a datum dictionary for SFT training."""
     message_log = get_formatted_message_log(
-        datum_dict["messages"], tokenizer, task_data_spec
+        datum_dict["messages"],
+        tokenizer,
+        task_data_spec,
+        add_bos_token=add_bos,
+        add_eos_token=add_eos,
     )
 
     length = sum(len(m["token_ids"]) for m in message_log)
@@ -90,6 +97,13 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
         data = hf_datasets.OasstDataset(output_dir="/tmp/open_assistant")
     elif data_cls == "squad":
         data = hf_datasets.SquadDataset()
+    elif data_cls == "prompt_response_dataset":
+        data = hf_datasets.PromptResponseDataset(
+            data_config["train_data_path"],
+            data_config["val_data_path"],
+            data_config["input_key"],
+            data_config["output_key"],
+        )
     else:
         raise ValueError(f"Unknown dataset class: {data_cls}")
     print(
@@ -104,7 +118,11 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
         train_dataset,
         tokenizer,
         sft_task_spec,
-        sft_preprocessor,
+        partial(
+            sft_preprocessor,
+            add_bos=data_config["add_bos"],
+            add_eos=data_config["add_eos"],
+        ),
         max_seq_length=data_config["max_input_seq_length"],
     )
 
@@ -112,7 +130,11 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
         val_dataset,
         tokenizer,
         sft_task_spec,
-        sft_preprocessor,
+        partial(
+            sft_preprocessor,
+            add_bos=data_config.get("add_bos", True),
+            add_eos=data_config.get("add_eos", True),
+        ),
         max_seq_length=data_config["max_input_seq_length"],
     )
 
@@ -151,7 +173,7 @@ def main():
     init_ray()
 
     # setup tokenizer
-    tokenizer = get_tokenizer(config["policy"]["model_name"])
+    tokenizer = get_tokenizer(config["policy"]["tokenizer"])
 
     # setup data
     (
@@ -170,8 +192,7 @@ def main():
         checkpointer,
         sft_save_state,
         master_config,
-    ) = setup(config, dataset, val_dataset)
-
+    ) = setup(config, tokenizer, dataset, val_dataset)
     sft_train(
         policy,
         train_dataloader,

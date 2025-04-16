@@ -30,7 +30,9 @@ from nemo_reinforcer.models.policy import PolicyConfig
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
     "model_name": "meta-llama/Llama-3.2-1B",  # Small model for testing
-    "tokenizer_name": "meta-llama/Llama-3.2-1B",
+    "tokenizer": {
+        "name": "meta-llama/Llama-3.2-1B",
+    },
     "dtype": "bfloat16",
     "max_new_tokens": 10,
     "temperature": 1.0,
@@ -48,7 +50,9 @@ basic_vllm_test_config: VllmConfig = {
 # Create HF-specific config with required parameters
 basic_hf_test_config: PolicyConfig = {
     "model_name": basic_vllm_test_config["model_name"],
-    "tokenizer_name": basic_vllm_test_config["tokenizer_name"],
+    "tokenizer": {
+        "name": basic_vllm_test_config["tokenizer"]["name"],
+    },
     # Required training parameters
     "train_global_batch_size": 1,
     "train_micro_batch_size": 1,
@@ -89,8 +93,7 @@ def cluster():
 @pytest.fixture(scope="function")
 def tokenizer():
     """Initialize tokenizer for the test model."""
-    model_name = basic_vllm_test_config["model_name"]
-    tokenizer = get_tokenizer(model_name)
+    tokenizer = get_tokenizer(basic_vllm_test_config["tokenizer"])
     return tokenizer
 
 
@@ -253,7 +256,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 
     hf_config = basic_hf_test_config.copy()
-    hf_policy = HfPolicy(cluster, hf_config)
+    hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
     print(f"refitting vllm policy...")
     ipc_handles = hf_policy.get_weights_ipc_handles()
@@ -417,7 +420,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
         vllm_policy.finish_generation()
 
         print("Creating HF policy...")
-        hf_policy = HfPolicy(cluster, hf_config)
+        hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print(f"refitting vllm policy...")
         ipc_handles = hf_policy.get_weights_ipc_handles()
@@ -655,7 +658,7 @@ def test_vllm_weight_update_and_prefix_cache_reset(
     hf_policy = None
     try:
         print(f"Creating HF policy for TP={tensor_parallel_size}...")
-        hf_policy = HfPolicy(cluster, hf_config)
+        hf_policy = HfPolicy(cluster, hf_config, tokenizer)
         print(f"Creating vLLM policy for TP={tensor_parallel_size}...")
         vllm_policy = VllmGeneration(cluster, vllm_config)
 
@@ -763,7 +766,7 @@ def test_vllm_generation_with_stop(cluster, test_input_data, tokenizer, is_eval)
 
         print("Creating HF policy...")
         hf_config = basic_hf_test_config.copy()
-        hf_policy = HfPolicy(cluster, hf_config)
+        hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print(f"refitting vllm policy...")
         ipc_handles = hf_policy.get_weights_ipc_handles()

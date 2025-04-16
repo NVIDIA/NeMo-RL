@@ -29,7 +29,7 @@ from tests.unit.test_utils import simple_loss, nll_loss
 
 basic_llama_test_config: PolicyConfig = {
     "model_name": "meta-llama/Llama-3.2-1B",
-    "tokenizer_name": "meta-llama/Llama-3.2-1B",
+    "tokenizer": {"name": "meta-llama/Llama-3.2-1B"},
     "generation_batch_size": 1,  # Small batch size for testing
     "train_global_batch_size": 4,
     "train_micro_batch_size": 1,
@@ -76,8 +76,7 @@ def gc_collect():
 @pytest.fixture(scope="function")
 def tokenizer():
     """Initialize tokenizer for the test model."""
-    model_name = basic_llama_test_config["model_name"]
-    tokenizer = get_tokenizer(model_name)
+    tokenizer = get_tokenizer(basic_llama_test_config["tokenizer"])
     return tokenizer
 
 
@@ -150,7 +149,7 @@ def policy_setup(tokenizer, num_gpus):
     config["generation"] = configure_generation_config(config["generation"], tokenizer)
 
     print("Creating HfPolicy...")
-    policy = HfPolicy(cluster=cluster, config=config)
+    policy = HfPolicy(cluster=cluster, config=config, tokenizer=tokenizer)
 
     yield policy, cluster
 
@@ -254,7 +253,7 @@ def test_hf_policy_init(policy_setup, num_gpus):
 
 
 @pytest.fixture
-def training_setup(num_gpus):
+def training_setup(tokenizer, num_gpus):
     """Setup and teardown specifically for training tests."""
     policy = None
     cluster = None
@@ -279,7 +278,12 @@ def training_setup(num_gpus):
         config = basic_llama_test_config
 
         print("Creating training HfPolicy...")
-        policy = HfPolicy(cluster=cluster, config=config, init_reference_model=False)
+        policy = HfPolicy(
+            cluster=cluster,
+            config=config,
+            init_reference_model=False,
+            tokenizer=tokenizer,
+        )
 
         # Create a test batch
         print("Creating test batch...")
@@ -432,7 +436,10 @@ def generation_setup(request, test_input_data, tokenizer, num_gpus):
 
         print("Creating generation HfPolicy...")
         policy = HfPolicy(
-            cluster=cluster, config=config, init_reference_model=init_reference_model
+            cluster=cluster,
+            config=config,
+            tokenizer=tokenizer,
+            init_reference_model=request.param,
         )
 
         # Create a test batch
@@ -652,7 +659,7 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
     )
 
     # Create policy
-    policy = HfPolicy(cluster=cluster, config=config)
+    policy = HfPolicy(cluster=cluster, config=config, tokenizer=tokenizer)
 
     # Call prepare_for_generation if available
     print("Preparing for generation...")

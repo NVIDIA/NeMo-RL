@@ -137,6 +137,8 @@ def save_checkpoint(
     optimizer: Optional[torch.optim.Optimizer] = None,
     scheduler: Optional[Any] = None,
     optimizer_path: Optional[str] = None,
+    tokenizer: Optional[Any] = None,
+    tokenizer_path: Optional[str] = None,
     save_torch_dist: bool = True,
     save_hf: bool = False,
 ) -> None:
@@ -177,6 +179,13 @@ def save_checkpoint(
                 )
             optimizer_state = {"optim": OptimizerState(model, optimizer, scheduler)}
             dcp.save(optimizer_state, checkpoint_id=optimizer_path)
+
+    if tokenizer is not None:
+        if tokenizer_path is None:
+            raise ValueError(
+                "tokenizer_path must be provided when saving tokenizer state"
+            )
+        tokenizer.save_pretrained(tokenizer_path)
 
 
 def load_checkpoint(

@@ -14,6 +14,7 @@
 import pytest
 
 from transformers import AutoTokenizer
+from nemo_reinforcer.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
 from nemo_reinforcer.data.hf_datasets.squad import SquadDataset
 
 
@@ -31,10 +32,12 @@ def test_squad_dataset():
         assert example["messages"][1]["role"] == "user"
         assert example["messages"][2]["role"] == "assistant"
 
+        template = "{% for message in messages %}{%- if message['role'] == 'system'  %}{{'Context: ' + message['content'].strip()}}{%- elif message['role'] == 'user'  %}{{' Question: ' + message['content'].strip() + ' Answer:'}}{%- elif message['role'] == 'assistant'  %}{{' ' + message['content'].strip()}}{%- endif %}{% endfor %}"
+
         ## check that applying chat template works as expected
         default_templated = tokenizer.apply_chat_template(
             example["messages"],
-            chat_template=squad_dataset.task_spec.custom_template,
+            chat_template=template,
             tokenize=False,
             add_generation_prompt=False,
             add_special_tokens=False,
