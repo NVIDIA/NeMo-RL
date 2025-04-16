@@ -95,6 +95,7 @@ jobs:
 
         - name: Run unit tests
           run: |
+            docker exec nemo_container_${{ github.run_id }} git config --global --add safe.directory /opt/reinforcer
             docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.UNIT_TEST_SCRIPT }}"
 
         - name: Run doc tests
