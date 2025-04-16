@@ -38,7 +38,6 @@ uv sync --locked --extra vllm --no-install-project
 uv sync --locked --all-groups --no-install-project
 EOF
 
-ENV UV_NO_SYNC=1
 ENV PATH="/opt/reinforcer_venv/bin:$PATH"
 
 # The ray images automatically activate the anaconda venv. We will
