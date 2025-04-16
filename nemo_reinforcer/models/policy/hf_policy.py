@@ -858,7 +858,7 @@ class HfPolicyWorker:
             optimizer=self.optimizer if optimizer_path else None,
             scheduler=self.scheduler if optimizer_path else None,
             optimizer_path=optimizer_path,
-            tokenizer=self.tokenizer,
+            tokenizer=self.tokenizer if tokenizer_path else None,
             tokenizer_path=tokenizer_path,
             save_torch_dist=save_torch_dist,
             save_hf=save_hf,
