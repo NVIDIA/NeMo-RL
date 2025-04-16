@@ -67,6 +67,7 @@ jobs:
           CHANGED_DOCS: ${{ steps.changed-files.outputs.doc_all_changed_files }}
           CHANGED_SRC: ${{ steps.changed-files.outputs.src_all_changed_files }}
           IS_PULLREQUEST: ${{ github.event_name == 'pull_request' }}
+          LABEL: ${{ github.event.label.name }}
           MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
         run: |
           # Some output that's helpful for debugging
@@ -78,10 +79,10 @@ jobs:
 
           # Run CI only (on main or if label is attached) and if it's not only docs
           # Determine test level based on conditions
-          if [[ "$DOCS_ONLY" == "true" ]]; then
+          if [[ "$DOCS_ONLY" == "true" || "$LABEL" == "CI:docs" ]]; then
             # For doc-only changes, run only doc tests
             TEST_LEVEL="docs"
-          elif [[ "$LABEL" == "true" || "$IS_PULLREQUEST" == "false" || "$MERGE_GROUP" == "true" ]]; then
+          elif [[ "$LABEL" == "CI:L0" || "$IS_PULLREQUEST" == "false" || "$MERGE_GROUP" == "true" ]]; then
             # For labeled PRs, pushes to main (IS_PULL_REQUEST=false), or merge group events, run L0 by default
             TEST_LEVEL="L0"
           else
@@ -101,7 +102,7 @@ jobs:
     name: Lint check
     needs: [pre-flight]
     runs-on: ubuntu-latest
-    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
+    if: ${{ contains(fromJson('["L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -115,7 +116,7 @@ jobs:
     name: Sphinx build
     needs: [pre-flight]
     runs-on: ubuntu-latest
-    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
+    if: ${{ contains(fromJson('["docs","L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -126,7 +127,7 @@ jobs:
           uv run --group docs sphinx-build . _build/html
 
   build-container:
-    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
+    if: ${{ contains(fromJson('["L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
     needs: [pre-flight]
     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
     with:
@@ -142,7 +143,7 @@ jobs:
     name: Tests
     needs: [build-container, pre-flight]
     uses: ./.github/workflows/_run_test.yml
-    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
+    if: ${{ contains(fromJson('["L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
     with:
       RUNNER: self-hosted-azure
       TIMEOUT: 20
