@@ -130,7 +130,7 @@ jobs:
           uv run --group docs sphinx-build . _build/html
 
   build-container:
-    if: ${{ contains(fromJson('["docs","L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
+    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     needs: [pre-flight]
     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
     with:
@@ -146,7 +146,7 @@ jobs:
     name: Tests
     needs: [build-container, pre-flight]
     uses: ./.github/workflows/_run_test.yml
-    if: ${{ contains(fromJson('["L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
+    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     with:
       RUNNER: self-hosted-azure
       TIMEOUT: 20
