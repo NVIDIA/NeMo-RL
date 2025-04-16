@@ -15,6 +15,7 @@ import os
 import subprocess
 import shlex
 import logging
+from functools import lru_cache
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 git_root = os.path.abspath(os.path.join(dir_path, "../.."))
@@ -23,11 +24,15 @@ DEFAULT_VENV_DIR = os.path.join(git_root, "venvs")
 logger = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=None)
 def create_local_venv(py_executable: str, venv_name: str) -> str:
     """Create a virtual environment using uv and execute a command within it.
 
     The output can be used as a py_executable for a Ray worker assuming the worker
     nodes also have access to the same file system as the head node.
+
+    This function is cached to avoid multiple calls to uv to create the same venv,
+    which avoids duplicate logging.
 
     Args:
         py_executable (str): Command to run with the virtual environment (e.g., "uv.sh run --locked")

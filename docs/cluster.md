@@ -15,7 +15,6 @@
 NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
 
 COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py" \
-RAY_DEDUP_LOGS=0 \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
 sbatch \
@@ -66,7 +65,6 @@ To run interactively, launch the same command as the [Batched Job Submission](#b
 # Run from the root of NeMo-Reinforcer repo
 NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
 
-RAY_DEDUP_LOGS=0 \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
 sbatch \

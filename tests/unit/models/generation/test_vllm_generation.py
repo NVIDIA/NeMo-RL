@@ -23,6 +23,7 @@ from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
+from nemo_reinforcer.models.policy import PolicyConfig
 
 
 # Define basic vLLM test config
@@ -35,10 +36,35 @@ basic_vllm_test_config: VllmConfig = {
     "temperature": 1.0,
     "top_p": 1.0,
     "top_k": None,
+    "stop_token_ids": None,
+    "stop_strings": None,
     "vllm_cfg": {
         "tensor_parallel_size": 1,
         "gpu_memory_utilization": 0.3,
         "max_model_len": 1024,
+    },
+}
+
+# Create HF-specific config with required parameters
+basic_hf_test_config: PolicyConfig = {
+    "model_name": basic_vllm_test_config["model_name"],
+    "tokenizer_name": basic_vllm_test_config["tokenizer_name"],
+    # Required training parameters
+    "train_global_batch_size": 1,
+    "train_micro_batch_size": 1,
+    "learning_rate": 5e-6,
+    "logprob_batch_size": 1,
+    "max_new_tokens": 16,
+    "do_sample": False,
+    "precision": "float32",
+    "optimizer": {
+        "name": "torch.optim.AdamW",
+        "kwargs": {
+            "lr": 5e-6,
+            "weight_decay": 0.01,
+            "betas": [0.9, 0.999],
+            "eps": 1e-8,
+        },
     },
 }
 
@@ -179,6 +205,148 @@ def test_vllm_policy_generation(policy, test_input_data, tokenizer):
     )
 
 
+def test_vllm_worker_seed_behavior(cluster, tokenizer):
+    """
+    1. Different workers generate different outputs for identical prompts due to different seeds
+    2. When forced to use the same seed, workers generate identical outputs
+    """
+    from nemo_reinforcer.models.generation.vllm import VllmGenerationWorker
+
+    unique_prompts = [
+        "Hello, my name is",
+        "The capital of France is",
+    ]
+
+    # Create a batch where each prompt appears twice
+    # When sharded, different workers will get the same prompt
+    duplicated_prompts = unique_prompts + unique_prompts
+
+    # Tokenize prompts
+    encodings = tokenizer(
+        duplicated_prompts,
+        padding="max_length",
+        max_length=20,
+        truncation=True,
+        return_tensors="pt",
+        padding_side="right",
+    )
+
+    input_lengths = encodings["attention_mask"].sum(dim=1).to(torch.int32)
+
+    # Create input data dictionary
+    duplicated_batch = BatchedDataDict(
+        {
+            "input_ids": encodings["input_ids"],
+            "input_lengths": input_lengths,
+        }
+    )
+
+    # Part 1: Test that different workers generate different outputs due to different seeds
+    print("Creating vLLM policy with default seed behavior...")
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_generation_config(vllm_config, tokenizer)
+    policy = VllmGeneration(cluster, vllm_config)
+    policy.finish_generation()
+
+    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+
+    hf_config = basic_hf_test_config.copy()
+    hf_policy = HfPolicy(cluster, hf_config)
+
+    print(f"refitting vllm policy...")
+    ipc_handles = hf_policy.get_weights_ipc_handles()
+    policy.prepare_for_generation()
+    policy.update_weights(ipc_handles)
+
+    try:
+        # Generate with duplicated prompts
+        print("Running generation with duplicated prompts...")
+        outputs = policy.generate(duplicated_batch, greedy=False)
+
+        # Decode the generated sequences
+        gen_texts = tokenizer.batch_decode(
+            outputs["output_ids"], skip_special_tokens=True
+        )
+
+        print(f"Generated texts with duplicated prompts: {gen_texts}")
+
+        # Check if the duplicated prompts generated different texts
+        # The first half and second half should be different due to different worker seeds
+        first_half = gen_texts[: len(unique_prompts)]
+        second_half = gen_texts[len(unique_prompts) :]
+
+        print(f"First worker outputs: {first_half}")
+        print(f"Second worker outputs: {second_half}")
+
+        # At least one of the pairs should be different due to different seeds
+        assert first_half != second_half, (
+            "Different workers should generate different outputs for identical prompts due to different seeds"
+        )
+
+        # Clean up before the second test
+        policy.shutdown()
+
+        # Part 2: Test with fixed seed to verify identical outputs
+        print("\nNow testing with fixed seed...")
+
+        # Store the original configure_worker method
+        original_configure_worker = VllmGenerationWorker.configure_worker
+
+        # Override the configure_worker method to always use the same seed
+        def configure_worker_fixed_seed(num_gpus, bundle_indices=None):
+            resources, env_vars, init_kwargs = original_configure_worker(
+                num_gpus, bundle_indices
+            )
+            # Override with fixed seed
+            init_kwargs["seed"] = 42
+            return resources, env_vars, init_kwargs
+
+        VllmGenerationWorker.configure_worker = configure_worker_fixed_seed
+
+        # Create a new policy with fixed seed
+        fixed_seed_policy = VllmGeneration(cluster, vllm_config)
+
+        # Generate with the same duplicated prompts
+        print("Running generation with fixed seed...")
+        fixed_seed_outputs = fixed_seed_policy.generate(duplicated_batch, greedy=False)
+
+        # Decode the generated sequences
+        fixed_seed_gen_texts = tokenizer.batch_decode(
+            fixed_seed_outputs["output_ids"], skip_special_tokens=True
+        )
+
+        print(f"Generated texts with fixed seed: {fixed_seed_gen_texts}")
+
+        # Check if the duplicated prompts now generate the same texts
+        fixed_seed_first_half = fixed_seed_gen_texts[: len(unique_prompts)]
+        fixed_seed_second_half = fixed_seed_gen_texts[len(unique_prompts) :]
+
+        print(f"First worker outputs (fixed seed): {fixed_seed_first_half}")
+        print(f"Second worker outputs (fixed seed): {fixed_seed_second_half}")
+
+        # With the same seed, outputs should be identical
+        assert fixed_seed_first_half == fixed_seed_second_half, (
+            "Workers with the same fixed seed should generate identical outputs for identical prompts"
+        )
+
+    finally:
+        # Restore the original method if we patched it
+        if "original_configure_worker" in locals():
+            VllmGenerationWorker.configure_worker = original_configure_worker
+
+        # Clean up resources
+        if "policy" in locals() and hasattr(policy, "shutdown"):
+            policy.shutdown()
+        if "fixed_seed_policy" in locals() and hasattr(fixed_seed_policy, "shutdown"):
+            fixed_seed_policy.shutdown()
+
+        # Force garbage collection
+        import gc
+
+        gc.collect()
+        torch.cuda.empty_cache()
+
+
 @pytest.mark.timeout(140)
 def test_vllm_generation_with_hf_training(cluster, tokenizer):
     """1. Use vLLM for generation
@@ -193,28 +361,8 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer):
     vllm_config = basic_vllm_test_config.copy()
     vllm_config = configure_generation_config(vllm_config, tokenizer)
 
-    # Create HF-specific config with required parameters
-    hf_config = {
-        "model_name": basic_vllm_test_config["model_name"],
-        "tokenizer_name": basic_vllm_test_config["tokenizer_name"],
-        # Required training parameters
-        "train_global_batch_size": 4,
-        "train_micro_batch_size": 1,
-        "learning_rate": 5e-6,
-        "logprob_batch_size": 1,
-        "max_new_tokens": 16,
-        "do_sample": False,
-        "precision": "float32",
-        "optimizer": {
-            "name": "torch.optim.AdamW",
-            "kwargs": {
-                "lr": 5e-6,
-                "weight_decay": 0.01,
-                "betas": [0.9, 0.999],
-                "eps": 1e-8,
-            },
-        },
-    }
+    hf_config = basic_hf_test_config.copy()
+    hf_config["train_global_batch_size"] = 4
 
     vllm_policy = None
     hf_policy = None
@@ -498,18 +646,7 @@ def test_vllm_weight_update_and_prefix_cache_reset(
     if tensor_parallel_size > 1:
         vllm_config["vllm_kwargs"] = {"distributed_executor_backend": "ray"}
 
-    hf_config = {
-        "model_name": basic_vllm_test_config["model_name"],
-        "tokenizer_name": "meta-llama/Llama-3.2-1B",
-        "train_global_batch_size": 1,
-        "train_micro_batch_size": 1,
-        "learning_rate": 1e-6,
-        "logprob_batch_size": 1,
-        "max_new_tokens": 16,
-        "do_sample": False,
-        "precision": "float32",
-        "optimizer": {"name": "torch.optim.AdamW", "kwargs": {"lr": 1e-6}},
-    }
+    hf_config = basic_hf_test_config.copy()
 
     # Create policies
     vllm_policy = None
@@ -592,3 +729,67 @@ def test_vllm_weight_update_and_prefix_cache_reset(
 
         gc.collect()
         torch.cuda.empty_cache()
+
+
+@pytest.mark.parametrize("is_eval", [True, False])
+def test_vllm_generation_with_stop(cluster, test_input_data, tokenizer, is_eval):
+    """Test vLLM generation with stop."""
+    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+
+    # Create separate configs for each policy
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config["stop_token_ids"] = [3363]
+    vllm_config["stop_strings"] = ["I am a"]
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=is_eval)
+
+    # Ensure we can get same output
+    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
+        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    )
+    assert vllm_config["vllm_cfg"]["tensor_parallel_size"] == 1, (
+        "Tensor parallel size should be 1 to get expected output"
+    )
+
+    # Create policies
+    print("Creating vLLM policy...")
+    vllm_generation = VllmGeneration(cluster, vllm_config)
+
+    # Get weights from HF policy if not in eval mode
+    if not is_eval:
+        # set to sleep first if not in eval mode
+        vllm_generation.finish_generation()
+
+        print("Creating HF policy...")
+        hf_config = basic_hf_test_config.copy()
+        hf_policy = HfPolicy(cluster, hf_config)
+
+        print(f"refitting vllm policy...")
+        ipc_handles = hf_policy.get_weights_ipc_handles()
+        vllm_generation.prepare_for_generation()
+        vllm_generation.update_weights(ipc_handles)
+
+    # test generate
+    outputs = vllm_generation.generate(test_input_data, greedy=True)
+    output_ids = outputs["output_ids"]
+    generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    assert generated_texts == [
+        "Hello, my name is Kelsey and I am a",
+        "The capital of France is Paris. The city",
+    ], "Output should be the same as the expected output"
+
+    # test generate_text
+    test_prompts = [
+        "Hello, my name is",
+        "The capital of France is",
+    ]
+    test_prompts = BatchedDataDict({"prompts": test_prompts})
+    output = vllm_generation.generate_text(test_prompts, greedy=True)
+    assert output["texts"] == [
+        " Kelsey and I am a",
+        " Paris. The city",
+    ], "Output should be the same as the expected output"
+
+    # Clean up
+    vllm_generation.shutdown()
+    if not is_eval:
+        hf_policy.shutdown()

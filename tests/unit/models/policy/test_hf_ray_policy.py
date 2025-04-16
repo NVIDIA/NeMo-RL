@@ -15,11 +15,12 @@ import ray
 import pytest
 import pprint
 import torch
+from copy import deepcopy
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
 from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 from nemo_reinforcer.models.policy import PolicyConfig
 from nemo_reinforcer.models.policy.hf_policy import HfPolicy
@@ -41,6 +42,8 @@ basic_llama_test_config: PolicyConfig = {
         "max_new_tokens": 16,  # Small number of tokens for testing
         "top_p": 1.0,
         "top_k": None,
+        "stop_token_ids": None,
+        "stop_strings": None,
     },
     "optimizer": {
         "name": "torch.optim.AdamW",
@@ -74,6 +77,54 @@ def tokenizer():
     model_name = basic_llama_test_config["model_name"]
     tokenizer = get_tokenizer(model_name)
     return tokenizer
+
+
+@pytest.fixture(scope="function")
+def test_input_data(tokenizer):
+    """Create test input data for inference."""
+    prompts = [
+        "Write a story about a magical forest",
+        "Explain how photosynthesis works",
+        "What are the benefits of exercise?",
+        "Describe the water cycle",
+        "What is the capital of France?",
+        "Who is the president of the USA?",
+        "What is the capital of the moon?",
+        "Where is the sun?",
+    ]
+
+    expected_generations = [
+        "Write a story about a magical forest. The forest is magical because it is full of magical creatures. The creatures are",
+        "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis is the process by which plants",
+        "What are the benefits of exercise? The benefits of exercise are many and varied. It is a great way to improve",
+        "Describe the water cycle in your own words.\nDescribe the water cycle in your own words.\nDescribe the",
+        "What is the capital of France? A. Paris B. New York C. Washington D. Baton Rouge\nA",
+        "Who is the president of the USA? Who is the president of the USA? Who is the president of the USA?",
+        "What is the capital of the moon? A. Houston B. New York C. Washington D. Denver\nA.",
+        "Where is the sun? Where is the moon? Where is the earth? Where is the sky? Where",
+    ]
+
+    # Tokenize the prompts
+    tokenized = tokenizer(
+        prompts,
+        padding=True,
+        truncation=True,
+        max_length=64,
+        return_tensors="pt",
+        padding_side="right",
+    )
+
+    # Calculate input lengths from attention mask
+    input_lengths = tokenized["attention_mask"].sum(dim=1).to(torch.int32)
+
+    data = BatchedDataDict(
+        {
+            "input_ids": tokenized["input_ids"],
+            "input_lengths": input_lengths,
+        }
+    )
+
+    return data, prompts, expected_generations
 
 
 @pytest.fixture
@@ -289,7 +340,7 @@ def test_hf_policy_training(training_setup):
 
 
 @pytest.fixture
-def generation_setup(request, tokenizer):
+def generation_setup(request, test_input_data, tokenizer):
     """Setup and teardown specifically for generation tests."""
     policy = None
     cluster = None
@@ -322,47 +373,8 @@ def generation_setup(request, tokenizer):
         print("Creating test batch...")
         torch.manual_seed(42)  # For reproducibility
 
-        prompts = [
-            "Write a story about a magical forest",
-            "Explain how photosynthesis works",
-            "What are the benefits of exercise?",
-            "Describe the water cycle",
-            "What is the capital of France?",
-            "Who is the president of the USA?",
-            "What is the capital of the moon?",
-            "Where is the sun?",
-        ]
-
-        expected_generations = [
-            "Write a story about a magical forest. The forest is magical because it is full of magical creatures. The creatures are",
-            "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis is the process by which plants",
-            "What are the benefits of exercise? The benefits of exercise are many and varied. It is a great way to improve",
-            "Describe the water cycle in your own words.\nDescribe the water cycle in your own words.\nDescribe the",
-            "What is the capital of France? A. Paris B. New York C. Washington D. Baton Rouge\nA",
-            "Who is the president of the USA? Who is the president of the USA? Who is the president of the USA?",
-            "What is the capital of the moon? A. Houston B. New York C. Washington D. Denver\nA.",
-            "Where is the sun? Where is the moon? Where is the earth? Where is the sky? Where",
-        ]
-
-        # Tokenize the prompts
-        tokenized = tokenizer(
-            prompts,
-            padding=True,
-            truncation=True,
-            max_length=64,
-            return_tensors="pt",
-            padding_side="right",
-        )
-
-        # Calculate input lengths from attention mask
-        input_lengths = tokenized["attention_mask"].sum(dim=1).to(torch.int32)
-
-        data = BatchedDataDict(
-            {
-                "input_ids": tokenized["input_ids"],
-                "input_lengths": input_lengths,
-            }
-        )
+        # Prepare test data
+        data, prompts, expected_generations = test_input_data
 
         # Provide the resources to the test
         yield policy, cluster, data, prompts, expected_generations
@@ -544,3 +556,64 @@ def test_all_hf_policy_generation_lps_ref_training(generation_setup):
 
     # Verify loss decreased during training
     assert losses[0] > losses[-1], "Loss should decrease over training iterations"
+
+
+def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
+    # Create resources with unique name
+    cluster_name = "test-generate-with-stop"
+    print(f"Creating training virtual cluster '{cluster_name}'...")
+
+    cluster = RayVirtualCluster(
+        name=cluster_name,
+        bundle_ct_per_node_list=[2],  # Single node, 2 gpus
+        use_gpus=True,
+        num_gpus_per_node=2,  # Using both GPUs
+        max_colocated_worker_groups=1,  # Only one worker group
+    )
+
+    # Create separate configs for each policy
+    config = deepcopy(basic_llama_test_config)
+    config["generation"] = configure_generation_config(config["generation"], tokenizer)
+    # Add stop strings for testing
+    config["generation"]["stop_token_ids"] = [1690, 1920]  # [" process", "many"]
+    config["generation"]["stop_strings"] = ["because it is", "A. Houston"]
+
+    # Ensure we can get same output
+    assert config["model_name"] == "meta-llama/Llama-3.2-1B", (
+        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    )
+
+    # Create policy
+    policy = HfPolicy(cluster=cluster, config=config)
+
+    # Call prepare_for_generation if available
+    print("Preparing for generation...")
+    policy.prepare_for_generation()
+
+    # Generate text
+    print("Generating text...")
+    data, _, _ = test_input_data
+    results = policy.generate(data, greedy=True)
+    output_ids = results["output_ids"]
+
+    # Call finish_generation if available
+    print("Finishing generation...")
+    policy.finish_generation()
+
+    # Check result
+    generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    assert generated_texts == [
+        "Write a story about a magical forest. The forest is magical because it is",
+        "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis is the process",
+        "What are the benefits of exercise? The benefits of exercise are many",
+        "Describe the water cycle in your own words.\nDescribe the water cycle in your own words.\nDescribe the",
+        "What is the capital of France? A. Paris B. New York C. Washington D. Baton Rouge\nA",
+        "Who is the president of the USA? Who is the president of the USA? Who is the president of the USA?",
+        "What is the capital of the moon? A. Houston",
+        "Where is the sun? Where is the moon? Where is the earth? Where is the sky? Where",
+    ], "Output should be the same as the expected output"
+
+    # Clean up after the test
+    print("Cleaning up resources for test")
+    cluster.shutdown()
+    policy.worker_group.shutdown()
