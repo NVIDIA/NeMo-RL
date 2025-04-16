@@ -217,7 +217,18 @@ def setup(
     # ==========================
     print("\n▶ Setting up model and training...")
 
-    # vllm model loading prefers clean environment, initialize policy_generation before policy (#52 will fix this)
+    policy = HfPolicy(
+        cluster=cluster,
+        config=policy_config,
+        weights_path=Path(last_checkpoint_path) / "policy" / "weights"
+        if last_checkpoint_path
+        else None,
+        optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
+        if last_checkpoint_path
+        else None,
+        init_optimizer=True,
+    )
+
     backend = generation_config["backend"]
     generation_config["model_name"] = policy_config["model_name"]  # Needed for vLLM
 
@@ -232,18 +243,6 @@ def setup(
         print(
             f"  ✓ Using vLLM backend for generation with {policy_config['model_name']}"
         )
-
-    policy = HfPolicy(
-        cluster=cluster,
-        config=policy_config,
-        weights_path=Path(last_checkpoint_path) / "policy" / "weights"
-        if last_checkpoint_path
-        else None,
-        optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
-        if last_checkpoint_path
-        else None,
-        init_optimizer=True,
-    )
 
     loss_fn = ClippedPGLossFn(loss_config)
 
