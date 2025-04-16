@@ -33,6 +33,7 @@ from nemo_reinforcer.distributed.virtual_cluster import (
     PY_EXECUTABLES,
 )
 from nemo_reinforcer.distributed.worker_groups import RayWorkerGroup, RayWorkerBuilder
+from nemo_reinforcer.tools.vllm import CodeLogitsProcessor
 
 
 class VllmSpecificArgs(TypedDict):
@@ -246,6 +247,13 @@ class VllmGenerationWorker:
 
         # Read generation parameters from config
         top_k = self.cfg["top_k"] if self.cfg["top_k"] is not None else -1
+        logits_processors = []
+        if self.cfg["execute_code"]:
+            processor = CodeLogitsProcessor(
+                self.llm.get_tokenizer(), self.cfg["tool_map"]
+            )
+            logits_processors.append(processor)
+
         sampling_params = self.SamplingParams(
             temperature=self.cfg["temperature"] if not greedy else 0,
             top_p=self.cfg["top_p"],
@@ -256,6 +264,7 @@ class VllmGenerationWorker:
             logprobs=0,  # Return logprobs for the generated tokens
             stop=None,
             stop_token_ids=self.cfg["stop_token_ids"],
+            logits_processors=logits_processors,
         )
 
         # Generate outputs
@@ -346,12 +355,20 @@ class VllmGenerationWorker:
         """
         # Read generation parameters from config
         top_k = self.cfg["top_k"] if self.cfg["top_k"] is not None else -1
+        logits_processors = []
+        if self.cfg["execute_code"]:
+            processor = CodeLogitsProcessor(
+                self.llm.get_tokenizer(), self.cfg["tool_map"]
+            )
+            logits_processors.append(processor)
+
         sampling_params = self.SamplingParams(
             temperature=self.cfg["temperature"] if not greedy else 0,
             top_p=self.cfg["top_p"],
             top_k=top_k if not greedy else 1,
             max_tokens=self.cfg["max_new_tokens"],
             stop=self.cfg.get("stop_sequences", None),
+            logits_processors=logits_processors,
         )
 
         # Generate outputs

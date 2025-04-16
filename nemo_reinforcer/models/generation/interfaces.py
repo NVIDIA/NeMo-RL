@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from typing import Any, TypedDict, Union, Tuple, List
+from typing import Any, TypedDict, Dict, Union, Tuple, List
 
 import torch
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.tools.interfaces import ToolInterface
 
 
 def verify_right_padding(
@@ -103,6 +104,8 @@ class GenerationConfig(TypedDict):
     model_name: str
     stop_token_ids: List[int]
     pad_token: int
+    tool_map: Dict[str, ToolInterface]
+    execute_code: bool
 
 
 class GenerationDatumSpec(TypedDict):

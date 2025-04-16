@@ -14,6 +14,7 @@ apidocs/
 dist/
 *.egg-info/
 *.vscode/
+uv.lock
 
 # Test
 .coverage
@@ -28,3 +29,4 @@ docker/
 wandb/
 checkpoints/
 results/
+unit_results/
