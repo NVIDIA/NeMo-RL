@@ -177,8 +177,8 @@ class VllmGenerationWorker:
             gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
             enable_prefix_caching=True,
             dtype="auto",
-            # Use cuda-graph by default for performance, set to True to use eager execution
-            enforce_eager=False,
+            # Don't use cuda-graph by default as it leads to convergence issue (see https://github.com/NVIDIA/reinforcer/issues/186)
+            enforce_eager=True,
             max_model_len=self.cfg["vllm_cfg"]["max_model_len"],
             trust_remote_code=True,
             worker_cls=UpdatableVllmInternalWorker,
@@ -250,13 +250,13 @@ class VllmGenerationWorker:
         sampling_params = self.SamplingParams(
             temperature=self.cfg["temperature"] if not greedy else 0,
             top_p=self.cfg["top_p"],
-            top_k=top_k
-            if not greedy
-            else 1,  # we use a default of -1 if unset so that 'null'/None is a common disable value
+            # we use a default of -1 if unset so that 'null'/None is a common disable value
+            top_k=top_k if not greedy else 1,
             max_tokens=self.cfg["max_new_tokens"],
             logprobs=0,  # Return logprobs for the generated tokens
-            stop=None,
             stop_token_ids=self.cfg["stop_token_ids"],
+            stop=self.cfg["stop_strings"],
+            include_stop_str_in_output=True,  # returning stop strings like hf
         )
 
         # Generate outputs
@@ -352,7 +352,9 @@ class VllmGenerationWorker:
             top_p=self.cfg["top_p"],
             top_k=top_k if not greedy else 1,
             max_tokens=self.cfg["max_new_tokens"],
-            stop=self.cfg.get("stop_sequences", None),
+            stop_token_ids=self.cfg["stop_token_ids"],
+            stop=self.cfg["stop_strings"],
+            include_stop_str_in_output=True,  # returning stop strings like hf
         )
 
         # Generate outputs
