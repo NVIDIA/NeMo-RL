@@ -348,7 +348,7 @@ class DTensorPolicyWorker:
             local_loss = torch.tensor(losses, device="cuda")
             global_loss = torch.zeros_like(local_loss)
             torch.distributed.all_reduce(local_loss)
-            global_loss = local_loss / self.dp_size
+            global_loss = local_loss / (self.dp_size * self.tp_size)
 
         # Aggregate metrics across all microbatches
         mb_metrics = defaultdict(list)
