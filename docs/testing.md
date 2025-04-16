@@ -7,11 +7,8 @@ Unit tests require 2 GPUs to test the full suite.
 :::
 
 ```sh
-# Install the project and the test dependencies
-uv pip install -e '.[test]'
-
 # Run the unit tests using local GPUs
-uv run bash tests/run_unit.sh 
+uv run --group test bash tests/run_unit.sh
 ```
 
 :::{note}

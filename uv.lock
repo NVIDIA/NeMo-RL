@@ -1362,6 +1362,19 @@ wheels = [
 ]
 
 [[package]]
+name = "llguidance"
+version = "0.7.11"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7c/4b/92f81aa9d98e2c0721e2760e0fa1ae1691380bd27f2bf530310671a777d9/llguidance-0.7.11.tar.gz", hash = "sha256:226409610f1d1e0ecd62f15d1dd47851879513eb1eb56129c56de8188b80fa8d", size = 384121 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/38/bb5e0e185f84e4702ca079b0874de88b0d1b7245c48fc6449b766bce6103/llguidance-0.7.11-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:c1639466113196cf6d274461deaafbe6011b60d459f773ca97045df1ee87e195", size = 3065620 },
+    { url = "https://files.pythonhosted.org/packages/c3/c3/14f1173407a0ba18e1f57d26eae4da49d6336d5e0405336b9cbcb749848b/llguidance-0.7.11-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:1e6899df33f3372ec86d7c1939e33891fda9e9a533dcd7f7f8c556897446765b", size = 2957459 },
+    { url = "https://files.pythonhosted.org/packages/5f/07/6064f1253708c879c96ce0b74bacd7ab2845c0e8199ff13d84681a5041ad/llguidance-0.7.11-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:32edcdc60922bdc97dcbae4d18e2d6dca451571959303ced7b7821dbbd344c0f", size = 13561497 },
+    { url = "https://files.pythonhosted.org/packages/e1/9e/96d96fab0c27adb9f51dabc42682d12dfe4602e7637a71614b916879ae7a/llguidance-0.7.11-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6b167f7d4da85747378c0c58393cd078b459a90d6e8a60e676692784a78a6f61", size = 13687114 },
+    { url = "https://files.pythonhosted.org/packages/c3/72/f5ed95fd29faf6b197d6af543671306ef154741f804b197c3e3f7ad15a8b/llguidance-0.7.11-cp39-abi3-win_amd64.whl", hash = "sha256:585cb3b52a702303240ae91cc0633735dab3a1db2c062af8ffb4ef3ca4737236", size = 2611515 },
+]
+
+[[package]]
 name = "llvmlite"
 version = "0.43.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1823,7 +1836,7 @@ requires-dist = [
     { name = "torch", specifier = "==2.6.0" },
     { name = "torchdata" },
     { name = "transformers" },
-    { name = "vllm", marker = "extra == 'vllm'", specifier = "==0.8.0" },
+    { name = "vllm", marker = "extra == 'vllm'", specifier = "==0.8.2" },
     { name = "wandb" },
 ]
 provides-extras = ["vllm"]
@@ -4153,7 +4166,7 @@ wheels = [
 
 [[package]]
 name = "vllm"
-version = "0.8.0"
+version = "0.8.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -4168,6 +4181,7 @@ dependencies = [
     { name = "gguf" },
     { name = "importlib-metadata" },
     { name = "lark" },
+    { name = "llguidance", marker = "platform_machine == 'aarch64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
     { name = "lm-format-enforcer" },
     { name = "mistral-common", extra = ["opencv"] },
     { name = "msgspec" },
@@ -4205,9 +4219,9 @@ dependencies = [
     { name = "xformers", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "xgrammar", marker = "platform_machine == 'aarch64' or platform_machine == 'x86_64'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d2/27/73a54707964c5160067e253398cc328943e3ddbaa3099265ab593e6ec766/vllm-0.8.0.tar.gz", hash = "sha256:449e6651d30d6d5025d0d42499cf1a02d983915ef3b3670547db14a0431aa9bd", size = 6407594 }
+sdist = { url = "https://files.pythonhosted.org/packages/df/4d/6b27cc14d0c35e578a743a767953500a801ba296694b7e44cca709738b41/vllm-0.8.2.tar.gz", hash = "sha256:9b337b1c4072ccb94b1bf2b716593fadbe2dcb8d091f9bcbd6b5c6d37f9842ac", size = 6450146 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/15/77/7beca2061aadfdfd2d81411102e6445b459bcfedfc46671d4712de6a00fb/vllm-0.8.0-cp38-abi3-manylinux1_x86_64.whl", hash = "sha256:d3660eda448560b0ce6a1524466d7d36ec0024e772c9dbf562dbead980e7d480", size = 265290109 },
+    { url = "https://files.pythonhosted.org/packages/57/49/207364110b96d76139a4e80617e5831d46884abe824941b15c8a748ca5e0/vllm-0.8.2-cp38-abi3-manylinux1_x86_64.whl", hash = "sha256:32442b686c5dad8e6ddcf5a8b0cf3f741359fed6a9e9e940009f1daf80ae15de", size = 293643693 },
 ]
 
 [[package]]

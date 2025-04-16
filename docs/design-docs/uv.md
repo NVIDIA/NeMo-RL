@@ -1,4 +1,4 @@
-# `uv` in NeMo-Reinforcer
+# uv in NeMo-Reinforcer
 
 Using `uv` for Dependency Management in NeMo-Reinforcer
 

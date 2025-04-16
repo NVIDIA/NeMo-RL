@@ -38,7 +38,7 @@ readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.optional-dependencies]
 vllm = [
-    "vllm==0.8.0",
+    "vllm==0.8.2",
 ]
 
 [dependency-groups]
@@ -79,6 +79,7 @@ exclude = '''
 '''
 
 [tool.pytest.ini_options]
+addopts = "--cov=nemo_reinforcer --cov-report=term --cov-report=json -s -rA -x"
 testpaths = ["tests"]
 python_files = "test_*.py"
 

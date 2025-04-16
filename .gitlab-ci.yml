@@ -26,6 +26,8 @@ pages:
   needs: ["build-docs"]
   script:
     - echo "Publishing HTML to GitLab Pages"
+    - rm -rf public
+    - mkdir public
     - cp -r docs/_build/html/* public/
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
