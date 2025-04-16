@@ -29,7 +29,6 @@ if ! ray status &>/dev/null; then
 fi
 
 export PYTHONPATH=$(realpath ${SCRIPT_DIR}/..):${PYTHONPATH:-}
-export RAY_DEDUP_LOGS=0
 
 # Run unit tests
 echo "Running unit tests..."
