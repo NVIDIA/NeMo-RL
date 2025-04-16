@@ -83,8 +83,12 @@ jobs:
             # For doc-only changes, run only doc tests
             TEST_LEVEL="docs"
           elif [[ "$LABEL" == "CI:L0" || "$IS_PULLREQUEST" == "false" || "$MERGE_GROUP" == "true" ]]; then
-            # For labeled PRs, pushes to main (IS_PULL_REQUEST=false), or merge group events, run L0 by default
+            # For labeled PRs, pushes to main (IS_PULL_REQUEST=false), run L0 by default
             TEST_LEVEL="L0"
+          elif [[ "$LABEL" == "CI:L1" ]]; then
+            TEST_LEVEL="L1"
+          elif [[ "$LABEL" == "CI:L2" ]]; then
+            TEST_LEVEL="L2"
           else
             # Skip tests by default for non-labeled PRs
             TEST_LEVEL="none"
@@ -127,7 +131,7 @@ jobs:
           uv run --group docs sphinx-build . _build/html
 
   build-container:
-    if: ${{ contains(fromJson('["L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
+    if: ${{ contains(fromJson('["docs","L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
     needs: [pre-flight]
     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
     with:
