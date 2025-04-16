@@ -18,6 +18,7 @@ on:
     branches:
       - "main"
       - "r**"
+    types: [labeled, opened, synchronize, reopened]
   merge_group:
     types: [checks_requested]
   workflow_dispatch:
@@ -106,7 +107,6 @@ jobs:
     name: Lint check
     needs: [pre-flight]
     runs-on: ubuntu-latest
-    if: ${{ contains(fromJson('["L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -120,7 +120,6 @@ jobs:
     name: Sphinx build
     needs: [pre-flight]
     runs-on: ubuntu-latest
-    if: ${{ contains(fromJson('["docs","L0","L1","L2"]'), needs.pre-flight.outputs.test_level) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -214,11 +213,13 @@ jobs:
           # Job is considered successful if nothing was run, or if all jobs were successful (the tests run even if only docs were run b/c doctests are selected)
           ALL_SUCCESS: >-
             ${{
-              (needs.pre-flight.outputs.test_level == 'none') ||
-              (needs.pre-flight.outputs.test_level != 'none' &&
-               needs.lint-check.result == 'success' &&
-               needs.sphinx-build.result == 'success' &&
-               needs.tests.result == 'success')
+              needs.lint-check.result == 'success' &&
+              needs.sphinx-build.result == 'success' &&
+              (
+                needs.pre-flight.outputs.test_level == 'none' ||
+                (needs.pre-flight.outputs.test_level != 'none' &&
+                 needs.tests.result == 'success')
+              )
             }}
           CI_SKIP: ${{ github.event.label.name == 'Skip CICD' }}
           TEST_LEVEL: ${{ needs.pre-flight.outputs.test_level }}
