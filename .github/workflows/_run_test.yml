@@ -70,6 +70,9 @@ jobs:
           run: |
             docker pull nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }}
 
+        - name: Checkout repository
+          uses: actions/checkout@v4
+
         - name: Start container
           run: |
             nvidia-smi
@@ -81,6 +84,7 @@ jobs:
               --env HF_DATASETS_CACHE=/home/TestData/reinforcer/hf_datasets_cache \
               --env REINFORCER_REPO_DIR=/opt/reinforcer \
               --env HF_TOKEN \
+              --volume $GITHUB_WORKSPACE:/opt/reinforcer \
               --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR \
               --volume /mnt/datadrive/TestData/reinforcer/datasets:/opt/reinforcer/datasets:ro \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
