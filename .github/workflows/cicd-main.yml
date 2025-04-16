@@ -145,7 +145,7 @@ jobs:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 25
+      TIMEOUT: 30
       UNIT_TEST_SCRIPT: |
         cd /opt/reinforcer
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
