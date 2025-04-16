@@ -14,7 +14,7 @@
 import torch
 
 try:
-    from vllm.worker.worker import Worker
+    import vllm
 except ImportError:
     raise ImportError(
         "vLLM is not installed. Please install it with `pip install nemo-reinforcer[vllm]` "
@@ -23,12 +23,11 @@ except ImportError:
     )
 
 
-class UpdatableVllmInternalWorker(Worker):
+class VllmInternalWorkerExtension:
     def report_device_id(self) -> str:
-        from vllm.platforms import current_platform
+        from nemo_reinforcer.utils.nvml import get_device_uuid
 
-        self.device_uuid = current_platform.get_device_uuid(self.device.index)
-        return self.device_uuid
+        return get_device_uuid(self.device.index)
 
     def update_weights_from_ipc_handles(self, ipc_handles):
         """Update weights from IPC handles.
@@ -61,23 +60,6 @@ class UpdatableVllmInternalWorker(Worker):
             return True
         except Exception as e:
             print(
-                f"Error in UpdatableVllmInternalWorker.update_weights_from_ipc_handles: {e}"
+                f"Error in VllmInternalWorkerExtension.update_weights_from_ipc_handles: {e}"
             )
-            return False
-
-    def check_weights_changed(self):
-        """Check if the weights are updated to 0.
-
-        Returns:
-            bool: True if all weights have been zeroed, False otherwise.
-        """
-        try:
-            weights_updated = True
-            for name, p in self.model_runner.model.named_parameters():
-                weights_updated = weights_updated and torch.allclose(
-                    p, torch.zeros_like(p)
-                )
-            return weights_updated
-        except Exception as e:
-            print(f"Error in UpdatableVllmInternalWorker.check_weights_changed: {e}")
             return False

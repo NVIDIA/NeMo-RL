@@ -4,9 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-reinforcer"
-version = "0.0.1"
+dynamic = [
+    "version",
+    "readme",
+]
 description = "Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
-readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache 2.0"}
 dependencies = [
@@ -23,16 +25,26 @@ dependencies = [
     "tensorboard",
     "omegaconf",
     "torchdata",
-    "vllm==0.8.0",
+    "nvidia-ml-py",
+    "hydra-core",
 ]
 
 [tool.setuptools]
 packages = ["nemo_reinforcer"]
 
+[tool.setuptools.dynamic]
+version = {attr = "nemo_reinforcer.__version__"}  # any module attribute compatible with ast.literal_eval
+readme = {file = "README.md", content-type = "text/markdown"}
+
 [project.optional-dependencies]
+vllm = [
+    "vllm==0.8.2",
+]
+
+[dependency-groups]
 build = [
-    "torch==2.6.0", 
-    "setuptools", 
+    "torch==2.6.0",
+    "setuptools",
     "packaging",
     "einops"
 ]
@@ -67,6 +79,7 @@ exclude = '''
 '''
 
 [tool.pytest.ini_options]
+addopts = "--cov=nemo_reinforcer --cov-report=term --cov-report=json -s -rA -x"
 testpaths = ["tests"]
 python_files = "test_*.py"
 
@@ -89,3 +102,11 @@ convention = "google"
 "tests/**" = ["D"]
 # Ignore all files that end in `_test.py`.
 "*_test.py" = ["D"]
+
+[tool.uv]
+# Users may use different link-modes depending on their scenario:
+#  --link-mode=hardlink (default on linux; may get warnings about switching to --link-mode copy if uv cache and venv on different file-systems)
+#  --link-mode=copy (slower but more reliable; supresses warning)
+#  --link-mode=symlink (fastest option when uv cache and venv on different file-system; caveat: venv is brittle since it depends on the environment/container)
+#
+#link-mode = "symlink"

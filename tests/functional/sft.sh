@@ -1,5 +1,8 @@
 #!/bin/bash
 
+## clean up checkpoint directory on exit
+trap "rm -rf /tmp/sft_checkpoints" EXIT
+
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 PROJECT_ROOT=$(realpath $SCRIPT_DIR/../..)
 # Mark the current repo as safe, since wandb fetchs metadata about the repo
@@ -10,7 +13,6 @@ set -eou pipefail
 LOG_DIR=$SCRIPT_DIR/$(basename $0 .sh)-logs
 JSON_METRICS=$LOG_DIR/$(basename $0 .sh).json
 RUN_LOG=$LOG_DIR/$(basename $0 .sh).log
-export RAY_DEDUP_LOGS=0
 export UV_CACHE_DIR=${UV_CACHE_DIR:-$PROJECT_ROOT/uv_cache}
 export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
 
@@ -26,7 +28,9 @@ python -u $PROJECT_ROOT/examples/run_sft.py \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \
-    checkpointing.enabled=false \
+    checkpointing.enabled=true \
+    checkpointing.save_every_n_steps=10 \
+    checkpointing.checkpoint_dir=/tmp/sft_checkpoints \
     $@ \
     2>&1 | tee $RUN_LOG
 

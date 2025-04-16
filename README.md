@@ -1,9 +1,16 @@
 # Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to >100B Parameters, scaling from 1 GPU to 100s
 
 <!-- markdown all in one -->
-- [Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to \>100B Parameters](#nemo-reinforcer-a-scalable-and-efficient-post-training-library-for-models-ranging-from-1-gpu-to-1000s-and-from-tiny-to-100b-parameters)
+- [Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to \>100B Parameters, scaling from 1 GPU to 100s](#nemo-reinforcer-a-scalable-and-efficient-post-training-library-for-models-ranging-from-tiny-to-100b-parameters-scaling-from-1-gpu-to-100s)
   - [Features](#features)
   - [Installation](#installation)
+  - [Quick start](#quick-start)
+    - [SFT](#sft)
+      - [Single Node](#single-node)
+      - [Multi-node](#multi-node)
+    - [GRPO](#grpo)
+      - [Single Node](#single-node-1)
+      - [Multi-node](#multi-node-1)
   - [Cluster Start](#cluster-start)
 
 **Nemo-Reinforcer** is a scalable and efficient post-training library designed for models ranging from 1 GPU to thousands, and from tiny to over 100 billion parameters.
@@ -18,7 +25,7 @@ What you can expect:
 
 ## Features
 
-_✅ Available now | 🔜 Coming in v0.2_
+✅ _Available now_ | 🔜 _Coming in v0.2_
 
 - ✅ **Fast Generation** - vLLM backend for optimized inference
 - ✅ **HuggingFace Integration** - Works with 1-8B models (Qwen1.5, Llama)
@@ -40,11 +47,11 @@ pip install uv
 # Specify a virtual env that uses Python 3.12
 uv venv -p python3.12.9 .venv
 # Install NeMo-Reinforcer with vllm
-uv pip install -e .
+uv pip install -e .[vllm]
 # Install NeMo-Reinforcer with dev/test dependencies
 uv pip install -e '.[dev,test]'
 
-# Use uv run to launch any runs. 
+# Use uv run to launch any runs.
 # Note that it is recommended to not activate the venv and instead use `uv run` since
 # it ensures consistent environment usage across different shells and sessions.
 # Example: uv run python examples/run_grpo_math.py
@@ -60,29 +67,32 @@ We provide a sample SFT experiment that uses the [SQuAD dataset](https://rajpurk
 
 #### Single Node
 
-The experiment is set up to run on 8 GPUs. If using a machine that has access to 8 GPUs, you can launch the experiment as follows:
+The default SFT experiment is configured to run on a single GPU. To launch the experiment,
 
 ```sh
 uv run python examples/run_sft.py
 ```
 
-This trains `Llama3.1-8B` on 8 GPUs. To run on a single GPU, we'll have to override a few of the experiment settings. We replace the 8B model with a smaller 1B model, decrease the batch size, and update the cluster configuration to use a single gpu:
+This trains `Llama3.2-1B` on one GPU using the SQUAD dataset.
+
+If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration. We also switch to an 8B Llama base model and increase the batch size:
 
 ```sh
 uv run python examples/run_sft.py \
-  policy.model_name="meta-llama/Llama-3.2-1B" \
-  policy.train_global_batch_size=16 \
-  sft.val_global_batch_size=16 \
-  cluster.gpus_per_node=1
+  policy.model_name="meta-llama/Meta-Llama-3-8B" \
+  policy.train_global_batch_size=128 \
+  sft.val_global_batch_size=128 \
+  cluster.gpus_per_node=8
 ```
 
-Refer to [sft.yaml](examples/configs/sft.yaml) for a full list of parameters that can be overridden.
+Refer to `examples/configs/sft.yaml` for a full list of parameters that can be overridden.
 
 #### Multi-node
 
 For distributed training across multiple nodes:
 
 Set `UV_CACHE_DIR` to a directory that can be read from all workers before running any uv run command.
+
 ```sh
 export UV_CACHE_DIR=/path/that/all/workers/can/access/uv_cache
 ```
@@ -95,7 +105,6 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # SFT experiment uses Llama-3.1-8B model
 COMMAND="uv pip install -e .; uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'" \
-RAY_DEDUP_LOGS=0 \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
@@ -151,7 +160,6 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # grpo_math_8b uses Llama-3.1-8B-Instruct model
 COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml cluster.num_nodes=2 checkpointing.checkpoint_dir='results/llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='grpo-llama8b_math'" \
-RAY_DEDUP_LOGS=0 \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \

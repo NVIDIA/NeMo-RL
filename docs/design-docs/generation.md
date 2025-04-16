@@ -15,7 +15,7 @@ The core of the generation system is defined in `interfaces.py`, which establish
        backend: str              # The backend to use (e.g., "vllm", "hf")
        max_new_tokens: int       # Maximum number of tokens to generate
        temperature: float        # Sampling temperature
-       top_p: float              # Top-p sampling parameter 
+       top_p: float              # Top-p sampling parameter
        top_k: int                # Top-k sampling parameter
        model_name: str           # Name or path of the model
    ```
@@ -95,32 +95,30 @@ The {py:class}`UpdatableVllmInternalWorker <nemo_reinforcer.models.generation.vl
 To use a generation backend:
 
 ```python
-from transformers import AutoTokenizer
-
-from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
+from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 
 # Set up the configuration
-tokenizer = AutoTokenizer.from_pretrained(policy_config["model_name"])
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-
 config = VllmConfig(
     model_name="Qwen/Qwen2.5-1.5B",
     max_new_tokens=100,
     temperature=0.7,
     top_p=1,
     top_k=None,
-    stop_token_ids=[tokenizer.eos_token_id]
-    pad_token=tokenizer.pad_token_id,
-    skip_tokenizer_init=True,
+    backend="vllm",
     vllm_cfg={
         "tensor_parallel_size": 1,
         "gpu_memory_utilization": 0.8,
         "max_model_len": 2048,
     }
 )
+
+# Configure config with tokenizer
+tokenizer = get_tokenizer(config["model_name"])
+config = configure_generation_config(config, tokenizer)
 
 # Initialize the cluster and generation backend
 cluster = RayVirtualCluster(...)
@@ -140,7 +138,7 @@ generator.finish_generation()
 To add a new generation backend:
 
 1. Create a new class that implements {py:class}`GenerationInterface <nemo_reinforcer.models.generation.interfaces.GenerationInterface>`
-2. Implement the required methods: {py:method}`generate <nemo_reinforcer.models.generation.interfaces.GenerationInterface.generate>`, {py:method}`prepare_for_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.prepare_for_generation>`, and {py:method}`finish_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.finish_generation>`
+2. Implement the required methods: {py:meth}`generate <nemo_reinforcer.models.generation.interfaces.GenerationInterface.generate>`, {py:meth}`prepare_for_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.prepare_for_generation>`, and {py:meth}`finish_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.finish_generation>`
 3. Ensure your implementation works with the standard {py:class}`GenerationConfig <nemo_reinforcer.models.generation.interfaces.GenerationConfig>` and {py:class}`GenerationDatumSpec <nemo_reinforcer.models.generation.interfaces.GenerationDatumSpec>` structures
 4. Register your backend with the system (if needed) to make it accessible
 

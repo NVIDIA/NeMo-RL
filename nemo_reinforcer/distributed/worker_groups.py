@@ -23,6 +23,7 @@ from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import SlicedDataDict
+from nemo_reinforcer.utils.venvs import create_local_venv
 
 
 @dataclass
@@ -90,7 +91,7 @@ class RayWorkerBuilder:
         placement_group: PlacementGroup,
         placement_group_bundle_index: int,
         num_gpus: int,
-        bundle_indices: Optional[list] = None,
+        bundle_indices: Optional[tuple] = None,
         **extra_options: Dict[str, Any],
     ):
         """Create a Ray worker with the specified configuration.
@@ -107,7 +108,7 @@ class RayWorkerBuilder:
             placement_group: Ray placement group for resource allocation
             placement_group_bundle_index: Index of the bundle in the placement group
             num_gpus: Number of GPUs to allocate to this worker
-            bundle_indices: List of bundle indices for tensor parallelism (if applicable)
+            bundle_indices: Tuple of (node_idx, local_bundle_indices) for tensor parallelism (if applicable)
             extra_options: Additional options to pass to the Ray actor (may be overridden by actor's configure_worker(...) method)
 
         Returns:
@@ -155,7 +156,17 @@ class RayWorkerBuilder:
                 options["runtime_env"] = {}
             options["runtime_env"]["py_executable"] = worker_class.DEFAULT_PY_EXECUTABLE
 
-        # Create and return the worker
+        if options.get("runtime_env", {}).get("py_executable", "n/a").startswith("uv"):
+            # If the py_executable begins with uv it signals that we need to create a
+            #  local venv first and then replace the py_executable with the local venv's python.
+            #  The directory the venv will be created in is controlled by the env var
+            #  REINFORCER_VENV_DIR and defaults to $GIT_ROOT/venvs/.
+            unwrapped_cls = worker_class.__ray_actor_class__
+            venv_python = create_local_venv(
+                py_executable=options["runtime_env"]["py_executable"],
+                venv_name=f"{unwrapped_cls.__module__}.{unwrapped_cls.__name__}",
+            )
+            options["runtime_env"]["py_executable"] = venv_python
         return worker_class.options(**options).remote(*self.args, **worker_kwargs)
 
 
@@ -289,7 +300,7 @@ class RayWorkerGroup:
 
                 # For tensor parallel groups, only the first worker gets bundle_indices
                 worker_bundle_indices = (
-                    local_bundle_indices if local_rank == 0 else None
+                    (node_idx, local_bundle_indices) if local_rank == 0 else None
                 )
 
                 # Create a descriptive name based on group structure

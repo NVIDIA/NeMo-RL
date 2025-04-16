@@ -353,14 +353,13 @@ def get_formatted_message_log(
     Returns:
         The message log with updated 'token_ids' and 'content' fields.
     """
-    cu_message = []
+    new_message_log = []
     prev_formatted_message = ""
     template = task_data_spec.custom_template
 
     for i, message in enumerate(message_log):
-        cu_message.append(message.copy())
         formatted_message = tokenizer.apply_chat_template(
-            cu_message,
+            message_log[: i + 1],
             chat_template=template,
             add_generation_prompt=False,
             tokenize=False,
@@ -376,20 +375,27 @@ def get_formatted_message_log(
         ## pull out the chunk corresponding to the current message
         message_chunk = formatted_message[prev_message_len_no_eos:]
 
-        if i == 0 and not message_chunk.startswith(tokenizer.bos_token):
-            message_chunk = tokenizer.bos_token + message_chunk
+        if tokenizer.bos_token is not None:
+            if i == 0 and not message_chunk.startswith(tokenizer.bos_token):
+                message_chunk = tokenizer.bos_token + message_chunk
 
         if i == len(message_log) - 1:
             message_chunk = message_chunk.rstrip("\n")
-            if not message_chunk.endswith(tokenizer.eos_token):
+            if tokenizer.eos_token is not None and not message_chunk.endswith(
+                tokenizer.eos_token
+            ):
                 message_chunk += tokenizer.eos_token
-        message["token_ids"] = tokenizer(
+
+        new_message = message.copy()
+        new_message["token_ids"] = tokenizer(
             message_chunk, return_tensors="pt", add_special_tokens=False
         )["input_ids"][0]
-        message["content"] = message_chunk
+        new_message["content"] = message_chunk
+        new_message_log.append(new_message)
+
         prev_formatted_message = formatted_message
 
-    return message_log
+    return new_message_log
 
 
 def remap_dataset_keys(

@@ -11,9 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import functools
 from typing import List, TypedDict, Optional
 
 from copy import deepcopy
+import sys
 import os
 import ray
 import logging
@@ -33,30 +35,16 @@ class ClusterConfig(TypedDict):
 dir_path = os.path.dirname(os.path.abspath(__file__))
 git_root = os.path.abspath(os.path.join(dir_path, "../.."))
 
-UV_CACHE_DIR = os.environ.get("UV_CACHE_DIR", None)
-uv_cache_flag = f"--cache-dir {UV_CACHE_DIR}" if UV_CACHE_DIR else ""
 
-if "VIRTUAL_ENV" not in os.environ:
-    raise EnvironmentError(
-        "VIRTUAL_ENV environment variable not found. This variable is required and can be set by:\n"
-        "1. (HIGHLY RECOMMENDED) Running with 'uv run'\n"
-        "2. Activating a virtual environment with 'source .venv/bin/activate'\n"
-        "3. Setting it manually (e.g., export VIRTUAL_ENV=/path/to/venv)\n\n"
-        "If set manually, we will look for the Python binary at $VIRTUAL_ENV/bin/python"
-    )
-
-
-# --with-editable .: speeds up the install slightly since editable installs don't require full copies
-# --cache-dir $UV_CACHE_DIR: caching isn't propagated by default. This will set it if the user has set it.
 class PY_EXECUTABLES:
-    # This uses the .venv created by `uv`. This is the fastest option, but provides no isolation between workers.
-    DEFAULT_VENV = f"{os.environ['VIRTUAL_ENV']}/bin/python"
+    SYSTEM = sys.executable
 
     # TODO: Debug why run-to-run variance is so high with these options
-    # Use NeMo-Reinforcer direct dependencies and nothing from system
-    DEFAULT = f"uv run --isolated --with-editable . {uv_cache_flag}"
-    # Use none of NeMo-Reinforcer's dependencies or the system. Useful for workers that only need standard python packages.
-    BARE_BONES = f"uv run --isolated --no-project --with-editable . {uv_cache_flag}"
+    # Use NeMo-Reinforcer direct dependencies.
+    BASE = "uv run --locked"
+
+    # Use NeMo-Reinforcer direct dependencies and vllm.
+    VLLM = "uv run --locked --extra vllm"
 
 
 @ray.remote
@@ -64,8 +52,7 @@ def _get_node_ip_and_free_port():
     import socket
 
     # Get the IP address of the current node
-    # Use socket.gethostbyname(socket.gethostname()) as a fallback
-    node_ip = socket.gethostbyname(socket.gethostname())
+    node_ip = ray._private.services.get_node_ip_address()
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))  # Bind to port 0 to get a random free port
@@ -89,7 +76,7 @@ def init_ray(log_dir: Optional[str] = None):
     runtime_env = {
         "env_vars": dict(os.environ),  # Pass thru all user environment variables
         "working_dir": git_root,
-        "py_executable": PY_EXECUTABLES.DEFAULT_VENV,
+        "py_executable": PY_EXECUTABLES.SYSTEM,
     }
 
     # Initialize Ray connection

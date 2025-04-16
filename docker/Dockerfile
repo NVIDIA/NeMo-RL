@@ -13,18 +13,32 @@ RUN echo "unset RAY_RUNTIME_ENV_HOOK" >> /home/ray/.bashrc
 # Users are encouraged to enable if the wish.
 ENV RAY_USAGE_STATS_ENABLED=0
 
-FROM base AS hermetic
-# hermetic creates a virtual environment with the default dependencies pre-installed for convenience
-
-COPY --chown=ray --chmod=755 pyproject.toml /opt/reinforcer/pyproject.toml
 RUN chmod 755 /home/ray/.cache
+
+FROM base AS hermetic
+
 WORKDIR /opt/reinforcer
-RUN uv venv .venv
+# This is less efficient as this invalidates the cache more frequently, but
+# creates a smaller image. Adding reinforcer afterwards and doing
+# `uv pip install --no-deps --editable .` causes a "sync" of some of the environment,
+# which defeats the purpose of pre-installing.
+# In the future we may optimize this: https://github.com/NVIDIA/reinforcer/issues/129
+COPY --chown=ray --chmod=755 . /opt/reinforcer
+RUN <<"EOF"
+uv venv .venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
-RUN uv sync --extra test --extra dev --extra docs --no-install-project
+
+# Sync each training + inference backend one at a time (since they may conflict)
+# to warm the uv cache, then at the end just sync the default dependencies.
+# Do everything in one layer to prevent large layers.
+
+uv sync --locked --extra vllm --no-install-project
+uv sync --locked --all-groups
+EOF
 
 ENV VIRTUAL_ENV=/opt/reinforcer/.venv
 ENV PATH="/opt/reinforcer/.venv/bin:$PATH"
+
 # The ray images automatically activate the anaconda venv. We will
 # comment this out of the .bashrc to give the same UX between docker
 # and other clusters like slurm.
@@ -36,9 +50,7 @@ sed -i '/# >>> conda initialize >>>/,/# <<< conda initialize <<</ { /^[^#]/ s/^/
 
 # Comment out any line that explicitly exports the anaconda3 PATH
 sed -i '/export PATH=\$HOME\/anaconda3\/bin:\$PATH/ s/^/# /' ~/.bashrc
+
+# Enable the repo's git history within the container
+git config --global --add safe.directory /opt/reinforcer
 EOF
-
-COPY --chown=ray --chmod=755 . /opt/reinforcer
-RUN uv pip install --no-deps --editable /opt/reinforcer
-
-FROM base

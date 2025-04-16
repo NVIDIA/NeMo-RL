@@ -7,6 +7,7 @@
 *.tar.gz
 .venv
 venv
+venvs
 __pycache__/
 _build/
 build/
@@ -29,4 +30,8 @@ docker/
 wandb/
 checkpoints/
 results/
+<<<<<<< HEAD
 unit_results/
+=======
+code_snapshots/
+>>>>>>> origin/main

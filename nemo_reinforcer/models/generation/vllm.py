@@ -18,7 +18,6 @@ import warnings
 
 import ray
 import torch
-from transformers import AutoTokenizer
 
 from nemo_reinforcer.models.generation.interfaces import (
     GenerationInterface,
@@ -51,8 +50,7 @@ class VllmConfig(GenerationConfig):
 
 @ray.remote
 class VllmGenerationWorker:
-    # This is the default py_executable for vLLM workers
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.DEFAULT_VENV
+    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.VLLM
 
     def __repr__(self):
         """Customizes the actor's prefix in the Ray logs.
@@ -63,7 +61,7 @@ class VllmGenerationWorker:
 
     @staticmethod
     def configure_worker(
-        num_gpus: int | float, bundle_indices: Optional[list] = None
+        num_gpus: int | float, bundle_indices: Optional[tuple] = None
     ) -> tuple[dict, dict, dict]:
         """Provides complete worker configuration for vLLM tensor parallelism.
 
@@ -72,7 +70,7 @@ class VllmGenerationWorker:
 
         Args:
             num_gpus: Original GPU allocation for this worker based on the placement group
-            bundle_indices: Bundle indices for tensor parallelism (if applicable)
+            bundle_indices: Tuple of (node_idx, local_bundle_indices) for tensor parallelism (if applicable)
 
         Returns:
             tuple with complete worker configuration:
@@ -85,19 +83,34 @@ class VllmGenerationWorker:
         init_kwargs = {}
         env_vars = {}
 
-        init_kwargs["bundle_indices"] = bundle_indices
+        local_bundle_indices = None
+        if bundle_indices is not None:
+            node_idx = bundle_indices[0]
+            local_bundle_indices = bundle_indices[1]
+            init_kwargs["bundle_indices"] = local_bundle_indices
+
+            """
+            compute a unique seed from the node_idx and bundle_indices:
+            node_idx = 0, bundle_indices = [0, 1, 2, 3] -> seed = 0*1024 + 0
+            node_idx = 0, bundle_indices = [4, 5, 6, 7] -> seed = 0*1024 + 1
+            node_idx = 1, bundle_indices = [0, 1, 2, 3] -> seed = 1*1024 + 0
+            node_idx = 1, bundle_indices = [4, 5, 6, 7] -> seed = 1*1024 + 1
+            """
+            bundle_id = local_bundle_indices[0] // len(local_bundle_indices)
+            seed = node_idx * 1024 + bundle_id
+            init_kwargs["seed"] = seed
 
         is_part_of_tp_workers = (
-            bundle_indices is not None and len(bundle_indices) > 1
-        ) or bundle_indices is None
+            local_bundle_indices is not None and len(local_bundle_indices) > 1
+        ) or local_bundle_indices is None
         if is_part_of_tp_workers:
             # Ray + vllm likes to manage GPU assignment internally
             resources["num_gpus"] = 0
             env_vars["RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES"] = "1"
             init_kwargs["fraction_of_gpus"] = num_gpus
 
-        # Force vllm to use v0 runtime (will be enabled by default in #51)
-        env_vars["VLLM_USE_V1"] = "0"
+        env_vars["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
+
         return resources, env_vars, init_kwargs
 
     def __init__(
@@ -105,6 +118,7 @@ class VllmGenerationWorker:
         config: VllmConfig,
         bundle_indices: Optional[list] = None,
         fraction_of_gpus: float = 1.0,
+        seed: Optional[int] = None,
     ):
         """Initialize a vLLM worker for distributed inference.
 
@@ -135,12 +149,9 @@ class VllmGenerationWorker:
         self.world_size = 1
 
         try:
-            from vllm import LLM, SamplingParams
-            from nemo_reinforcer.models.generation.vllm_backend import (
-                UpdatableVllmInternalWorker,
-            )
+            import vllm
 
-            self.SamplingParams = SamplingParams
+            self.SamplingParams = vllm.SamplingParams
         except ImportError:
             raise ImportError(
                 "vLLM is not installed. Please install it with `pip install nemo-reinforcer[vllm]` "
@@ -169,7 +180,7 @@ class VllmGenerationWorker:
             # For non-TP mode, explicitly set executor to None to avoid Ray issues
             vllm_kwargs["distributed_executor_backend"] = None
 
-        self.llm = LLM(
+        self.llm = vllm.LLM(
             model=self.model_name,
             # Training pipeline will set this to "dummy" and eval will load real weights using 'auto'
             load_format=self.cfg["vllm_cfg"]["load_format"],
@@ -178,10 +189,12 @@ class VllmGenerationWorker:
             gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
             enable_prefix_caching=True,
             dtype="auto",
+            seed=seed,
+            # Don't use cuda-graph by default as it leads to convergence issue (see https://github.com/NVIDIA/reinforcer/issues/186)
             enforce_eager=True,
             max_model_len=self.cfg["vllm_cfg"]["max_model_len"],
             trust_remote_code=True,
-            worker_cls=UpdatableVllmInternalWorker,
+            worker_extension_cls="nemo_reinforcer.models.generation.vllm_backend.VllmInternalWorkerExtension",
             enable_sleep_mode=True,
             disable_log_stats=True,
             **vllm_kwargs,
@@ -218,7 +231,7 @@ class VllmGenerationWorker:
             f"input_ids and input_lengths must be present in the BatchedDataDict, got keys: {data.keys()}"
         )
         is_right_padded, error_msg = verify_right_padding(
-            data, pad_value=self.cfg["pad_token"]
+            data, pad_value=self.cfg["pad_token_id"]
         )
         if not is_right_padded:
             warnings.warn(
@@ -257,14 +270,14 @@ class VllmGenerationWorker:
         sampling_params = self.SamplingParams(
             temperature=self.cfg["temperature"] if not greedy else 0,
             top_p=self.cfg["top_p"],
-            top_k=top_k
-            if not greedy
-            else 1,  # we use a default of -1 if unset so that 'null'/None is a common disable value
+            # we use a default of -1 if unset so that 'null'/None is a common disable value
+            top_k=top_k if not greedy else 1,
             max_tokens=self.cfg["max_new_tokens"],
             logprobs=0,  # Return logprobs for the generated tokens
-            stop=None,
             stop_token_ids=self.cfg["stop_token_ids"],
             logits_processors=logits_processors,
+            stop=self.cfg["stop_strings"],
+            include_stop_str_in_output=True,  # returning stop strings like hf
         )
 
         # Generate outputs
@@ -290,7 +303,7 @@ class VllmGenerationWorker:
 
             # Create a new tensor with the right size and fill with padding token
             full_output = torch.full(
-                (total_length,), self.cfg["pad_token"], dtype=input_ids.dtype
+                (total_length,), self.cfg["pad_token_id"], dtype=input_ids.dtype
             )
 
             # Copy original input (with padding) into the beginning
@@ -367,8 +380,10 @@ class VllmGenerationWorker:
             top_p=self.cfg["top_p"],
             top_k=top_k if not greedy else 1,
             max_tokens=self.cfg["max_new_tokens"],
-            stop=self.cfg.get("stop_sequences", None),
             logits_processors=logits_processors,
+            stop_token_ids=self.cfg["stop_token_ids"],
+            stop=self.cfg["stop_strings"],
+            include_stop_str_in_output=True,  # returning stop strings like hf
         )
 
         # Generate outputs
@@ -396,9 +411,6 @@ class VllmGenerationWorker:
             return False
 
     def report_device_id(self) -> str:
-        # from vllm.platforms import current_platform
-        # self.device_uuid = current_platform.get_device_uuid(self.rank)
-        # return self.device_uuid
         return self.llm.collective_rpc("report_device_id", args=tuple())[0]
 
     def update_weights_from_ipc_handles(self, ipc_handles):
@@ -420,22 +432,9 @@ class VllmGenerationWorker:
             print(f"Error updating weights: {e}")
             return False
 
-    def check_weights_changed(self):
-        """Check if the weights are updated to 0 by delegating to the vLLM Worker implementation.
-
-        Returns:
-            bool: True if all weights have been zeroed, False otherwise.
-        """
-        try:
-            result = self.llm.collective_rpc("check_weights_changed", args=tuple())
-            # The collective_rpc returns a list of results, one per worker
-            # Extract the boolean value from the first worker's result
-            return result[0] if isinstance(result, list) and len(result) > 0 else False
-        except Exception as e:
-            print(f"Error checking weights: {e}")
-            return False
-
     def sleep(self):
+        # Reset the prefix cache to ensure that prefix cache is not reused after weights are updated
+        self.llm.llm_engine.reset_prefix_cache()
         self.llm.sleep(level=1)
         gc.collect()
         torch.cuda.empty_cache()
@@ -522,27 +521,6 @@ class VllmGeneration(GenerationInterface):
 
         return tied_worker_groups
 
-    def _check_all_weights_changed(self):
-        """Check if weights have been updated across all workers or leaders.
-
-        Returns:
-            bool: True if all checked weights have been updated, False otherwise.
-        """
-        if not self.worker_group or not self.worker_group.workers:
-            return False
-
-        try:
-            # Use run_all_workers_single_data for methods that don't need data
-            futures = self.worker_group.run_all_workers_single_data(
-                "check_weights_changed", respect_tied_workers=True
-            )
-            # Wait for all futures to complete
-            results = ray.get(futures)
-            return all(result for result in results if result is not None)
-        except Exception as e:
-            print(f"Error checking weights: {e}")
-            return False
-
     def generate(
         self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
     ) -> BatchedDataDict[GenerationOutputSpec]:
@@ -569,7 +547,9 @@ class VllmGeneration(GenerationInterface):
         results = self.worker_group.get_all_worker_results(future_bundle)
 
         # Combine results from all tied worker groups
-        combined = BatchedDataDict.from_batches(results)
+        combined = BatchedDataDict.from_batches(
+            results, pad_value_dict={"output_ids": self.cfg["pad_token_id"]}
+        )
 
         # Verify the output has all required fields
         required_keys = [
@@ -610,7 +590,9 @@ class VllmGeneration(GenerationInterface):
         results = self.worker_group.get_all_worker_results(future_bundle)
 
         # Combine results from all tied worker groups
-        combined = BatchedDataDict.from_batches(results)
+        combined = BatchedDataDict.from_batches(
+            results, pad_value_dict={"output_ids": self.cfg["pad_token_id"]}
+        )
 
         # Verify the output has all required fields
         required_keys = ["texts"]

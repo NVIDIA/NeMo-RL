@@ -29,11 +29,10 @@ if ! ray status &>/dev/null; then
 fi
 
 export PYTHONPATH=$(realpath ${SCRIPT_DIR}/..):${PYTHONPATH:-}
-export RAY_DEDUP_LOGS=0
 
 # Run unit tests
 echo "Running unit tests..."
-if ! pytest unit/ --cov=nemo_reinforcer --cov-report=term --cov-report=json -s -rA "$@"; then
+if ! pytest unit/ "$@"; then
     echo "[ERROR]: Unit tests failed."
     exit 1
 fi
