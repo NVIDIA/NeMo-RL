@@ -18,8 +18,10 @@ import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 from nemo_reinforcer.tools.tools import BM25Retriever
 
@@ -33,6 +35,8 @@ basic_vllm_test_config: VllmConfig = {
     "temperature": 1.0,
     "top_p": 1.0,
     "top_k": None,
+    "stop_token_ids": None,
+    "stop_strings": None,
     "tool_map": {},
     "execute_code": True,
     "vllm_cfg": {
@@ -43,28 +47,15 @@ basic_vllm_test_config: VllmConfig = {
 }
 
 
-def configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=False):
-    """Apply tokenizer-specific configurations to vLLM config."""
-    if is_eval:
-        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = False
-        vllm_config["vllm_cfg"]["load_format"] = "auto"
-    else:
-        vllm_config["vllm_cfg"]["skip_tokenizer_init"] = True
-        vllm_config["vllm_cfg"]["load_format"] = "dummy"
-    vllm_config["pad_token"] = tokenizer.pad_token_id
-    vllm_config["stop_token_ids"] = [tokenizer.eos_token_id]
-    return vllm_config
-
-
 @pytest.fixture(scope="module")
 def cluster():
     """Create a virtual cluster for testing."""
-    # Create a cluster with 1 node that has 1 GPU bundles
+    # Create a cluster with 1 node that has 2 GPU bundles
     virtual_cluster = RayVirtualCluster(
-        bundle_ct_per_node_list=[1],  # 1 node with 2 GPU bundle
+        bundle_ct_per_node_list=[2],  # 1 node with 2 GPU bundle
         use_gpus=True,
-        max_colocated_worker_groups=1,
-        num_gpus_per_node=1,  # Use available GPUs
+        max_colocated_worker_groups=2,
+        num_gpus_per_node=2,  # Use available GPUs
         name="vllm-test-cluster",
     )
     yield virtual_cluster
@@ -75,9 +66,7 @@ def cluster():
 def tokenizer():
     """Initialize tokenizer for the test model."""
     model_name = basic_vllm_test_config["model_name"]
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = get_tokenizer(model_name)
     return tokenizer
 
 
@@ -96,7 +85,7 @@ def test_vllm_execute_code(cluster, tokenizer):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
 
     # Create vLLM generation
     vllm_generation = VllmGeneration(cluster, vllm_config)
@@ -112,7 +101,7 @@ def test_vllm_execute_code(cluster, tokenizer):
 
 @pytest.mark.timeout(150)
 def test_vllm_use_tool(cluster, tokenizer):
-    """Test that vLLM can call the code executor."""
+    """Test that vLLM can use tool in the code executor."""
     # Prepare test data
     codes = ["<code>retrieve('Jen-Hsun Huang')</code>\n"]
     results = [
@@ -135,7 +124,7 @@ def test_vllm_use_tool(cluster, tokenizer):
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
     vllm_config["tool_map"] = {"retrieve": retriever}
-    vllm_config = configure_vllm_with_tokenizer(vllm_config, tokenizer, is_eval=True)
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
 
     # Create vLLM generation
     vllm_generation = VllmGeneration(cluster, vllm_config)

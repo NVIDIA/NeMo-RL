@@ -19,6 +19,9 @@ uv.lock
 
 # Test
 .coverage
+coverage.json
+unit_results.json
+unit_results/
 
 # Cache
 uv_cache/
@@ -30,8 +33,4 @@ docker/
 wandb/
 checkpoints/
 results/
-<<<<<<< HEAD
-unit_results/
-=======
 code_snapshots/
->>>>>>> origin/main
