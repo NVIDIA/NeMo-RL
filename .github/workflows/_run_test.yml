@@ -112,7 +112,7 @@ jobs:
           if: always() && inputs.AFTER_SCRIPT != ':'
           run: |
             # Ensure any added files in the mounted directoryare owned by the runner user to allow it to clean up
-            docker exec nemo_container_${{ github.run_id }} bash -c "chown -R $(id -u):$(id -g) /opt/reinforcer"
+            docker exec nemo_container_${{ github.run_id }} bash -c "find /opt/reinforcer -path '/opt/reinforcer/datasets' -prune -o -exec chown -R $(id -u):$(id -g) {} +"
 
             # Run the after script
             cmd=$(cat <<"RUN_TEST_EOF"
