@@ -265,7 +265,7 @@ def validate(
             )
             val_metrics["val_loss"] += float(val_results["loss"])
 
-            if val_batches > 0 and batch_idx >= val_batches:
+            if val_batches > 0 and batch_idx >= val_batches - 1:
                 break
 
         val_metrics["val_loss"] /= val_batches

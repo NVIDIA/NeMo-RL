@@ -143,6 +143,7 @@ class ClippedPGLossFn(LossFunction):
                 "probs_ratio_clamped": probs_ratio_clamped,
                 "kl_penalty": kl.item() / self.reference_policy_kl_penalty if kl else 0,
                 "token_mult_prob_error": mult_prob_error,
+                "num_valid_samples": sample_mask.sum().item(),
             },
         )
 
@@ -175,8 +176,9 @@ class NLLLoss(LossFunction):
         if dpo_loss:
             ## shape: [batch_size]
             num_unmasked_tokens = torch.sum(mask, -1)
-            loss = -torch.sum(token_logprobs * mask, dim=-1)
+            loss = -torch.sum(token_logprobs * mask, dim=-1) * sample_mask
             if dpo_average_log_probs:
+                ## multiple by sample_mask to zero out invalid samples
                 loss = loss / num_unmasked_tokens.clamp(min=1)
         else:
             ## single scalar loss
@@ -193,6 +195,7 @@ class NLLLoss(LossFunction):
             "loss": loss.item() if loss.ndim == 0 else loss,
             "num_unmasked_tokens": num_unmasked_tokens,
             "total_tokens": mask.numel(),
+            "num_valid_samples": sample_mask.sum().item(),
         }
 
 
@@ -211,6 +214,10 @@ class DPOLossDataDict(TypedDict):
     reference_policy_logprobs: torch.Tensor
     token_mask: torch.Tensor
     sample_mask: torch.Tensor
+
+
+def average_valid_samples(tensor: torch.Tensor, sample_mask: torch.Tensor):
+    return tensor.sum(-1) / sample_mask.sum(-1).clamp(min=1)
 
 
 class DPOLossFn(LossFunction):
@@ -286,7 +293,6 @@ class DPOLossFn(LossFunction):
         ## TODO(@ashors): there's some duplicate code here with the NLLLoss function. We should refactor
         token_mask = data["token_mask"][:, 1:]
         sample_mask = data["sample_mask"]
-        mask = token_mask * sample_mask.unsqueeze(-1)
 
         next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
         next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
@@ -303,18 +309,23 @@ class DPOLossFn(LossFunction):
 
         rewards = diff.sum(-1)
         if self.preference_average_log_probs:
-            rewards = rewards / mask.sum(-1).clamp(min=1)
+            rewards = rewards / token_mask.sum(-1).clamp(min=1)
 
         rewards_chosen, rewards_rejected = self.split_output_tensor(rewards)
         rewards_delta = rewards_chosen - rewards_rejected
 
-        return (
+        per_sample_loss = (
             -torch.nn.functional.logsigmoid(
                 self.reference_policy_kl_penalty * rewards_delta
-            ).mean(0),
+            )
+            * sample_mask[::2]
+        )  ## zero out invalid samples
+
+        return (
+            per_sample_loss.mean(0),
             (rewards_chosen > rewards_rejected).float().mean(0),
-            rewards_chosen.mean(),
-            rewards_rejected.mean(),
+            average_valid_samples(rewards_chosen, sample_mask[::2]),
+            average_valid_samples(rewards_rejected, sample_mask[1::2]),
         )
 
     def __call__(
@@ -329,7 +340,9 @@ class DPOLossFn(LossFunction):
                 dpo_average_log_probs=self.sft_average_log_probs,
             )
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
-            sft_loss_chosen = sft_loss_chosen.mean(0)
+            sft_loss_chosen = average_valid_samples(
+                sft_loss_chosen, data["sample_mask"]
+            )
 
         (
             preference_loss,
@@ -343,6 +356,9 @@ class DPOLossFn(LossFunction):
             + self.preference_loss_weight * preference_loss
         )
 
+        ## divide by 2 because we're summing over (chosen, rejected) pairs
+        num_valid_samples = data["sample_mask"].sum() / 2
+
         return dpo_loss, {
             "loss": dpo_loss.item(),
             "sft_loss": sft_loss_chosen.item(),
@@ -350,4 +366,5 @@ class DPOLossFn(LossFunction):
             "accuracy": accuracy.item(),
             "rewards_chosen_mean": rewards_chosen_mean.item(),
             "rewards_rejected_mean": rewards_rejected_mean.item(),
+            "num_valid_samples": num_valid_samples.item(),
         }

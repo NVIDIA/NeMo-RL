@@ -316,15 +316,15 @@ class HfPolicyWorker:
                             logits = outputs.logits
 
                     loss, loss_metrics = loss_fn(logits, mb)
+                    num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
 
                     # Backward pass
-
-                    ## TODO(@ashors): improve this
-                    if not eval_mode:
-                        loss.backward()
-                    mb_losses.append(loss.item())
-                    all_mb_metrics.append(loss_metrics)
+                    if num_valid_samples > 0:
+                        if not eval_mode:
+                            loss.backward()
+                        mb_losses.append(loss.item())
+                        all_mb_metrics.append(loss_metrics)
 
                 # Clip gradients
                 if not eval_mode:

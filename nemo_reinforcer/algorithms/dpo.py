@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import warnings
+from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from typing import Optional, Tuple, TypedDict
@@ -265,6 +267,8 @@ def validate(
     with timer.time("total_validation_time"):
         print(f"▶ Starting validation at step {step}...")
 
+        val_metrics = defaultdict(lambda: 0.0)
+        num_valid_batches = 0
         for batch_idx, val_batch in enumerate(
             augment_dataloader(val_dataloader, policy, master_config)
         ):
@@ -277,13 +281,22 @@ def validate(
                 mbs=val_mbs * 2,
             )
 
-            val_metrics = {
-                "loss": val_results["loss"].numpy(),
-            }
-            val_metrics.update(val_results["all_mb_metrics"])
-            val_metrics = {k: np.mean(v).item() for k, v in val_metrics.items()}
-            if val_batches > 0 and batch_idx >= val_batches:
+            if len(val_results["all_mb_metrics"]) == 0:
+                warnings.warn(
+                    "No validation metrics were collected for this batch."
+                    " This is likely because there were no valid samples."
+                )
+
+            else:
+                for k, v in val_results["all_mb_metrics"].items():
+                    val_metrics[k] += np.mean(v).item()
+                num_valid_batches += 1
+
+            if val_batches > 0 and batch_idx >= val_batches - 1:
                 break
+
+        for k, v in val_metrics.items():
+            val_metrics[k] /= num_valid_batches
 
         # Calculate validation metrics
         policy.prepare_for_training()
@@ -292,15 +305,22 @@ def validate(
     timing_metrics = timer.get_timing_metrics(reduction_op="sum")
     validation_time = timing_metrics.get("total_validation_time", 0)
 
-    # Print summary of validation results
-    print("\n📊 Validation Results:")
-    print(f"    • Validation loss: {float(val_metrics['loss']):.4f}")
-    print(f"    • Validation accuracy: {float(val_metrics['accuracy']):.4f}")
+    if len(val_metrics) == 0:
+        warnings.warn(
+            "No validation metrics were collected."
+            " This is likely because there were no valid samples in the validation set."
+        )
 
-    # Print timing information
-    print("\n  ⏱️  Validation Timing:")
-    validation_time = timing_metrics.get("total_validation_time", 0)
-    print(f"    • Total validation time: {validation_time:.2f}s")
+    else:
+        # Print summary of validation results
+        print("\n📊 Validation Results:")
+        print(f"    • Validation loss: {float(val_metrics['loss']):.4f}")
+        print(f"    • Validation accuracy: {float(val_metrics['accuracy']):.4f}")
+
+        # Print timing information
+        print("\n  ⏱️  Validation Timing:")
+        validation_time = timing_metrics.get("total_validation_time", 0)
+        print(f"    • Total validation time: {validation_time:.2f}s")
 
     # Make sure to reset the timer after validation
     timer.reset()
