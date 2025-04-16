@@ -7,15 +7,16 @@ git config --global --add safe.directory $PROJECT_ROOT
 
 set -eou pipefail
 
-LOG_DIR=$SCRIPT_DIR/$(basename $0 .sh)-logs
-JSON_METRICS=$LOG_DIR/$(basename $0 .sh).json
-RUN_LOG=$LOG_DIR/$(basename $0 .sh).log
-export RAY_DEDUP_LOGS=0
+EXP_NAME=$(basename $0 .sh)
+EXP_DIR=$SCRIPT_DIR/$EXP_NAME
+LOG_DIR=$EXP_DIR/logs
+JSON_METRICS=$EXP_DIR/metrics.json
+RUN_LOG=$EXP_DIR/run.log
 export UV_CACHE_DIR=${UV_CACHE_DIR:-$PROJECT_ROOT/uv_cache}
 export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
 
-rm -rf $LOG_DIR
-mkdir -p $LOG_DIR
+rm -rf $EXP_DIR $LOG_DIR
+mkdir -p $EXP_DIR $LOG_DIR
 
 cd $PROJECT_ROOT
 python -u $PROJECT_ROOT/examples/run_dpo.py \
@@ -31,9 +32,8 @@ python -u $PROJECT_ROOT/examples/run_dpo.py \
     $@ \
     2>&1 | tee $RUN_LOG
 
-cd $SCRIPT_DIR
-python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
+python -u tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
-python check_metrics.py $JSON_METRICS \
+python -u tests/check_metrics.py $JSON_METRICS \
   'data["train/loss"]["2"] < 0.694' \
 

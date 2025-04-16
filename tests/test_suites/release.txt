@@ -1,0 +1,16 @@
+########
+# GRPO #
+########
+
+# Long 8b run
+recipes/llm/grpo-llama3.1-8b-instruct-4n8g-fsdp2tp1-long.sh
+
+# Long 32b run
+recipes/llm/grpo-qwen2.5-32b-16n8g-fsdp2tp8sp-actckpt-long.sh
+
+#######
+# SFT #
+#######
+
+# Long 8b convergence
+recipes/llm/sft-llama3.1-8b-instruct-1n8g-fsdp2tp1-long.sh
