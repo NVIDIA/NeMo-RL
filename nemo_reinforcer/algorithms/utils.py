@@ -163,12 +163,12 @@ def get_tokenizer(tokenizer_config: TokenizerConfig) -> AutoTokenizer:
         >>> # not specifying a chat template uses the tokenizer's default
         >>> config = {"name": "meta-llama/Llama-3.2-1B-Instruct"}
         >>> tokenizer = get_tokenizer(config)
+        No chat template provided, using tokenizer's default
         >>> messages = [
         ...     {"role": "system", "content": "You are a helpful AI assistant."},
         ...     {"role": "user", "content": "Hello!"}
         ... ]
         >>> formatted = tokenizer.apply_chat_template(messages, tokenize=False)
-        "No chat template provided, using tokenizer's default"
         >>> assert formatted == AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct").apply_chat_template(messages, tokenize=False)
 
         >>> # Using a passthrough template
@@ -177,8 +177,8 @@ def get_tokenizer(tokenizer_config: TokenizerConfig) -> AutoTokenizer:
         ...     "chat_template": None
         ... }
         >>> tokenizer = get_tokenizer(config)
+        Using passthrough chat template
         >>> formatted = tokenizer.apply_chat_template(messages, tokenize=False)
-        "Using passthrough chat template"
         >>> assert formatted == "".join(msg["content"] for msg in messages)
 
         >>> # Using a custom template
@@ -187,8 +187,8 @@ def get_tokenizer(tokenizer_config: TokenizerConfig) -> AutoTokenizer:
         ...     "chat_template": "{% for message in messages %}{{ ' START: ' + message['content'] + ' END.' }}{% endfor %}"
         ... }
         >>> tokenizer = get_tokenizer(config)
+        Using custom chat template
         >>> formatted = tokenizer.apply_chat_template(messages, tokenize=False)
-        "Using custom chat template"
         >>> assert formatted == " START: You are a helpful AI assistant. END. START: Hello! END."
         ```
     """
