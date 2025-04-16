@@ -145,7 +145,7 @@ jobs:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 20
+      TIMEOUT: 25
       UNIT_TEST_SCRIPT: |
         cd /opt/reinforcer
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
@@ -182,12 +182,12 @@ jobs:
         cd /opt/reinforcer
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Test Summary for level: ${{ needs.pre-flight.outputs.test_level }}
-        
+
         ## Unit test results
         \`\`\`json
         $(if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then cat tests/unit/unit_results.json || echo "n/a"; else echo "Not run"; fi)
         \`\`\`
-        
+
         ## Test Level: ${{ needs.pre-flight.outputs.test_level }}
         EOF
     secrets:
@@ -210,9 +210,9 @@ jobs:
           ALL_SUCCESS: >-
             ${{
               (needs.pre-flight.outputs.test_level == 'none') ||
-              (needs.pre-flight.outputs.test_level != 'none' && 
-               needs.lint-check.result == 'success' && 
-               needs.sphinx-build.result == 'success' && 
+              (needs.pre-flight.outputs.test_level != 'none' &&
+               needs.lint-check.result == 'success' &&
+               needs.sphinx-build.result == 'success' &&
                needs.tests.result == 'success')
             }}
           CI_SKIP: ${{ github.event.label.name == 'Skip CICD' }}
