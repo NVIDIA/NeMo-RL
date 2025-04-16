@@ -176,9 +176,9 @@ class NLLLoss(LossFunction):
         if dpo_loss:
             ## shape: [batch_size]
             num_unmasked_tokens = torch.sum(mask, -1)
+            ## multiply by sample_mask to zero out invalid samples
             loss = -torch.sum(token_logprobs * mask, dim=-1) * sample_mask
             if dpo_average_log_probs:
-                ## multiple by sample_mask to zero out invalid samples
                 loss = loss / num_unmasked_tokens.clamp(min=1)
         else:
             ## single scalar loss
