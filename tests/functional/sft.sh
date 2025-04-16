@@ -13,7 +13,6 @@ set -eou pipefail
 LOG_DIR=$SCRIPT_DIR/$(basename $0 .sh)-logs
 JSON_METRICS=$LOG_DIR/$(basename $0 .sh).json
 RUN_LOG=$LOG_DIR/$(basename $0 .sh).log
-export RAY_DEDUP_LOGS=0
 export UV_CACHE_DIR=${UV_CACHE_DIR:-$PROJECT_ROOT/uv_cache}
 export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
 
