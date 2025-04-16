@@ -117,6 +117,7 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure --color=always
 
   sphinx-build:
+    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     name: Sphinx build
     needs: [pre-flight]
     runs-on: ubuntu-latest
@@ -214,11 +215,13 @@ jobs:
           ALL_SUCCESS: >-
             ${{
               needs.lint-check.result == 'success' &&
-              needs.sphinx-build.result == 'success' &&
               (
                 needs.pre-flight.outputs.test_level == 'none' ||
-                (needs.pre-flight.outputs.test_level != 'none' &&
-                 needs.tests.result == 'success')
+                (
+                  needs.pre-flight.outputs.test_level != 'none' &&
+                  needs.sphinx-build.result == 'success' &&
+                  needs.tests.result == 'success'
+                )
               )
             }}
           CI_SKIP: ${{ github.event.label.name == 'Skip CICD' }}
