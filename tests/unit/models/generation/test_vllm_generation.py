@@ -254,7 +254,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 
     hf_config = basic_hf_test_config.copy()
-    hf_policy = HfPolicy(cluster, hf_config)
+    hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
     print(f"refitting vllm policy...")
     ipc_handles = hf_policy.get_weights_ipc_handles()
