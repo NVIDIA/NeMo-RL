@@ -648,7 +648,11 @@ def grpo_train(
             "reward": rewards.numpy(),
         }
         metrics.update(train_results["all_mb_metrics"])
-        metrics = {k: np.mean(v).item() for k, v in metrics.items()}
+        for k, v in metrics.items():
+            if k == "num_valid_samples":
+                metrics[k] = np.sum(v).item()
+            else:
+                metrics[k] = np.mean(v).item()
         metrics.update(gen_metrics)
 
         timing_metrics = timer.get_timing_metrics(reduction_op="sum")
