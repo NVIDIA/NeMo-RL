@@ -110,7 +110,9 @@ class ClippedPGLossFn(LossFunction):
         # Calculate KL regularization.
         if self.reference_policy_kl_penalty != 0:
             if self.use_on_policy_kl_approximation:
-                kl_importance_weights = torch.exp(curr_logprobs - generation_logprobs).detach()
+                kl_importance_weights = torch.exp(
+                    curr_logprobs - generation_logprobs
+                ).detach()
                 kl_importance_weights = torch.nan_to_num(
                     kl_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
                 )
