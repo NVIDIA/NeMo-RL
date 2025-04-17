@@ -114,7 +114,6 @@ def math_data_processor(
     solution = str(datum_dict["expected_answer"])
     extra_env_info = {"ground_truth": solution}
 
-    template = task_data_spec.custom_template
     message_log: LLMMessageLogType = []
 
     # system prompt
@@ -122,7 +121,6 @@ def math_data_processor(
         sys_message = {"role": "system", "content": task_data_spec.system_prompt}
         message = tokenizer.apply_chat_template(
             [sys_message],
-            chat_template=template,
             tokenize=False,
             add_generation_prompt=False,
             add_special_tokens=False,
@@ -138,7 +136,6 @@ def math_data_processor(
     user_message = {"role": "user", "content": problem}
     message = tokenizer.apply_chat_template(
         [user_message],
-        chat_template=template,
         tokenize=False,
         add_generation_prompt=True,
         add_special_tokens=False,
