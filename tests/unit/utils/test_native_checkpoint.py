@@ -60,6 +60,9 @@ simple_policy_config = {
         "activation_checkpointing": False,
         "tensor_parallel_size": 1,
     },
+    "dynamic_batching": {
+        "enabled": False,
+    },
     "max_grad_norm": 1.0,
     "generation": {
         "temperature": 1.0,
