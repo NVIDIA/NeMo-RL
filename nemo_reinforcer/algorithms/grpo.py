@@ -292,7 +292,7 @@ def generate_responses(
     include_logprobs: bool = True,
 ) -> Tuple[BatchedDataDict[DatumSpec], List[List[int]], Dict[str, float | int]]:
     """Generate responses from policy."""
-    # Generate responses
+    # Generate responses'=
     generation_outputs = policy_generation.generate(generation_input_data)
 
     # Extract generated tokens
@@ -360,6 +360,11 @@ def calculate_rewards(
         if task_name not in task_groups:
             task_groups[task_name] = []
         task_groups[task_name].append((i, to_env[i]))
+
+
+    rewards = torch.zeros([2048], device="cpu", dtype=torch.float)
+
+    return rewards, to_env
 
     # Calculate rewards for each task group concurrently
     futures = []
