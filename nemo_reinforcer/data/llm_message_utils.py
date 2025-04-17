@@ -110,40 +110,34 @@ def get_keys_from_message_log(
 def add_loss_mask_to_message_log(
     message_log: LLMMessageLogType,
     roles_to_train_on: List[str] = ["assistant"],
+    only_unmask_final: bool = False,
 ) -> None:
     """Add token-level loss masks to each message in a message log.
 
     Args:
         message_log (LLMMessageLogType): List of message dictionaries containing token IDs and metadata
         roles_to_train_on (List[str]): List of strings indicating which speakers to unmask. Default: ["assistant"]
+        only_unmask_final (bool): If True, only unmask the final message in the log. Default: False
     """
     for i, role in enumerate(roles_to_train_on):
         roles_to_train_on[i] = role.lower()
 
     for message in message_log:
-        for sentence in message:
-            if sentence["role"] in roles_to_train_on:
-                sentence["token_loss_mask"] = torch.ones_like(sentence["token_ids"])
-            else:
-                sentence["token_loss_mask"] = torch.zeros_like(sentence["token_ids"])
-
-
-def add_dpo_loss_mask_to_message_log(
-    message_log: LLMMessageLogType,
-) -> None:
-    """Add token-level loss masks to each message in a message log.
-
-    This function differs from add_loss_mask_to_message_log in that it only unmasks the final assistant message in the log.
-
-    Args:
-        message_log (LLMMessageLogType): List of message dictionaries containing token IDs and metadata
-    """
-    for message in message_log:
         for i, sentence in enumerate(message):
-            if i == len(message) - 1:
-                sentence["token_loss_mask"] = torch.ones_like(sentence["token_ids"])
+            if only_unmask_final:
+                if i == len(message) - 1:
+                    sentence["token_loss_mask"] = torch.ones_like(sentence["token_ids"])
+                else:
+                    sentence["token_loss_mask"] = torch.zeros_like(
+                        sentence["token_ids"]
+                    )
             else:
-                sentence["token_loss_mask"] = torch.zeros_like(sentence["token_ids"])
+                if sentence["role"] in roles_to_train_on:
+                    sentence["token_loss_mask"] = torch.ones_like(sentence["token_ids"])
+                else:
+                    sentence["token_loss_mask"] = torch.zeros_like(
+                        sentence["token_ids"]
+                    )
 
 
 def _pad_tensor(

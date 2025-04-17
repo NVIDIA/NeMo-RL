@@ -22,7 +22,7 @@ from nemo_reinforcer.data.interfaces import (
     DatumSpec,
 )
 from nemo_reinforcer.data.llm_message_utils import (
-    add_dpo_loss_mask_to_message_log,
+    add_loss_mask_to_message_log,
     batched_message_log_to_flat_message,
 )
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
@@ -223,8 +223,9 @@ def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
     )
 
     ## add loss mask based on role to every message
-    add_dpo_loss_mask_to_message_log(
+    add_loss_mask_to_message_log(
         batch["message_log"],
+        only_unmask_final=True,
     )
 
     cat_and_padded, input_lengths = batched_message_log_to_flat_message(

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from datasets import load_dataset
+from absl import logging
 
 from nemo_reinforcer.data.interfaces import TaskDataSpec
 
@@ -21,10 +22,25 @@ def format_helpsteer3(data):
     response_2 = data["response2"]
     overall_preference = data["overall_preference"]
 
+    if overall_preference < 0:
+        chosen = response_1
+        rejected = response_2
+    elif overall_preference == 0:
+        logging.log_every_n(
+            logging.WARNING,
+            "Preference is 0 for some examples! Setting chosen and rejected to response 1 since we don't know which response is better",
+            1000,
+        )
+        chosen = response_1
+        rejected = response_1
+    else:
+        chosen = response_2
+        rejected = response_1
+
     return {
         "prompt": data["context"],
-        "chosen_response": response_1 if overall_preference <= 0 else response_2,
-        "rejected_response": response_2 if overall_preference < 0 else response_1,
+        "chosen_response": chosen,
+        "rejected_response": rejected,
     }
 
 

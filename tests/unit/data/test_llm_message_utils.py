@@ -422,6 +422,22 @@ def test_add_loss_mask_to_chat_message_log(
         tokenized_chat_message_log[0][2]["token_loss_mask"], torch.tensor([1, 1])
     )
 
+    ## test only unmasking final message
+    add_loss_mask_to_message_log(
+        tokenized_chat_message_log,
+        only_unmask_final=True,
+    )
+    assert torch.equal(
+        tokenized_chat_message_log[0][0]["token_loss_mask"],
+        torch.tensor([0, 0, 0, 0, 0, 0]),
+    )
+    assert torch.equal(
+        tokenized_chat_message_log[0][1]["token_loss_mask"], torch.tensor([0, 0, 0])
+    )
+    assert torch.equal(
+        tokenized_chat_message_log[0][2]["token_loss_mask"], torch.tensor([1, 1])
+    )
+
 
 def test_get_first_index_that_differs():
     assert get_first_index_that_differs("hello", "hello") == 5
