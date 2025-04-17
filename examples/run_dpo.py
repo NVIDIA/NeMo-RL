@@ -59,7 +59,53 @@ def dpo_preprocessor(
     max_seq_length: int,
     idx: int,
 ) -> DatumSpec:
-    """Process a datum dictionary for DPO training."""
+    """Process a datum dictionary for DPO training.
+
+    Examples:
+        ```{doctest}
+        >>> from transformers import AutoTokenizer
+        >>> from nemo_reinforcer.data.interfaces import TaskDataSpec
+        >>>
+        >>> # Initialize tokenizer and task spec
+        >>> tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct")
+        >>> ## set a passthrough chat template for simplicity
+        >>> tokenizer.chat_template = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
+        >>> task_spec = TaskDataSpec(task_name="test_dpo")
+        >>>
+        >>> datum = {
+        ...     "prompt": "What is 2+2?",
+        ...     "chosen_response": "4",
+        ...     "rejected_response": "5"
+        ... }
+        >>>
+        >>> processed = dpo_preprocessor(datum, task_spec, tokenizer, max_seq_length=128, idx=0)
+        >>> len(processed["message_log_chosen"])
+        2
+        >>> processed["message_log_chosen"][0]["content"]
+        '<|begin_of_text|>What is 2+2?'
+        >>> processed["message_log_chosen"][-1]["content"]
+        '4<|eot_id|>'
+        >>> processed["message_log_rejected"][-1]["content"]
+        '5<|eot_id|>'
+        >>>
+        >>> # prompt can also be a list with multiple messages
+        >>> datum = {
+        ...     "prompt": [{"role": "user", "content": "I have a question."}, {"role": "assistant", "content": "Sure!"}, {"role": "user", "content": "What is 2+2?"}],
+        ...     "chosen_response": "4",
+        ...     "rejected_response": "5"
+        ... }
+        >>> processed = dpo_preprocessor(datum, task_spec, tokenizer, max_seq_length=128, idx=0)
+        >>> len(processed["message_log_chosen"])
+        4
+        >>> processed["message_log_chosen"][1]["content"]
+        'Sure!'
+        >>> processed["message_log_chosen"][-1]["content"]
+        '4<|eot_id|>'
+        >>> processed["message_log_rejected"][-1]["content"]
+        '5<|eot_id|>'
+
+        ```
+    """
     if isinstance(datum_dict["prompt"], list):
         messages_chosen = datum_dict["prompt"].copy()
         messages_rejected = datum_dict["prompt"].copy()

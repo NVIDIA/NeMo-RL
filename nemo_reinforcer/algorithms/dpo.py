@@ -148,7 +148,7 @@ def setup(
     # ==========================
     #           Data
     # ==========================
-    ## TODO: clean up
+    ## TODO(@ashors) reduce boilerplate and move reused code into utils
     tokenizer = get_tokenizer(policy_config["model_name"])
     train_dataloader = StatefulDataLoader(
         train_dataset,
@@ -222,7 +222,7 @@ def setup(
     )
 
 
-def augment_dataloader(dataloader, policy, master_config):
+def add_ref_logprobs_to_data(dataloader, policy, master_config):
     dataloader_iter = iter(dataloader)
     while True:
         try:
@@ -232,7 +232,7 @@ def augment_dataloader(dataloader, policy, master_config):
             logprobs = policy.get_reference_policy_logprobs(
                 batch,
                 micro_batch_size=master_config["policy"]["train_micro_batch_size"] * 2,
-            )["reference_logprobs"].to("cpu")
+            )["reference_logprobs"]
             ## want logprobs for batch to correspond to the log probabilities of the next tokens
             ## so we roll the logprobs to the left by one
             batch["reference_policy_logprobs"] = torch.roll(logprobs, -1, dims=-1)
@@ -270,7 +270,7 @@ def validate(
         val_metrics = defaultdict(lambda: 0.0)
         num_valid_batches = 0
         for batch_idx, val_batch in enumerate(
-            augment_dataloader(val_dataloader, policy, master_config)
+            add_ref_logprobs_to_data(val_dataloader, policy, master_config)
         ):
             ## just run model fwd
             val_results = policy.train(
@@ -380,10 +380,13 @@ def dpo_train(
 
     policy.prepare_for_training()
 
-    while current_epoch < max_num_epochs:
+    while (
+        current_epoch < max_num_epochs
+        and total_steps < master_config["dpo"]["max_num_steps"]
+    ):
         print(f"\n{'=' * 25} Epoch {current_epoch + 1}/{max_num_epochs} {'=' * 25}")
 
-        for batch in augment_dataloader(train_dataloader, policy, master_config):
+        for batch in add_ref_logprobs_to_data(train_dataloader, policy, master_config):
             print(
                 f"\n{'=' * 25} Step {current_step + 1}/{min(len(train_dataloader), master_config['dpo']['max_num_steps'])} {'=' * 25}"
             )

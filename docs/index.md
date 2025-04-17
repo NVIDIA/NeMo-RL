@@ -17,6 +17,7 @@ cluster.md
 
 adding_new_models.md
 guides/sft.md
+guides/dpo.md
 guides/grpo.md
 guides/eval.md
 ```

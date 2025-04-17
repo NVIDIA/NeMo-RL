@@ -83,7 +83,8 @@ If you have access to more GPUs, you can update the experiment accordingly. To r
 ```sh
 uv run python examples/run_sft.py \
   policy.model_name="meta-llama/Meta-Llama-3-8B" \
-  policy.train_global_batch_size=256 \
+  policy.train_global_batch_size=128 \
+  sft.val_global_batch_size=128 \
   cluster.gpus_per_node=8
 ```
 
@@ -135,13 +136,12 @@ uv run python examples/run_dpo.py
 
 This trains `Llama3.2-1B-Instruct` on one GPU.
 
-If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration and switch to an 8B Llama base model:
+If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration and switch to an 8B Llama3.2 Instruct model:
 
 ```sh
 uv run python examples/run_dpo.py \
   policy.model_name="meta-llama/Meta-Llama-3-8B-Instruct" \
-  policy.train_global_batch_size=128 \
-  dpo.val_global_batch_size=128 \
+  policy.train_global_batch_size=256 \
   cluster.gpus_per_node=8
 ```
 
@@ -160,21 +160,17 @@ Refer to [dpo.yaml](examples/configs/dpo.yaml) for a full list of parameters tha
 
 #### Multi-node
 
-For distributed DPO training across multiple nodes:
-
-Set `UV_CACHE_DIR` to a directory that can be read from all workers before running any uv run command.
-```sh
-export UV_CACHE_DIR=/path/that/all/workers/can/access/uv_cache
-```
+For distributed DPO training across multiple nodes, modify the following script for your use case:
 
 ```sh
 # Run from the root of NeMo-Reinforcer repo
+## number of nodes to use for your job
 NUM_ACTOR_NODES=2
 # Add a timestamp to make each job name unique
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # DPO experiment uses Llama-3.1-8B model
-COMMAND="uv pip install -e .; uv run ./examples/run_dpo.py --config examples/configs/dpo.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/dpo_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='dpo-llama8b'" \
+COMMAND="uv run ./examples/run_dpo.py --config examples/configs/dpo.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/dpo_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='dpo-llama8b'" \
 RAY_DEDUP_LOGS=0 \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \

@@ -66,10 +66,11 @@ Adding a new DPO dataset is straightforward. Your custom dataset class should:
 
 Here's a minimal example which simply re-keys an existing jsonl dataset:
 
-```python
+```{testcode}
 from datasets import load_dataset
 from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset
 from nemo_reinforcer.data.interfaces import TaskDataSpec
+from docs.helpers import make_dpo_dataset
 
 class CustomDPODataset:
     def preprocess_dataset(
@@ -79,13 +80,11 @@ class CustomDPODataset:
         chosen_key: str = "chosen",
         rejected_key: str = "rejected"
     ):
-
         return {
             "prompt": data[prompt_key],
             "chosen_response": data[chosen_key],
             "rejected_response": data[rejected_key],
         }
-
     
     def __init__(
         self,
@@ -95,7 +94,6 @@ class CustomDPODataset:
         chosen_key: str,
         rejected_key: str,
     ):
-
         # Load and format your dataset
         fn_kwargs={
                 "prompt_key": prompt_key, 
@@ -115,8 +113,38 @@ class CustomDPODataset:
         
         # Initialize task spec with dataset name
         self.task_spec = TaskDataSpec(
-            dataset_name="custom_dpo",
+            task_name="custom_dpo",
         )
+        self.formatted_ds = formatted_ds
+
+# Create temporary files using helper function
+train_file, val_file = make_dpo_dataset()
+
+# Initialize dataset
+dataset = CustomDPODataset(
+    train_data_path=train_file.name,
+    val_data_path=val_file.name,
+    prompt_key="context",
+    chosen_key="chosen",
+    rejected_key="rejected"
+)
+
+# Test dataset properties
+print(f"Task name: {dataset.task_spec.task_name}")
+print(f"Train examples: {len(dataset.formatted_ds['train'])}")
+print(f"Validation examples: {len(dataset.formatted_ds['validation'])}")
+print(f"First train example prompt: {dataset.formatted_ds['train'][0]['prompt']}")
+print(f"First train example chosen response: {dataset.formatted_ds['train'][0]['chosen_response']}")
+print(f"First train example rejected response: {dataset.formatted_ds['train'][0]['rejected_response']}")
+```
+
+```{testoutput}
+Task name: custom_dpo
+Train examples: 2
+Validation examples: 2
+First train example prompt: What is 2+2?
+First train example chosen response: 4
+First train example rejected response: 5
 ```
 
 ## DPO-Specific Parameters
