@@ -241,7 +241,7 @@ def main():
     init_ray()
 
     # setup data
-    dataset, val_dataset, tokenizer, dpo_task_spec = setup_data(
+    train_dataset, val_dataset, tokenizer, dpo_task_spec = setup_data(
         config["data"], config["policy"]
     )
     (
@@ -254,7 +254,7 @@ def main():
         checkpointer,
         dpo_save_state,
         master_config,
-    ) = setup(config, dataset, val_dataset)
+    ) = setup(config, tokenizer, train_dataset, val_dataset)
     dpo_train(
         policy,
         train_dataloader,

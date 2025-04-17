@@ -211,10 +211,6 @@ class DPOLossDataDict(TypedDict):
     sample_mask: torch.Tensor
 
 
-def average_valid_samples(tensor: torch.Tensor, sample_mask: torch.Tensor):
-    return tensor.sum() / sample_mask.sum().clamp(min=1)
-
-
 class DPOLossFn(LossFunction):
     """Direct Preference Optimization (DPO) loss function.
 
@@ -317,10 +313,10 @@ class DPOLossFn(LossFunction):
         )  ## zero out invalid samples
 
         return (
-            average_valid_samples(per_sample_loss, sample_mask[::2]),
+            masked_mean(per_sample_loss, sample_mask[::2]),
             (rewards_chosen > rewards_rejected).float().mean(0),
-            average_valid_samples(rewards_chosen, sample_mask[::2]),
-            average_valid_samples(rewards_rejected, sample_mask[1::2]),
+            masked_mean(rewards_chosen, sample_mask[::2]),
+            masked_mean(rewards_rejected, sample_mask[1::2]),
         )
 
     def __call__(
@@ -335,9 +331,7 @@ class DPOLossFn(LossFunction):
                 dpo_average_log_probs=self.sft_average_log_probs,
             )
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
-            sft_loss_chosen = average_valid_samples(
-                sft_loss_chosen, data["sample_mask"][::2]
-            )
+            sft_loss_chosen = masked_mean(sft_loss_chosen, data["sample_mask"][::2])
 
         (
             preference_loss,

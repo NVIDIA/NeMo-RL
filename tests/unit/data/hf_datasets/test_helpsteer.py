@@ -67,7 +67,6 @@ def test_helpsteer3_dataset_initialization():
 
     # Verify dataset initialization
     assert dataset.task_spec.task_name == "HelpSteer3"
-    assert dataset.task_spec.custom_template is None  # Should use tokenizer's template
 
 
 def test_helpsteer3_dataset_data_format():

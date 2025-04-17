@@ -16,6 +16,7 @@ import warnings
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
+from transformers import AutoTokenizer
 from typing import Optional, Tuple, TypedDict
 from tqdm import tqdm
 
@@ -91,6 +92,7 @@ class MasterConfig(TypedDict):
 # =======================================================
 def setup(
     master_config: MasterConfig,
+    tokenizer: AutoTokenizer,
     train_dataset: AllTaskProcessedDataset,
     val_dataset: AllTaskProcessedDataset,
 ) -> Tuple[
@@ -149,7 +151,6 @@ def setup(
     #           Data
     # ==========================
     ## TODO(@ashors) reduce boilerplate and move reused code into utils
-    tokenizer = get_tokenizer(policy_config["tokenizer"])
     train_dataloader = StatefulDataLoader(
         train_dataset,
         batch_size=policy_config["train_global_batch_size"],

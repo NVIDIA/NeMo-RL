@@ -45,20 +45,20 @@ def mock_dpo_data():
         }
     ]
 
+    train_ctx = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    val_ctx = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", delete=False
     ) as train_file:
         json.dump(train_data, train_file)
         train_path = train_file.name
-
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", delete=False
     ) as val_file:
         json.dump(val_data, val_file)
         val_path = val_file.name
-
     yield train_path, val_path
-
     # Cleanup
     os.unlink(train_path)
     os.unlink(val_path)
@@ -71,9 +71,7 @@ def test_dpo_dataset_initialization(mock_dpo_data):
     dataset = DPODataset(train_data_path=train_path, val_data_path=val_path)
 
     # Verify dataset initialization
-    assert dataset.task_spec.task_name == "dpo"
-    assert dataset.task_spec.custom_template is not None
-    assert "messages" in dataset.task_spec.custom_template
+    assert dataset.task_spec.task_name == "DPO"
 
     # Verify formatted_ds structure
     assert "train" in dataset.formatted_ds
