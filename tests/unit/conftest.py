@@ -36,13 +36,28 @@ import json
 from nemo_reinforcer.distributed.virtual_cluster import init_ray
 from typing import TypedDict
 from datetime import datetime
+import unittest.mock
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 
+_TEST_ASSETS_DIR = os.path.join(dir_path, "test_assets")
 UNIT_RESULTS_FILE = os.path.join(dir_path, "unit_results.json")
 UNIT_RESULTS_FILE_DATED = os.path.join(
     dir_path, f"unit_results/{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 )
+
+
+# Mapping between asset and absolute path (each are populated from a session level fixture)
+class TEST_ASSETS:
+    TINY_LLAMA_MODEL_PATH = os.path.join(
+        _TEST_ASSETS_DIR, "tiny_llama_with_llama3.2_tokenizer"
+    )
+    TINY_LLAMA_TIED_MODEL_PATH = os.path.join(
+        _TEST_ASSETS_DIR, "tiny_llama_tied_with_llama3.2_tokenizer"
+    )
+    TINY_QWEN2_MODEL_PATH = os.path.join(
+        _TEST_ASSETS_DIR, "tiny_qwen2_with_qwen2_tokenizer"
+    )
 
 
 class UnitTestData(TypedDict):
@@ -52,6 +67,11 @@ class UnitTestData(TypedDict):
     metrics: dict
     gpu_types: list[str]
     coverage: str
+
+
+###################################
+# Meta Session Fixtures and Hooks #
+###################################
 
 
 def pytest_sessionstart(session):
@@ -189,6 +209,11 @@ def pytest_sessionfinish(session, exitstatus):
         json.dump(data, f, indent=2)
 
 
+################
+# Ray Fixtures #
+################
+
+
 @pytest.fixture(scope="session", autouse=True)
 def init_ray_cluster():
     """Initialize Ray for the test module and clean up afterward.
@@ -218,6 +243,11 @@ def ray_gpu_monitor(init_ray_cluster):
     gpu_monitor.start()
     yield gpu_monitor
     gpu_monitor.stop()
+
+
+####################################
+# Fixtures for Distributed Testing #
+####################################
 
 
 def _setup_distributed(rank, world_size, port, backend="nccl"):
@@ -304,3 +334,138 @@ def _distributed_test_wrapper(
         print(f"Error in rank {rank}: {e}")
         _cleanup_distributed()
         raise
+
+
+@pytest.fixture
+def mock_2gpu_distributed_env():
+    """Mock distributed environment variables and initialization.
+
+    This fixture should be used when testing the underlying ray actors that need torch distributed initialized.
+    """
+    # Save original environment
+    old_env = os.environ.copy()
+
+    # Set required environment variables
+    os.environ["RANK"] = "0"
+    os.environ["WORLD_SIZE"] = "2"
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+
+    # Create a more sophisticated mock device mesh
+    # First, create individual mesh mocks for dp and tp
+    dp_mesh = unittest.mock.MagicMock()
+    dp_mesh.device_type = "cuda"
+    dp_mesh.size.return_value = 1  # Set dp_size
+
+    tp_mesh = unittest.mock.MagicMock()
+    tp_mesh.device_type = "cuda"
+    tp_mesh.size.return_value = 2  # Set tp_size to match your test case
+
+    # Create the 2D mesh that acts like a dictionary (this is so we can test DTensorPolicyWorker with TP > 1)
+    mesh_2d = unittest.mock.MagicMock()
+    mesh_2d.__getitem__.side_effect = (
+        lambda key: dp_mesh if key == "dp" else tp_mesh if key == "tp" else None
+    )
+    mesh_2d.device_type = "cuda"
+
+    # Mock dist.is_initialized to prevent actual initialization
+    with (
+        unittest.mock.patch("torch.distributed.init_process_group") as mock_init,
+        unittest.mock.patch("torch.distributed.is_initialized", return_value=True),
+        unittest.mock.patch("torch.distributed.get_rank", return_value=0),
+        unittest.mock.patch("torch.distributed.get_world_size", return_value=2),
+        unittest.mock.patch(
+            "torch.distributed.device_mesh.init_device_mesh", return_value=mesh_2d
+        ),
+    ):
+        yield mock_init
+
+    # Restore original environment
+    os.environ.clear()
+    os.environ.update(old_env)
+
+
+#######################
+# Test Model Fixtures #
+#######################
+
+
+@pytest.fixture(scope="session", autouse=True)
+def tiny_llama_model_path():
+    """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
+    from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer
+    import shutil
+
+    model_path = TEST_ASSETS.TINY_LLAMA_MODEL_PATH
+    # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
+    # vocab_size=128256 (so we can re-use llama3.2 1b tokenizer)
+    config = LlamaConfig(
+        num_hidden_layers=2,
+        hidden_size=64,
+        intermediate_size=32,
+        num_attention_heads=2,
+        vocab_size=128256,
+        tie_word_embeddings=False,
+        num_key_value_heads=None,
+    )
+    model = LlamaForCausalLM(config=config)
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B")
+    shutil.rmtree(model_path, ignore_errors=True)
+    model.save_pretrained(model_path)
+    tokenizer.save_pretrained(model_path)
+    del model, tokenizer
+    yield model_path
+
+
+@pytest.fixture(scope="session", autouse=True)
+def tiny_llama_tied_model_path():
+    """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
+    from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer
+    import shutil
+
+    model_path = TEST_ASSETS.TINY_LLAMA_TIED_MODEL_PATH
+    # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
+    # vocab_size=128256 (so we can re-use llama3.2 1b tokenizer)
+    config = LlamaConfig(
+        num_hidden_layers=2,
+        hidden_size=64,
+        intermediate_size=32,
+        num_attention_heads=2,
+        vocab_size=128256,
+        tie_word_embeddings=True,
+        num_key_value_heads=None,
+    )
+    model = LlamaForCausalLM(config=config)
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B")
+    shutil.rmtree(model_path, ignore_errors=True)
+    model.save_pretrained(model_path)
+    tokenizer.save_pretrained(model_path)
+    del model, tokenizer
+    yield model_path
+
+
+@pytest.fixture(scope="session", autouse=True)
+def tiny_qwen2_model_path():
+    """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
+    from transformers import Qwen2Config, Qwen2ForCausalLM, AutoTokenizer
+    import shutil
+
+    model_path = TEST_ASSETS.TINY_QWEN2_MODEL_PATH
+    # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
+    # vocab_size=151936 (so we can re-use qwen2 1.5b tokenizer)
+    config = Qwen2Config(
+        num_hidden_layers=2,
+        hidden_size=64,
+        intermediate_size=32,
+        num_attention_heads=2,
+        vocab_size=151936,
+        tie_word_embeddings=False,
+        num_key_value_heads=None,
+    )
+    model = Qwen2ForCausalLM(config=config)
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-1.5B")
+    shutil.rmtree(model_path, ignore_errors=True)
+    model.save_pretrained(model_path)
+    tokenizer.save_pretrained(model_path)
+    del model, tokenizer
+    yield model_path

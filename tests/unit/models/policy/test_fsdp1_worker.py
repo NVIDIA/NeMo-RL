@@ -47,6 +47,13 @@ basic_llama_test_config: PolicyConfig = {
         "stop_token_ids": None,
         "stop_strings": None,
     },
+    "dtensor_cfg": {
+        "enabled": False,
+        "cpu_offload": False,
+        "sequence_parallel": False,
+        "activation_checkpointing": False,
+        "tensor_parallel_size": 1,
+    },
     "optimizer": {
         "name": "torch.optim.AdamW",
         "kwargs": {
@@ -62,6 +69,7 @@ basic_llama_test_config: PolicyConfig = {
             "T_max": 100,
         },
     },
+    "max_grad_norm": 1.0,
 }
 
 

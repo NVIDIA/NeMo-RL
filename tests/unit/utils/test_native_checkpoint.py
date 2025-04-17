@@ -53,6 +53,14 @@ simple_policy_config = {
             "eps": 1e-8,
         },
     },
+    "dtensor_cfg": {
+        "enabled": False,
+        "cpu_offload": False,
+        "sequence_parallel": False,
+        "activation_checkpointing": False,
+        "tensor_parallel_size": 1,
+    },
+    "max_grad_norm": 1.0,
 }
 
 

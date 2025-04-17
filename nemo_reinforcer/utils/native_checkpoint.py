@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 import torch
-
+from torch.distributed.fsdp import FullyShardedDataParallel
 from transformers import AutoConfig, AutoTokenizer
 import torch.distributed.checkpoint as dcp
 from torch.distributed.checkpoint.stateful import Stateful
@@ -157,7 +157,12 @@ def save_checkpoint(
         if hasattr(model, "_fsdp_wrapped_module"):
             model_state_dict = model._fsdp_wrapped_module.state_dict()
         else:
-            model_state_dict = model.state_dict()
+            model_state_dict = {
+                k: v.full_tensor()
+                if isinstance(v, torch.distributed.tensor.DTensor)
+                else v
+                for k, v in model.state_dict().items()
+            }
 
         if torch.distributed.get_rank() == 0:
             # Create a new path by appending "-hf" to the weights path

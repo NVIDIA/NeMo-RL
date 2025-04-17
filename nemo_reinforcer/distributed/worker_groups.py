@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import os
 import ray
+from typing import Literal
 from copy import deepcopy
 from ray.util.placement_group import PlacementGroup
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
@@ -369,7 +370,7 @@ class RayWorkerGroup:
         method_name: str,
         data: List[SlicedDataDict],
         common_kwargs: Optional[Dict[str, Any]] = None,
-        respect_tied_workers: bool = True,
+        only_on: Literal["all", "tied_leader", "all_tied_workers"] = "all",
     ):
         """Run a method on all workers in parallel with different data.
 
@@ -377,9 +378,10 @@ class RayWorkerGroup:
             method_name: Name of the method to call on each worker
             data: List of data slices to pass to workers/groups
             common_kwargs: Additional keyword arguments to pass to all workers
-            respect_tied_workers: If True, only the leader (first worker) of each tied worker group
-                                receives a data slice. If False, each worker gets its own data slice
-                                regardless of tied worker groups.
+            only_on: Determines which workers receive data and execute the method:
+                    - "all": Each worker gets its own data slice
+                    - "tied_leader": Only the first worker in each tied group receives data
+                    - "all_tied_workers": All workers in each tied group receive the same data slice
 
         Returns:
             MultiWorkerFuture: Object containing futures and their associated worker information
@@ -399,8 +401,18 @@ class RayWorkerGroup:
         futures = []
         used_workers = []
 
-        # Handle tied worker groups if requested
-        if respect_tied_workers:
+        respect_tied_workers = only_on in {"tied_leader", "all_tied_workers"}
+
+        if only_on == "all":
+            # Regular case - each worker gets its own data slice
+            for worker_id, worker in enumerate(self.workers):
+                if worker_id >= len(data):
+                    break
+                method = getattr(worker, method_name)
+                futures.append(method.remote(data[worker_id], **common_kwargs))
+                used_workers.append(worker_id)
+
+        elif respect_tied_workers:
             # If there are fewer data slices than tied worker groups, use only the first N tied worker groups
             active_tied_worker_count = min(len(data), len(self.tied_workers_groups))
             if active_tied_worker_count < len(self.tied_workers_groups):
@@ -413,26 +425,26 @@ class RayWorkerGroup:
                 tied_worker_group = self.tied_workers_groups[tied_worker_idx]
                 tied_worker_data = data[tied_worker_idx]
 
-                # Running only on the leader of the tied worker group for vllm case
-                futures.append(
-                    getattr(self._workers[tied_worker_group[0]], method_name).remote(
-                        tied_worker_data, **common_kwargs
+                if only_on == "all_tied_workers":
+                    # Running on all workers in the non-vllm case
+                    for worker_idx in tied_worker_group:
+                        futures.append(
+                            getattr(self._workers[worker_idx], method_name).remote(
+                                tied_worker_data, **common_kwargs
+                            )
+                        )
+
+                        used_workers.append(worker_idx)
+                else:
+                    # Running only on the leader of the tied worker group for vllm case
+                    futures.append(
+                        getattr(
+                            self._workers[tied_worker_group[0]], method_name
+                        ).remote(tied_worker_data, **common_kwargs)
                     )
-                )
-                used_workers.append(tied_worker_group[0])
-                # for worker_idx in tied_worker_group:
-                #     worker = self._workers[worker_idx]
-                #     method = getattr(worker, method_name)
-                #     futures.append(method.remote(tied_worker_data, **common_kwargs))
-                #     used_workers.append(worker_idx)
+                    used_workers.append(tied_worker_group[0])
         else:
-            # Regular case - each worker gets its own data slice
-            for worker_id, worker in enumerate(self.workers):
-                if worker_id >= len(data):
-                    break
-                method = getattr(worker, method_name)
-                futures.append(method.remote(data[worker_id], **common_kwargs))
-                used_workers.append(worker_id)
+            raise ValueError(f"Invalid value for only_on: {only_on}")
 
         # Return a MultiWorkerFuture containing both futures and worker information
         return MultiWorkerFuture(
@@ -442,31 +454,51 @@ class RayWorkerGroup:
         )
 
     def run_all_workers_single_data(
-        self, method_name: str, *args, respect_tied_workers: bool = True, **kwargs
+        self,
+        method_name: str,
+        *args,
+        only_on: Literal["all", "tied_leader", "all_tied_workers"] = "all",
+        **kwargs,
     ):
         """Run a method on all workers in parallel with the same data.
 
         Args:
             method_name: Name of the method to call on each worker
-            respect_tied_workers: If True, only the leader (first worker) of each tied worker group
-                                receives the call. If False, all workers receive the call.
+            only_on: Determines which workers to run the method on:
+                    - "all": Run on all workers
+                    - "tied_leader": Run only on the first worker of each tied worker group
+                    - "all_tied_workers": Run on all workers in each tied worker group
             *args, **kwargs: Arguments to pass to the method
 
         Returns:
             List[ray.ObjectRef]: A list of ray futures
         """
         futures = []
-        if respect_tied_workers:
-            for tied_worker_group in self.tied_workers_groups:
-                futures.append(
-                    getattr(self._workers[tied_worker_group[0]], method_name).remote(
-                        *args, **kwargs
-                    )
-                )
-        else:
+
+        respect_tied_workers = only_on in {"tied_leader", "all_tied_workers"}
+
+        if only_on == "all":
             for worker in self.workers:
                 method = getattr(worker, method_name)
                 futures.append(method.remote(*args, **kwargs))
+        elif respect_tied_workers:
+            for tied_worker_group in self.tied_workers_groups:
+                if only_on == "all_tied_workers":
+                    # Running on all workers in the non-vllm case
+                    for worker_idx in tied_worker_group:
+                        futures.append(
+                            getattr(self._workers[worker_idx], method_name).remote(
+                                *args, **kwargs
+                            )
+                        )
+                else:
+                    futures.append(
+                        getattr(
+                            self._workers[tied_worker_group[0]], method_name
+                        ).remote(*args, **kwargs)
+                    )
+        else:
+            raise ValueError(f"Invalid value for only_on: {only_on}")
 
         return futures
 
