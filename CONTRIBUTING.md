@@ -13,12 +13,6 @@ docker buildx build -t nemo-reinforcer -f Dockerfile .
 docker run -it --gpus all -v /path/to/nemo-reinforcer:/workspace/nemo-reinforcer nemo-reinforcer
 ```
 
-2. **Install the package in development mode**:
-```bash
-cd /workspace/nemo-reinforcer
-pip install -e .
-```
-
 ## Making Changes
 
 ### Workflow: Clone and Branch (No Fork Required)
