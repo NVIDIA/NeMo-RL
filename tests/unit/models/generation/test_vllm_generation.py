@@ -748,6 +748,64 @@ def test_vllm_weight_update_and_prefix_cache_reset(
         torch.cuda.empty_cache()
 
 
+def test_vllm_weight_update_memory(cluster, tokenizer):
+    """Test that vLLM streaming weight update and can save memory."""
+    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+
+    if cluster.num_gpus_per_node < 2:
+        pytest.skip("Need at least 2 GPUs per node for this test")
+
+    # Create separate configs for each policy
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=False)
+
+    # Ensure we can get same peak memory
+    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
+        "Model name should be meta-llama/Llama-3.2-1B to get expected peak memory"
+    )
+
+    # Create policies
+    print("Creating vLLM policy...")
+    vllm_policy = VllmGeneration(cluster, vllm_config)
+    vllm_policy.finish_generation()
+
+    print("Creating HF policy...")
+    hf_config = basic_hf_test_config.copy()
+    hf_policy = HfPolicy(cluster, hf_config, tokenizer)
+
+    print(f"refitting vllm policy...")
+    # take it outside statistics to get clean peak memory during refit
+    hf_policy.offload_before_refit()
+    # reset peak memory stats before refit
+    workers = hf_policy.worker_group.workers
+    ray.get([w.reset_peak_memory_stats.remote() for w in workers])
+    refit_policy_generation(hf_policy, vllm_policy)
+    gpu_infos = ray.get([w.get_gpu_info.remote() for w in workers])
+
+    # Gather memory stats
+    current_allocated = 0.0
+    current_reserved = 0.0
+    peak_allocated = 0.0
+    peak_reserved = 0.0
+    for status in gpu_infos:
+        current_allocated = max(current_allocated, status["memory_allocated_mb"])
+        current_reserved = max(current_reserved, status["memory_reserved_mb"])
+        peak_allocated = max(peak_allocated, status["peak_memory_allocated_mb"])
+        peak_reserved = max(peak_reserved, status["peak_memory_reserved_mb"])
+
+    # Check memory stats
+    assert current_allocated == 0.0, "Memory should be 0 after refit completed"
+    assert current_reserved == 0.0, "Memory should be 0 after refit completed"
+    # memory threshold: memory during non-streaming weight update on 1B model on 2 GPUs
+    # memory during streaming weight update should less than this baseline threshold
+    assert peak_allocated < 11286, "Peak allocated memory should be less than 11286MB"
+    assert peak_reserved < 11298, "Peak reserved memory should be less than 11298MB"
+
+    # Clean up
+    vllm_policy.shutdown()
+    hf_policy.shutdown()
+
+
 @pytest.mark.parametrize("is_eval", [True, False])
 @pytest.mark.parametrize("enable_dtensor", [True, False])
 def test_vllm_generation_with_stop(
