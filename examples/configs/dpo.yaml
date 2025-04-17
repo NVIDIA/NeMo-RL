@@ -1,7 +1,7 @@
 # DPO Algorithm Configuration
 dpo:
   max_num_epochs: 1
-  max_num_steps: 200
+  max_num_steps: 150
   val_period: 25
   val_batches: 8
   val_global_batch_size: 8

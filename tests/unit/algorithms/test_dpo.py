@@ -16,7 +16,7 @@ import pytest
 import torch
 from unittest.mock import MagicMock, patch
 
-from nemo_reinforcer.algorithms.dpo import augment_dataloader
+from nemo_reinforcer.algorithms.dpo import add_ref_logprobs_to_data
 
 
 class MockPolicy:
@@ -27,8 +27,8 @@ class MockPolicy:
         return {"reference_logprobs": self.logprobs}
 
 
-def test_augment_dataloader():
-    """Test that augment_dataloader correctly adds reference policy logprobs to batches."""
+def test_add_logprobs_to_batch():
+    """Test that add_ref_logprobs_to_data correctly adds reference policy logprobs to batches."""
     # Create mock data
     batch_size = 2
     seq_len = 4
@@ -55,7 +55,7 @@ def test_augment_dataloader():
 
     # Get the augmented batches
     augmented_batches = list(
-        augment_dataloader(mock_dataloader, mock_policy, mock_master_config)
+        add_ref_logprobs_to_data(mock_dataloader, mock_policy, mock_master_config)
     )
 
     # Verify we got exactly one batch
