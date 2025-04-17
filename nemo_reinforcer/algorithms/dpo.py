@@ -296,6 +296,8 @@ def validate(
                 break
 
         for k, v in val_metrics.items():
+            if k == "num_valid_samples":
+                continue
             val_metrics[k] /= num_valid_batches
 
         # Calculate validation metrics
@@ -465,7 +467,11 @@ def dpo_train(
                 "loss": train_results["loss"].numpy(),
             }
             metrics.update(train_results["all_mb_metrics"])
-            metrics = {k: np.mean(v).item() for k, v in metrics.items()}
+            for k, v in metrics.items():
+                if k == "num_valid_samples":
+                    metrics[k] = np.sum(v).item()
+                else:
+                    metrics[k] = np.mean(v).item()
             timing_metrics = timer.get_timing_metrics(reduction_op="sum")
 
             print("\n📊 Training Results:")

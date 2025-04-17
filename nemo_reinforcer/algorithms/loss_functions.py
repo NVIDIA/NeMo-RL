@@ -366,5 +366,5 @@ class DPOLossFn(LossFunction):
             "accuracy": accuracy.item(),
             "rewards_chosen_mean": rewards_chosen_mean.item(),
             "rewards_rejected_mean": rewards_rejected_mean.item(),
-            "num_valid_samples_per_mb": num_valid_samples.item(),
+            "num_valid_samples": num_valid_samples.item(),
         }

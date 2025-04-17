@@ -316,7 +316,7 @@ class HfPolicyWorker:
                             logits = outputs.logits
 
                     loss, loss_metrics = loss_fn(logits, mb)
-                    num_valid_samples = loss_metrics["num_valid_samples_per_mb"]
+                    num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
 
                     # Backward pass
