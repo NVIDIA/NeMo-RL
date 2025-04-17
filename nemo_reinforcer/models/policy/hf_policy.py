@@ -50,6 +50,7 @@ from nemo_reinforcer.utils.native_checkpoint import (
     save_checkpoint,
     load_checkpoint,
 )
+from nemo_reinforcer.utils.git_info import reinforcer_git_info
 
 
 @ray.remote
@@ -1150,6 +1151,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         tokenizer_path: Optional[str] = None,
         save_torch_dist: bool = True,
         save_hf: bool = False,
+        git_info_filename: Optional[str] = None,
     ):
         """Save a checkpoint of the model."""
         futures = self.worker_group.run_all_workers_single_data(
@@ -1162,6 +1164,11 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             respect_tied_workers=True,
         )
         ray.get(futures)
+
+        if git_info_filename:
+            commit, branch = reinforcer_git_info()
+            with open(git_info_filename, "w") as f:
+                f.write(f"git commit: {commit}\ngit branch: {branch}")
 
     def shutdown(self) -> bool:
         """Shut down all HF workers and clean up resources."""
