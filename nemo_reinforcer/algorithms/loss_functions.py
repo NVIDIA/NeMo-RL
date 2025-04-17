@@ -175,14 +175,20 @@ class NLLLoss(LossFunction):
         sample_mask = data["sample_mask"]
         mask = token_mask * sample_mask.unsqueeze(-1)
 
-        next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
-        next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
-        logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
-
-        # Gather the logprobs for the actual next tokens
-        token_logprobs = logprobs.gather(
-            dim=-1, index=next_tokens.unsqueeze(-1)
-        ).squeeze(-1)
+        next_token_logits = next_token_logits.to(torch.float32)
+        if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
+            token_logprobs = get_logprobs_from_vocab_parallel_logits(
+                next_token_logits, data["input_ids"]
+            )
+        else:
+            next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
+            next_token_logprobs = torch.nn.functional.log_softmax(
+                next_token_logits, dim=-1
+            )
+            logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
+            token_logprobs = logprobs.gather(
+                dim=-1, index=next_tokens.unsqueeze(-1)
+            ).squeeze(-1)
 
         if dpo_loss:
             ## shape: [batch_size]
@@ -301,14 +307,20 @@ class DPOLossFn(LossFunction):
         token_mask = data["token_mask"][:, 1:]
         sample_mask = data["sample_mask"]
 
-        next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
-        next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
-        logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
-
-        # Gather the logprobs for the actual next tokens
-        token_logprobs = logprobs.gather(
-            dim=-1, index=next_tokens.unsqueeze(-1)
-        ).squeeze(-1)
+        next_token_logits = next_token_logits.to(torch.float32)
+        if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
+            token_logprobs = get_logprobs_from_vocab_parallel_logits(
+                next_token_logits, data["input_ids"]
+            )
+        else:
+            next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
+            next_token_logprobs = torch.nn.functional.log_softmax(
+                next_token_logits, dim=-1
+            )
+            logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
+            token_logprobs = logprobs.gather(
+                dim=-1, index=next_tokens.unsqueeze(-1)
+            ).squeeze(-1)
 
         ref_logprobs = data["reference_policy_logprobs"][:, :-1]
 

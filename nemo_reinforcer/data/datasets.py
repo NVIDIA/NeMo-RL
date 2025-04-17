@@ -187,7 +187,9 @@ def eval_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
     return output
 
 
-def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
+def dpo_collate_fn(
+    data_batch: List[DatumSpec], tokenizer, make_sequence_length_divisible_by: int
+) -> BatchedDataDict:
     """Collate function for DPO training.
 
     This function separates the chosen and rejected responses to create
@@ -231,6 +233,7 @@ def dpo_collate_fn(data_batch: List[DatumSpec], tokenizer) -> BatchedDataDict:
     cat_and_padded, input_lengths = batched_message_log_to_flat_message(
         batch["message_log"],
         pad_value_dict={"token_ids": tokenizer.pad_token_id},
+        make_sequence_length_divisible_by=make_sequence_length_divisible_by,
     )
 
     train_data: BatchedDataDict = BatchedDataDict(

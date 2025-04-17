@@ -155,7 +155,13 @@ def setup(
         train_dataset,
         batch_size=policy_config["train_global_batch_size"],
         shuffle=True,
-        collate_fn=partial(dpo_collate_fn, tokenizer=tokenizer),
+        collate_fn=partial(
+            dpo_collate_fn,
+            tokenizer=tokenizer,
+            make_sequence_length_divisible_by=policy_config[
+                "make_sequence_length_divisible_by"
+            ],
+        ),
         drop_last=True,
     )
 
@@ -169,7 +175,13 @@ def setup(
         val_dataset,
         batch_size=dpo_config["val_global_batch_size"],
         shuffle=False,
-        collate_fn=partial(dpo_collate_fn, tokenizer=tokenizer),
+        collate_fn=partial(
+            dpo_collate_fn,
+            tokenizer=tokenizer,
+            make_sequence_length_divisible_by=policy_config[
+                "make_sequence_length_divisible_by"
+            ],
+        ),
         drop_last=True,
     )
 
