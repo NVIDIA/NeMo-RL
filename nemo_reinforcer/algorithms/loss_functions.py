@@ -177,7 +177,7 @@ class NLLLoss(LossFunction):
             ## shape: [batch_size]
             num_unmasked_tokens = torch.sum(mask, -1)
             ## multiply by sample_mask to zero out invalid samples
-            loss = -torch.sum(token_logprobs * mask, dim=-1) * sample_mask
+            loss = -torch.sum(token_logprobs * mask, dim=-1)
             if dpo_average_log_probs:
                 loss = loss / num_unmasked_tokens.clamp(min=1)
         else:
@@ -322,7 +322,7 @@ class DPOLossFn(LossFunction):
         )  ## zero out invalid samples
 
         return (
-            per_sample_loss.mean(0),
+            average_valid_samples(per_sample_loss, sample_mask[::2]),
             (rewards_chosen > rewards_rejected).float().mean(0),
             average_valid_samples(rewards_chosen, sample_mask[::2]),
             average_valid_samples(rewards_rejected, sample_mask[1::2]),
@@ -341,7 +341,7 @@ class DPOLossFn(LossFunction):
             )
             sft_loss_chosen, sft_loss_rejected = self.split_output_tensor(sft_loss)
             sft_loss_chosen = average_valid_samples(
-                sft_loss_chosen, data["sample_mask"]
+                sft_loss_chosen, data["sample_mask"][::2]
             )
 
         (
@@ -366,5 +366,5 @@ class DPOLossFn(LossFunction):
             "accuracy": accuracy.item(),
             "rewards_chosen_mean": rewards_chosen_mean.item(),
             "rewards_rejected_mean": rewards_rejected_mean.item(),
-            "num_valid_samples": num_valid_samples.item(),
+            "num_valid_samples_per_mb": num_valid_samples.item(),
         }

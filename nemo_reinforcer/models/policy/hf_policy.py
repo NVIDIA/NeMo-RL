@@ -316,13 +316,16 @@ class HfPolicyWorker:
                             logits = outputs.logits
 
                     loss, loss_metrics = loss_fn(logits, mb)
-                    num_valid_samples = loss_metrics["num_valid_samples"]
+                    num_valid_samples = loss_metrics["num_valid_samples_per_mb"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
 
                     # Backward pass
+                    if not eval_mode:
+                        ## NOTE: invalid samples should be multiplied
+                        ## by zero in the loss function to prevent them
+                        ## from affecting the gradient
+                        loss.backward()
                     if num_valid_samples > 0:
-                        if not eval_mode:
-                            loss.backward()
                         mb_losses.append(loss.item())
                         all_mb_metrics.append(loss_metrics)
 
