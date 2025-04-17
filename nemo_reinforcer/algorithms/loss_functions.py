@@ -177,7 +177,9 @@ class NLLLoss(LossFunction):
             )
         else:
             next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
-            next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
+            next_token_logprobs = torch.nn.functional.log_softmax(
+                next_token_logits, dim=-1
+            )
             logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
             token_logprobs = logprobs.gather(
                 dim=-1, index=next_tokens.unsqueeze(-1)
