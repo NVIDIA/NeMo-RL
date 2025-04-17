@@ -523,7 +523,7 @@ class VllmGeneration(GenerationInterface):
             "generate",
             sharded_data,
             common_kwargs={"greedy": greedy},
-            respect_tied_workers=True,
+            only_on="tied_leader",
         )
 
         # Get results from the workers, respecting tied worker groups (only one result per tied worker group)
@@ -566,7 +566,7 @@ class VllmGeneration(GenerationInterface):
             "generate_text",
             sharded_data,
             common_kwargs={"greedy": greedy},
-            respect_tied_workers=True,
+            only_on="tied_leader",
         )
 
         # Get results from the workers, respecting tied worker groups (only one result per tied worker group)
@@ -592,7 +592,7 @@ class VllmGeneration(GenerationInterface):
         try:
             # Use run_all_workers_single_data for methods that don't need data
             futures = self.worker_group.run_all_workers_single_data(
-                "wake_up", respect_tied_workers=True
+                "wake_up", only_on="tied_leader"
             )
             # Wait for all futures to complete
             results = ray.get(futures)
@@ -606,7 +606,7 @@ class VllmGeneration(GenerationInterface):
         try:
             # Use run_all_workers_single_data for methods that don't need data
             futures = self.worker_group.run_all_workers_single_data(
-                "sleep", respect_tied_workers=True
+                "sleep", only_on="tied_leader"
             )
             # Wait for all futures to complete
             results = ray.get(futures)
@@ -642,7 +642,7 @@ class VllmGeneration(GenerationInterface):
             # Directly pass ipc_handles to the method
             futures = self.worker_group.run_all_workers_single_data(
                 "update_weights_from_ipc_handles",
-                respect_tied_workers=True,
+                only_on="tied_leader",
                 ipc_handles=ipc_handles,
             )
             # Wait for all futures to complete

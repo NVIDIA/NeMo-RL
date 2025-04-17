@@ -96,15 +96,24 @@ jobs:
         - name: Run unit tests
           run: |
             docker exec nemo_container_${{ github.run_id }} git config --global --add safe.directory /opt/reinforcer
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.UNIT_TEST_SCRIPT }}"
+            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
+            ${{ inputs.UNIT_TEST_SCRIPT }}"
 
         - name: Run doc tests
           run: |
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.DOC_TEST_SCRIPT }}"
+            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
+            ${{ inputs.DOC_TEST_SCRIPT }}"
 
         - name: Run functional tests
           run: |
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
+            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
+            ${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
 
         - uses: "NVIDIA/NeMo/.github/actions/cancel-workflow@main"
           if: failure()

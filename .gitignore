@@ -18,6 +18,7 @@ dist/
 
 # Test
 .coverage
+test_assets/
 
 # Cache
 uv_cache/
