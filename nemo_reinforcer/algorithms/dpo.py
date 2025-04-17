@@ -149,7 +149,7 @@ def setup(
     #           Data
     # ==========================
     ## TODO(@ashors) reduce boilerplate and move reused code into utils
-    tokenizer = get_tokenizer(policy_config["model_name"])
+    tokenizer = get_tokenizer(policy_config["tokenizer"])
     train_dataloader = StatefulDataLoader(
         train_dataset,
         batch_size=policy_config["train_global_batch_size"],
@@ -193,6 +193,7 @@ def setup(
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
+        tokenizer=tokenizer,
         weights_path=Path(last_checkpoint_path) / "policy" / "weights"
         if last_checkpoint_path
         else None,

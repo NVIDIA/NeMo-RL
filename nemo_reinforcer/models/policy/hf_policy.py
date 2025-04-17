@@ -338,6 +338,7 @@ class HfPolicyWorker:
                     num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
 
+                    loss = loss / num_microbatches
                     # Backward pass
                     if not eval_mode:
                         ## NOTE: invalid samples should be multiplied
@@ -1049,8 +1050,8 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             common_kwargs={
                 "loss_fn": loss_fn,
                 "eval_mode": eval_mode,
-                "batch_size": batch_size,
-                "micro_batch_size": micro_batch_size,
+                "gbs": batch_size,
+                "mbs": micro_batch_size,
             },
         )
         results = self.worker_group.get_all_worker_results(futures)
