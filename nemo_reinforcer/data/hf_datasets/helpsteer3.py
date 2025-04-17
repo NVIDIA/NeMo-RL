@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from datasets import load_dataset
-from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset
+
+from nemo_reinforcer.data.interfaces import TaskDataSpec
 
 
 def format_helpsteer3(data):
@@ -27,14 +28,13 @@ def format_helpsteer3(data):
     }
 
 
-class HelpSteer3Dataset(HfDataset):
+class HelpSteer3Dataset:
     """HelpSteer3 preference dataset for DPO training."""
 
     def __init__(self):
         ds = load_dataset("nvidia/HelpSteer3", "preference")
         self.formatted_ds = ds.map(format_helpsteer3)
 
-        super().__init__(
-            dataset_name="HelpSteer3",
-            custom_template=None,  ## use tokenizer's template
+        self.task_spec = TaskDataSpec(
+            task_name="HelpSteer3",
         )

@@ -13,10 +13,10 @@
 # limitations under the License.
 from datasets import load_dataset
 
-from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset
+from nemo_reinforcer.data.interfaces import TaskDataSpec
 
 
-class DPODataset(HfDataset):
+class DPODataset:
     """Dataset class for Direct Preference Optimization (DPO) training.
 
     This class handles loading of preference data for DPO training.
@@ -38,8 +38,7 @@ class DPODataset(HfDataset):
             "train": load_dataset("json", data_files=train_data_path, split="train"),
             "validation": load_dataset("json", data_files=val_data_path, split="train"),
         }
-        super().__init__(
-            dataset_name="dpo",
-            ## passthrough template
-            custom_template="{% for message in messages %}{{ message['content'] }}{% endfor %}",
+
+        self.task_spec = TaskDataSpec(
+            task_name="DPO",
         )

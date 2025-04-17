@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from transformers import AutoTokenizer
 from pathlib import Path
 from typing import Optional, Tuple, TypedDict
 
@@ -76,6 +77,7 @@ class MasterConfig(TypedDict):
 # =======================================================
 def setup(
     master_config: MasterConfig,
+    tokenizer: AutoTokenizer,
     train_dataset: AllTaskProcessedDataset,
     val_dataset: AllTaskProcessedDataset,
 ) -> Tuple[
@@ -175,6 +177,7 @@ def setup(
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
+        tokenizer=tokenizer,
         weights_path=Path(last_checkpoint_path) / "policy" / "weights"
         if last_checkpoint_path
         else None,
@@ -415,6 +418,9 @@ def sft_train(
                         weights_path=os.path.join(checkpoint_path, "policy", "weights"),
                         optimizer_path=os.path.join(
                             checkpoint_path, "policy", "optimizer"
+                        ),
+                        tokenizer_path=os.path.join(
+                            checkpoint_path, "policy", "tokenizer"
                         ),
                         save_hf=is_last_checkpoint,
                     )

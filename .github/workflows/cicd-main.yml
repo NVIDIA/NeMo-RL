@@ -18,16 +18,21 @@ on:
     branches:
       - "main"
       - "r**"
-    types: [labeled]
+    types: [labeled, opened, synchronize, reopened]
   merge_group:
     types: [checks_requested]
   workflow_dispatch:
     inputs:
       test_to_run:
         required: false
-        default: all
-        type: string
-        description: Comma-separated list of tests to run. Use "all" to run the full test suite.
+        default: L2
+        type: choice
+        options:
+          - docs
+          - L0
+          - L1
+          - L2
+        description: Test level to run. docs = doc tests only, L0 = unit/docs/lint, L1 = L0 + functional, L2 = L1 + convergence
   # TODO: Due to limited compute, disabling pushes to main. This is okay to do since we force PRs to be up to date and the CI tests on pull/$PR_NUM/merge
   #push:
   #  branches:
@@ -41,20 +46,8 @@ jobs:
   pre-flight:
     runs-on: ubuntu-latest
     outputs:
-      test_to_run: ${{ steps.test_to_run.outputs.main }}
-      all: ${{ steps.all.outputs.main }}
-      run_ci: ${{ steps.evaluate.outputs.run_ci }}
+      test_level: ${{ steps.evaluate.outputs.test_level }}
     steps:
-      - name: Parse test_to_run
-        id: test_to_run
-        run: |
-          parsed_string=$(echo ${{ inputs.test_to_run || 'all' }} | jq -c --raw-input 'split(",")')
-          echo "main=${parsed_string}" | tee -a "$GITHUB_OUTPUT"
-      - name: Parse all
-        id: all
-        run: |
-          echo "main=${{ contains(fromJSON(steps.test_to_run.outputs.main), 'all') }}" | tee -a "$GITHUB_OUTPUT"
-
       - name: Get changed files
         id: changed-files
         if: github.event_name == 'pull_request'
@@ -75,25 +68,45 @@ jobs:
           CHANGED_DOCS: ${{ steps.changed-files.outputs.doc_all_changed_files }}
           CHANGED_SRC: ${{ steps.changed-files.outputs.src_all_changed_files }}
           IS_PULLREQUEST: ${{ github.event_name == 'pull_request' }}
-          LABEL: ${{ github.event.label.name == 'Run CICD' }}
+          LABEL: ${{ github.event.label.name }}
           MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
         run: |
           # Some output that's helpful for debugging
           echo "Docs changed: $CHANGED_DOCS"
           echo "Src changed: $CHANGED_SRC"
-
-          # echo "DOCS_ONLY: $DOCS_ONLY"
           echo "LABEL: $LABEL"
           echo "IS_PULLREQUEST: $IS_PULLREQUEST"
+          echo "DOCS_ONLY: $DOCS_ONLY"
 
           # Run CI only (on main or if label is attached) and if it's not only docs
-          echo run_ci=$([[ ("$LABEL" = "true" || "$IS_PULLREQUEST" = "false" || "$MERGE_GROUP" = "true")  && "$DOCS_ONLY" = "false" ]] && echo "true" || echo "false") | tee -a "$GITHUB_OUTPUT"
+          # Determine test level based on conditions
+          if [[ "$DOCS_ONLY" == "true" || "$LABEL" == "CI:docs" ]]; then
+            # For doc-only changes, run only doc tests
+            TEST_LEVEL="docs"
+          elif [[ "$LABEL" == "CI:L0" || "$IS_PULLREQUEST" == "false" || "$MERGE_GROUP" == "true" ]]; then
+            # For labeled PRs, pushes to main (IS_PULL_REQUEST=false), or merge group events, run L0 by default
+            TEST_LEVEL="L0"
+          elif [[ "$LABEL" == "CI:L1" ]]; then
+            TEST_LEVEL="L1"
+          elif [[ "$LABEL" == "CI:L2" ]]; then
+            TEST_LEVEL="L2"
+          else
+            # Skip tests by default for non-labeled PRs
+            TEST_LEVEL="none"
+          fi
+
+          # Override test level if specified in workflow_dispatch
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "Overriding test level from $TEST_LEVEL to ${{ inputs.test_to_run }}"
+            TEST_LEVEL="${{ inputs.test_to_run }}"
+          fi
+
+          echo "test_level=$TEST_LEVEL" | tee -a "$GITHUB_OUTPUT"
 
   lint-check:
     name: Lint check
     needs: [pre-flight]
     runs-on: ubuntu-latest
-    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -104,10 +117,10 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure --color=always
 
   sphinx-build:
+    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     name: Sphinx build
     needs: [pre-flight]
     runs-on: ubuntu-latest
-    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -118,7 +131,7 @@ jobs:
           uv run --group docs sphinx-build . _build/html
 
   build-container:
-    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     needs: [pre-flight]
     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
     with:
@@ -134,29 +147,53 @@ jobs:
     name: Tests
     needs: [build-container, pre-flight]
     uses: ./.github/workflows/_run_test.yml
-    if: ${{ needs.pre-flight.outputs.run_ci == 'true' }}
+    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 20
+      TIMEOUT: 30
       UNIT_TEST_SCRIPT: |
         cd /opt/reinforcer
-        uv run --no-sync bash -x ./tests/run_unit.sh
+        if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
+          uv run --no-sync bash -x ./tests/run_unit.sh
+        else
+          echo Skipping unit tests for docs-only level
+        fi
       DOC_TEST_SCRIPT: |
         cd /opt/reinforcer/docs
-        uv run --no-sync sphinx-build -b doctest . _build/doctest
+        if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(docs|L0|L1|L2)$ ]]; then
+          uv run --no-sync sphinx-build -b doctest . _build/doctest
+        else
+          echo Skipping doc tests for level ${{ needs.pre-flight.outputs.test_level }}
+        fi
       FUNCTIONAL_TEST_SCRIPT: |
-        # TODO: Temporarily disable functional tests until we have more capacity and tests run quicker
-        #   Related: https://github.com/NVIDIA/reinforcer/pull/27
-        # cd /opt/reinforcer
-        # uv run --no-sync bash ./tests/functional/sft.sh
-        # uv run --no-sync bash ./tests/functional/grpo.sh
+        cd /opt/reinforcer
+        if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L1|L2)$ ]]; then
+          uv run --no-sync bash ./tests/functional/sft.sh
+          uv run --no-sync bash ./tests/functional/grpo.sh
+        else
+          echo Skipping functional tests for level ${{ needs.pre-flight.outputs.test_level }}
+        fi
+      # TODO: enable once we have convergence tests in CI
+      #CONVERGENCE_TEST_SCRIPT: |
+      #  cd /opt/reinforcer
+      #  if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L2)$  ]]; then
+      #    echo "Running convergence tests"
+      #    # Add your convergence test commands here
+      #    # uv run --no-sync bash ./tests/convergence/test.sh
+      #  else
+      #    echo "Skipping convergence tests for level ${{ needs.pre-flight.outputs.test_level }}"
+      #  fi
       AFTER_SCRIPT: |
         cd /opt/reinforcer
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
-        # Unit test results
+        # Test Summary for level: ${{ needs.pre-flight.outputs.test_level }}
+
+        ## Unit test results
         \`\`\`json
-        $(cat tests/unit/unit_results.json || echo "n/a")
+        $(if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then cat tests/unit/unit_results.json || echo "n/a"; else echo "Not run"; fi)
         \`\`\`
+
+        ## Test Level: ${{ needs.pre-flight.outputs.test_level }}
         EOF
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -166,6 +203,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     needs:
+      - pre-flight
       - lint-check
       - sphinx-build
       - tests
@@ -173,13 +211,30 @@ jobs:
       - name: main
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
-          ALL_SUCCESS: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') }}
+          # Job is considered successful if nothing was run, or if all jobs were successful (the tests run even if only docs were run b/c doctests are selected)
+          ALL_SUCCESS: >-
+            ${{
+              needs.lint-check.result == 'success' &&
+              (
+                needs.pre-flight.outputs.test_level == 'none' ||
+                (
+                  needs.pre-flight.outputs.test_level != 'none' &&
+                  needs.sphinx-build.result == 'success' &&
+                  needs.tests.result == 'success'
+                )
+              )
+            }}
           CI_SKIP: ${{ github.event.label.name == 'Skip CICD' }}
+          TEST_LEVEL: ${{ needs.pre-flight.outputs.test_level }}
         run: |
-
           SUMMARY=$(echo $JOB_RESULTS | jq 'to_entries[] | .key + ": " + .value.result' | tr -d '"')
-          echo '🤖: CICD Result' >> $GITHUB_STEP_SUMMARY
+          echo '🤖: CICD Result for test level: ${{ needs.pre-flight.outputs.test_level }}' >> $GITHUB_STEP_SUMMARY
           echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$TEST_LEVEL" == "none" ]]; then
+            echo "No tests were run, passing gate" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
 
           test "$ALL_SUCCESS" = "true" || test "$CI_SKIP" = "true"
 

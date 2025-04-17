@@ -236,6 +236,7 @@ def setup(
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
+        tokenizer=tokenizer,
         weights_path=Path(last_checkpoint_path) / "policy" / "weights"
         if last_checkpoint_path
         else None,
@@ -627,6 +628,9 @@ def grpo_train(
                         weights_path=os.path.join(checkpoint_path, "policy", "weights"),
                         optimizer_path=os.path.join(
                             checkpoint_path, "policy", "optimizer"
+                        ),
+                        tokenizer_path=os.path.join(
+                            checkpoint_path, "policy", "tokenizer"
                         ),
                         save_hf=is_last_checkpoint,
                     )
