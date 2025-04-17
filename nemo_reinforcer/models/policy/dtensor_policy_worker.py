@@ -321,6 +321,7 @@ class DTensorPolicyWorker:
                 mb_losses.append(loss.item())
                 all_mb_metrics.append(loss_metrics)
 
+            grad_norm = None
             if not eval_mode:
                 with torch.no_grad():
                     grad_norm = get_grad_norm(
