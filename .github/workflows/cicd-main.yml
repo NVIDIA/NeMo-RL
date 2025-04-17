@@ -18,7 +18,7 @@ on:
     branches:
       - "main"
       - "r**"
-    types: [labeled]
+    types: [labeled, opened, synchronize, reopened]
   merge_group:
     types: [checks_requested]
   workflow_dispatch:
@@ -68,7 +68,7 @@ jobs:
           CHANGED_DOCS: ${{ steps.changed-files.outputs.doc_all_changed_files }}
           CHANGED_SRC: ${{ steps.changed-files.outputs.src_all_changed_files }}
           IS_PULLREQUEST: ${{ github.event_name == 'pull_request' }}
-          LABEL: ${{ github.event.label.name == 'Run CICD' }}
+          LABEL: ${{ github.event.label.name }}
           MERGE_GROUP: ${{ github.event_name == 'merge_group' }}
         run: |
           # Some output that's helpful for debugging
@@ -76,14 +76,20 @@ jobs:
           echo "Src changed: $CHANGED_SRC"
           echo "LABEL: $LABEL"
           echo "IS_PULLREQUEST: $IS_PULLREQUEST"
+          echo "DOCS_ONLY: $DOCS_ONLY"
 
+          # Run CI only (on main or if label is attached) and if it's not only docs
           # Determine test level based on conditions
-          if [[ "$DOCS_ONLY" == "true" ]]; then
+          if [[ "$DOCS_ONLY" == "true" || "$LABEL" == "CI:docs" ]]; then
             # For doc-only changes, run only doc tests
             TEST_LEVEL="docs"
-          elif [[ "$LABEL" == "true" || "$IS_PULLREQUEST" == "false" || "$MERGE_GROUP" == "true" ]]; then
+          elif [[ "$LABEL" == "CI:L0" || "$IS_PULLREQUEST" == "false" || "$MERGE_GROUP" == "true" ]]; then
             # For labeled PRs, pushes to main (IS_PULL_REQUEST=false), or merge group events, run L0 by default
             TEST_LEVEL="L0"
+          elif [[ "$LABEL" == "CI:L1" ]]; then
+            TEST_LEVEL="L1"
+          elif [[ "$LABEL" == "CI:L2" ]]; then
+            TEST_LEVEL="L2"
           else
             # Skip tests by default for non-labeled PRs
             TEST_LEVEL="none"
@@ -101,7 +107,6 @@ jobs:
     name: Lint check
     needs: [pre-flight]
     runs-on: ubuntu-latest
-    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -112,10 +117,10 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure --color=always
 
   sphinx-build:
+    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     name: Sphinx build
     needs: [pre-flight]
     runs-on: ubuntu-latest
-    if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -145,7 +150,7 @@ jobs:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 20
+      TIMEOUT: 30
       UNIT_TEST_SCRIPT: |
         cd /opt/reinforcer
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
@@ -182,12 +187,12 @@ jobs:
         cd /opt/reinforcer
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Test Summary for level: ${{ needs.pre-flight.outputs.test_level }}
-        
+
         ## Unit test results
         \`\`\`json
         $(if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then cat tests/unit/unit_results.json || echo "n/a"; else echo "Not run"; fi)
         \`\`\`
-        
+
         ## Test Level: ${{ needs.pre-flight.outputs.test_level }}
         EOF
     secrets:
@@ -209,11 +214,15 @@ jobs:
           # Job is considered successful if nothing was run, or if all jobs were successful (the tests run even if only docs were run b/c doctests are selected)
           ALL_SUCCESS: >-
             ${{
-              (needs.pre-flight.outputs.test_level == 'none') ||
-              (needs.pre-flight.outputs.test_level != 'none' && 
-               needs.lint-check.result == 'success' && 
-               needs.sphinx-build.result == 'success' && 
-               needs.tests.result == 'success')
+              needs.lint-check.result == 'success' &&
+              (
+                needs.pre-flight.outputs.test_level == 'none' ||
+                (
+                  needs.pre-flight.outputs.test_level != 'none' &&
+                  needs.sphinx-build.result == 'success' &&
+                  needs.tests.result == 'success'
+                )
+              )
             }}
           CI_SKIP: ${{ github.event.label.name == 'Skip CICD' }}
           TEST_LEVEL: ${{ needs.pre-flight.outputs.test_level }}

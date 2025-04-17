@@ -18,14 +18,16 @@ RUN chmod 755 /home/ray/.cache
 FROM base AS hermetic
 
 WORKDIR /opt/reinforcer
-# This is less efficient as this invalidates the cache more frequently, but
-# creates a smaller image. Adding reinforcer afterwards and doing
-# `uv pip install --no-deps --editable .` causes a "sync" of some of the environment,
-# which defeats the purpose of pre-installing.
-# In the future we may optimize this: https://github.com/NVIDIA/reinforcer/issues/129
-COPY --chown=ray --chmod=755 . /opt/reinforcer
+
+# First copy only the dependency files
+COPY --chown=ray --chmod=755 pyproject.toml uv.lock ./
+
+ENV UV_PROJECT_ENVIRONMENT=/opt/reinforcer_venv
+ENV VIRTUAL_ENV=/opt/reinforcer_venv
+
+# Create and activate virtual environment
 RUN <<"EOF"
-uv venv .venv
+uv venv /opt/reinforcer_venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
 
 # Sync each training + inference backend one at a time (since they may conflict)
@@ -33,11 +35,10 @@ uv venv .venv
 # Do everything in one layer to prevent large layers.
 
 uv sync --locked --extra vllm --no-install-project
-uv sync --locked --all-groups
+uv sync --locked --all-groups --no-install-project
 EOF
 
-ENV VIRTUAL_ENV=/opt/reinforcer/.venv
-ENV PATH="/opt/reinforcer/.venv/bin:$PATH"
+ENV PATH="/opt/reinforcer_venv/bin:$PATH"
 
 # The ray images automatically activate the anaconda venv. We will
 # comment this out of the .bashrc to give the same UX between docker
@@ -50,7 +51,4 @@ sed -i '/# >>> conda initialize >>>/,/# <<< conda initialize <<</ { /^[^#]/ s/^/
 
 # Comment out any line that explicitly exports the anaconda3 PATH
 sed -i '/export PATH=\$HOME\/anaconda3\/bin:\$PATH/ s/^/# /' ~/.bashrc
-
-# Enable the repo's git history within the container
-git config --global --add safe.directory /opt/reinforcer
 EOF
