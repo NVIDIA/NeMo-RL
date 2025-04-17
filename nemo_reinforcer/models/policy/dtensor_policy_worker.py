@@ -15,7 +15,7 @@
 import gc
 
 from collections import defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, Optional
 
 import ray
@@ -259,7 +259,7 @@ class DTensorPolicyWorker:
             ctx = torch.no_grad()
             self.model.eval()
         else:
-            ctx = contextlib.nullcontext()
+            ctx = nullcontext()
             # Ensure model is in training mode
             self.model.train()
 
@@ -372,10 +372,12 @@ class DTensorPolicyWorker:
         metrics = {
             "global_loss": global_loss.cpu(),
             "local_loss": local_loss.cpu(),
-            "grad_norm": grad_norm,
             "rank": torch.distributed.get_rank(),
             "all_mb_metrics": dict(mb_metrics),
         }
+
+        if not eval_mode:
+            metrics["grad_norm"] = grad_norm
 
         return metrics
 

@@ -94,7 +94,9 @@ def test_dpo_collate_fn():
     ]
 
     # Call dpo_collate_fn
-    train_data = dpo_collate_fn(data_batch, mock_tokenizer)
+    train_data = dpo_collate_fn(
+        data_batch, mock_tokenizer, make_sequence_length_divisible_by=16
+    )
 
     # Verify the output structure
     assert isinstance(train_data, BatchedDataDict)
@@ -107,7 +109,7 @@ def test_dpo_collate_fn():
     assert train_data["input_ids"].shape[0] == 4  # 2 examples * 2 (chosen + rejected)
 
     # Verify input_ids shape and padding
-    max_length = 7  # max of all sequence lengths
+    max_length = 16  # max of all sequence lengths, padded to be divisible by 16
     assert train_data["input_ids"].shape == (4, max_length)
 
     # Verify input_lengths

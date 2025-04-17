@@ -15,7 +15,7 @@
 import gc
 import warnings
 from collections import defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, Optional
 
 import ray
@@ -228,7 +228,7 @@ class FSDP1PolicyWorker:
             ctx = torch.no_grad()
             self.model.eval()
         else:
-            ctx = contextlib.nullcontext()
+            ctx = nullcontext()
             # Ensure model is in training mode
             self.model.train()
 
