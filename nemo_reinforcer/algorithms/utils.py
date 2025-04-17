@@ -123,9 +123,7 @@ def surpress_user_warnings(f):
 @surpress_user_warnings
 def masked_mean(values, mask, dim=None):
     """Masks values with mask, and computes the mean of the values using the masked values."""
-    if dim is None:
-        return values[mask.bool()].mean()
-    return as_masked_tensor(values, mask.bool()).mean(dim=dim).to_tensor(torch.nan)
+    return (values * mask).sum(dim=dim) / (mask.sum(dim=dim) + 1e-8)
 
 
 def set_seed(seed: int):

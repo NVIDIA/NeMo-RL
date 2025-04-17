@@ -581,3 +581,25 @@ def test_clipped_pg_loss_on_policy_kl_importance_sampling():
 
     actual_loss, _ = loss_fn(dummy_logits, data)
     torch.testing.assert_close(actual_loss, expected_total_loss, atol=1e-4, rtol=1e-3)
+
+
+def test_masked_mean_all_zeros():
+    """Test masked_mean function with all zeros mask."""
+    values = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    mask = torch.zeros_like(values)
+
+    # All zeros mask should return 0
+    result = masked_mean(values, mask)
+    print(result)
+    torch.testing.assert_allclose(result, torch.tensor(0.0))
+
+    # With check_zero_mask=False
+    mask[0] = 1
+    result = masked_mean(values, mask)
+    torch.testing.assert_allclose(result, torch.tensor(1.0))
+
+    # Case 2: dim is not None
+    values = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    mask = torch.zeros_like(values)
+    result = masked_mean(values, mask, dim=1)
+    torch.testing.assert_allclose(result, torch.tensor([0.0, 0.0]))

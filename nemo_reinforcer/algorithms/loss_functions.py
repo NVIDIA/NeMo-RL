@@ -97,7 +97,7 @@ class ClippedPGLossFn(LossFunction):
         mask = token_mask * sample_mask.unsqueeze(-1)
 
         lp_error = torch.abs(generation_logprobs - prev_logprobs)  # noqa: F841  (precommit ignore for now)
-        mult_prob_error = ((torch.exp(lp_error) * mask).sum() / mask.sum()).item()
+        mult_prob_error = masked_mean(torch.exp(lp_error), mask).item()
 
         next_token_logits = next_token_logits[:, :-1]  # Remove last position's logits
         next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
@@ -143,24 +143,17 @@ class ClippedPGLossFn(LossFunction):
         loss1 = -advantages * ratios
         loss2 = -advantages * ratios_clamped
 
-        if mask.sum() > 0:
-            if self.use_importance_sampling_correction:
-                actor_importance_weights = torch.exp(
-                    prev_logprobs - generation_logprobs
-                )
-                actor_importance_weights = torch.nan_to_num(
-                    actor_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
-                )
-            else:
-                actor_importance_weights = torch.ones_like(prev_logprobs)
-            actor_loss = masked_mean(
-                actor_importance_weights * torch.max(loss1, loss2), mask
+        if self.use_importance_sampling_correction:
+            actor_importance_weights = torch.exp(prev_logprobs - generation_logprobs)
+            actor_importance_weights = torch.nan_to_num(
+                actor_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
             )
-            loss = actor_loss + kl
         else:
-            # disable this update since there are no valid tokens
-            loss = loss1.view(-1)[0] * 0
-
+            actor_importance_weights = torch.ones_like(prev_logprobs)
+        actor_loss = masked_mean(
+            actor_importance_weights * torch.max(loss1, loss2), mask
+        )
+        loss = actor_loss + kl
         with torch.no_grad():
             probs_ratio = masked_mean(ratios.detach(), mask).item()
             probs_ratio_clamped = masked_mean(ratios_clamped.detach(), mask).item()
