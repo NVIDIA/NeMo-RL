@@ -183,6 +183,7 @@ class DTensorPolicyWorker:
                 "activation_checkpointing"
             ],
         )
+        self.model = self.model.cuda()
 
         if self.cpu_offload:
             self.model = self.move_buffer_to_device(self.model, "cpu")
