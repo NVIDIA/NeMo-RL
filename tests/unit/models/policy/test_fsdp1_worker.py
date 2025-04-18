@@ -261,18 +261,32 @@ def test_hf_policy_init(policy_setup, num_gpus):
 
 
 @pytest.fixture
-def training_setup(tokenizer, num_gpus):
-    """Setup and teardown specifically for training tests."""
+def training_setup(tokenizer, request, num_gpus):
+    """
+    Setup and teardown specifically for training tests.
+
+    When used without parameterization, uses the default config.
+    When parameterized, takes any config updates as a dictionary in request.param
+    and applies them to the basic config.
+    """
     policy = None
     cluster = None
     data = None
     loss_fn = None
 
+    # Get config updates from request.param if available
+    config_updates = {}
+    config_suffix = ""
+    if hasattr(request, "param"):
+        config_updates = request.param
+        config_suffix = "-" + "-".join([f"{k}={v}" for k, v in config_updates.items()])
+
     try:
         # Create resources with unique name
-        cluster_name = f"test-train-{num_gpus}gpu"
+        cluster_name = f"test-train-{num_gpus}gpu{config_suffix}"
         print(
-            f"Creating training virtual cluster '{cluster_name}' for {num_gpus} GPUs..."
+            f"Creating training virtual cluster '{cluster_name}' for {num_gpus} GPUs"
+            f"{' with config updates: ' + str(config_updates) if config_updates else ''}"
         )
 
         cluster = RayVirtualCluster(
@@ -283,7 +297,10 @@ def training_setup(tokenizer, num_gpus):
             max_colocated_worker_groups=1,
         )
 
-        config = basic_llama_test_config
+        # Create a config with optional modifications
+        config = deepcopy(basic_llama_test_config)
+        if config_updates:
+            config.update(config_updates)
 
         print("Creating training HfPolicy...")
         policy = HfPolicy(
@@ -318,7 +335,11 @@ def training_setup(tokenizer, num_gpus):
         loss_fn: LossFunction = simple_loss
 
         # Provide the resources to the test
-        yield policy, cluster, data, loss_fn
+        # Default config is used if no config updates are provided
+        if config_updates:
+            yield policy, cluster, data, loss_fn, config
+        else:
+            yield policy, cluster, data, loss_fn
 
     except Exception as e:
         print(f"Error during training setup: {e}")
@@ -700,3 +721,127 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
     print("Cleaning up resources for test")
     cluster.shutdown()
     policy.worker_group.shutdown()
+
+
+@pytest.mark.timeout(180)
+@pytest.mark.parametrize("num_gpus", [2], ids=["2gpu"])
+@pytest.mark.parametrize(
+    "training_setup, config_name",
+    [
+        (
+            {"fsdp_offload_enabled": True, "activation_checkpointing_enabled": False},
+            "fsdp_offload",
+        ),
+        (
+            {"fsdp_offload_enabled": False, "activation_checkpointing_enabled": True},
+            "activation_checkpointing",
+        ),
+    ],
+    indirect=["training_setup"],
+    ids=["fsdp_offload", "activation_checkpointing"],
+)
+def test_hf_policy_training_with_modified_setup(
+    training_setup, tracker, num_gpus, config_name
+):
+    """Test training with 2 GPUs and special FSDP configurations (offload or activation checkpointing)."""
+
+    def verify_loss_tensor(loss_tensor):
+        assert not torch.isnan(loss_tensor).any(), "Loss should not be NaN"
+        assert not torch.isinf(loss_tensor).any(), "Loss should not be Inf"
+        return loss_tensor
+
+    policy, cluster, data, loss_fn, config = training_setup
+
+    # Verify resources were created properly
+    assert policy is not None, "Training policy was not created properly"
+    assert cluster is not None, "Training cluster was not created properly"
+    assert data is not None, "Test data was not created properly"
+    assert loss_fn is not None, "Loss function was not created properly"
+    assert num_gpus == 2, "This test is specifically for 2 GPUs"
+
+    # Verify we have exactly 2 workers/GPUs
+    assert len(policy.worker_group.workers) == 2, (
+        "Should have exactly 2 workers for this test"
+    )
+
+    # Check GPU distribution
+    gpu_infos = ray.get([w.get_gpu_info.remote() for w in policy.worker_group.workers])
+    assert len(gpu_infos) == 2, "Should have information from 2 GPUs"
+    assert gpu_infos[0]["rank"] != gpu_infos[1]["rank"], (
+        "Workers should have different ranks"
+    )
+
+    # Call prepare_for_training
+    print(f"\nPreparing for training with 2 GPUs and {config_name}...")
+    policy.prepare_for_training()
+
+    # Get initial GPU utilization across both GPUs
+    initial_mem_allocated, initial_mem_reserved = get_max_gpu_utilization(policy)
+    print(
+        f"Initial GPU Utilization: {initial_mem_allocated:,.1f} MB allocated, "
+        f"{initial_mem_reserved:,.1f} MB reserved"
+    )
+    tracker.track(f"2gpu_{config_name}_initial_mem_allocated", initial_mem_allocated)
+
+    # Training loop
+    losses = []
+    for steps in range(4):
+        results = policy.train(data, loss_fn)
+
+        # Verify results
+        assert "loss" in results, "Training results should contain 'loss'"
+        loss_tensor = results["loss"]
+        verify_loss_tensor(loss_tensor)
+        losses.append(loss_tensor[-1].item())
+
+        print(f"Training loss with 2 GPUs and {config_name}: {results['loss']}")
+
+    policy.finish_training()
+    assert losses[0] > losses[-1], "Loss should decrease over training iterations"
+
+    # Check GPU memory usage after training
+    after_training_mem_allocated, after_training_mem_reserved = get_max_gpu_utilization(
+        policy
+    )
+    print(
+        f"Max GPU Utilization after training with 2 GPUs and {config_name}: {after_training_mem_allocated:,.1f} MB allocated, "
+        f"{after_training_mem_reserved:,.1f} MB reserved"
+    )
+    tracker.track(
+        f"2gpu_{config_name}_after_training_mem_allocated", after_training_mem_allocated
+    )
+    tracker.track(
+        f"2gpu_{config_name}_after_training_mem_reserved", after_training_mem_reserved
+    )
+
+    policy.offload_after_refit()
+    after_offload_mem_allocated, after_offload_mem_reserved = get_max_gpu_utilization(
+        policy
+    )
+    print(
+        f"Max GPU Utilization after offload with 2 GPUs and {config_name}: {after_offload_mem_allocated:,.1f} MB allocated, "
+        f"{after_offload_mem_reserved:,.1f} MB reserved"
+    )
+    tracker.track(
+        f"2gpu_{config_name}_after_offload_mem_allocated", after_offload_mem_allocated
+    )
+    tracker.track(
+        f"2gpu_{config_name}_after_offload_mem_reserved", after_offload_mem_reserved
+    )
+
+    # Memory usage assertions based on configuration
+    if config_name == "fsdp_offload":
+        # With FSDP offload, memory usage after training should already be low
+        assert after_training_mem_allocated < 1_200, (
+            "FSDP offload after training should be less than 1.2GB"
+        )
+    else:
+        assert after_training_mem_allocated > 10_000, (
+            "Memory after training should be more than 10GB"
+        )
+
+
+    # Common assertion for both configurations
+    assert after_offload_mem_allocated < 1_200, (
+        "Memory after offload should be less than 1.2GB"
+    )
