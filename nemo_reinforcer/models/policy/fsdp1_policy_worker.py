@@ -37,6 +37,7 @@ from nemo_reinforcer.models.generation.interfaces import (
 )
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.modeling_utils import _get_tied_weight_keys
 from nemo_reinforcer.models.policy import PolicyConfig
 from nemo_reinforcer.models.policy.utils import import_class_from_path
 from nemo_reinforcer.distributed.virtual_cluster import (
@@ -91,6 +92,13 @@ class FSDP1PolicyWorker:
             device_map="cpu",  # load weights onto CPU initially
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
+
+        num_tied_weights = len(_get_tied_weight_keys(self.model))
+        if num_tied_weights != 0:
+            raise ValueError(
+                f"Using FSP1 with a model ({model_name}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/reinforcer/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+            )
+
         if init_reference_model:
             self.reference_model = AutoModelForCausalLM.from_pretrained(
                 model_name,

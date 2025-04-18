@@ -17,6 +17,8 @@ from copy import deepcopy
 import pytest
 import torch
 import ray
+from _pytest.monkeypatch import MonkeyPatch
+
 
 from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
@@ -24,6 +26,29 @@ from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 from nemo_reinforcer.models.policy import PolicyConfig
+
+
+# Remove this once https://github.com/NVIDIA/reinforcer/issues/227 is fixed
+@pytest.fixture(scope="module", autouse=True)
+def patch_tied_weights_for_module():
+    """
+    Module-scoped fixture to automatically monkeypatch
+    _get_tied_weight_keys from transformers for all tests in this file.
+    """
+    # Create a module-scoped MonkeyPatch object
+    mpatch = MonkeyPatch()
+    print(
+        f"\nApplying module-level patch to transformers.modeling_utils._get_tied_weight_keys for {__name__}"
+    )
+    mpatch.setattr(
+        "transformers.modeling_utils._get_tied_weight_keys",
+        lambda model, **kwargs: [],  # Always return empty list
+        raising=True,
+    )
+    # Yield control to the tests in the module
+    yield
+    # MonkeyPatch object handles cleanup automatically when the fixture scope ends
+    mpatch.undo()
 
 
 # Define basic vLLM test config

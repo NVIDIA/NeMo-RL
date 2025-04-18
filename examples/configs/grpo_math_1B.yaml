@@ -24,7 +24,7 @@ checkpointing:
   save_period: 10
 
 policy:
-  model_name: "meta-llama/Llama-3.2-1B-Instruct"
+  model_name: "Qwen/Qwen2.5-1.5B"
   tokenizer:
     name: ${policy.model_name} ## specify if you'd like to use a tokenizer different from the model's default
   train_global_batch_size: 512
@@ -37,7 +37,7 @@ policy:
   activation_checkpointing_enabled: false
 
   dtensor_cfg:
-    enabled: false
+    enabled: true
     cpu_offload: False
     sequence_parallel: false
     activation_checkpointing: false

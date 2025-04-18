@@ -24,6 +24,7 @@ from torch.distributed.fsdp import (
     FSDPModule,
 )
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.modeling_utils import _get_tied_weight_keys
 from nemo_reinforcer.models.dtensor.parallelize import _parallelize_model
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
@@ -140,6 +141,7 @@ class DTensorPolicyWorker:
             device_map="cpu",  # load weights onto CPU initially
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
+
         self.tokenizer = tokenizer
         # ------------------------------------------------
         # 3) Move to GPU + Composable FSDP
@@ -151,6 +153,12 @@ class DTensorPolicyWorker:
         assert world_size % tp_size == 0, (
             f"World size({world_size}) must be divisible by TP size({tp_size}) to use DTensor"
         )
+
+        num_tied_weights = len(_get_tied_weight_keys(self.model))
+        if num_tied_weights != 0 and tp_size > 1:
+            raise ValueError(
+                f"Using dtensor policy with tp size {tp_size} for model ({model_name}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/reinforcer/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+            )
 
         mesh_2d = torch.distributed.device_mesh.init_device_mesh(
             "cuda", (dp_size, tp_size), mesh_dim_names=("dp", "tp")

@@ -18,6 +18,9 @@ policy:
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
 
+  dtensor_cfg:
+    enabled: False
+
   optimizer:
     name: "torch.optim.AdamW"
     kwargs:
