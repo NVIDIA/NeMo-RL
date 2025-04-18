@@ -49,4 +49,7 @@ def nll_loss(
     token_loss_mask = data.get("token_loss_mask")[:, 1:].cuda()
     loss = -torch.sum(token_logprobs * token_loss_mask)
 
-    return loss, {"loss": loss.item()}
+    return loss, {
+        "loss": loss.item(),
+        "num_valid_samples": 1,
+    }
