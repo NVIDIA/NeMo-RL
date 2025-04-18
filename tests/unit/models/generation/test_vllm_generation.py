@@ -748,7 +748,8 @@ def test_vllm_weight_update_and_prefix_cache_reset(
         torch.cuda.empty_cache()
 
 
-def test_vllm_weight_update_memory(cluster, tokenizer):
+@pytest.mark.parametrize("enable_dtensor", [True, False])
+def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     """Test that vLLM streaming weight update and can save memory."""
     from nemo_reinforcer.models.policy.hf_policy import HfPolicy
 
@@ -770,7 +771,7 @@ def test_vllm_weight_update_memory(cluster, tokenizer):
     vllm_policy.finish_generation()
 
     print("Creating HF policy...")
-    hf_config = basic_hf_test_config.copy()
+    hf_config = get_basic_hf_test_config(enable_dtensor=enable_dtensor)
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
     print(f"refitting vllm policy...")
