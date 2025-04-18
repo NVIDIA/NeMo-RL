@@ -273,6 +273,22 @@ def test_get_keys_from_messages() -> None:
     assert result == [{"key1": "val1"}, {"key1": "val4"}]
 
 
+@pytest.mark.parametrize("make_sequence_length_divisible_by", [1, 8])
+def test_batch_pad_message_log_divisible_by(
+    uneven_message_logs: List[LLMMessageLogType], make_sequence_length_divisible_by: int
+) -> None:
+    """Test batch_pad_message_log padding to a multiple."""
+    result, input_lengths = batched_message_log_to_flat_message(
+        uneven_message_logs,
+        make_sequence_length_divisible_by=make_sequence_length_divisible_by,
+    )
+
+    batch_size, sequence_length = result["input_ids"].shape
+    # Check shapes
+    assert input_lengths.shape == (2,) == (batch_size,)
+    assert sequence_length % make_sequence_length_divisible_by == 0
+
+
 def test_batch_pad_message_log_basic(
     uneven_message_logs: List[LLMMessageLogType],
 ) -> None:

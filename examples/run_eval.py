@@ -114,7 +114,7 @@ def main():
     init_ray()
 
     # Setup tokenizer
-    tokenizer = get_tokenizer(config["generation"]["model_name"])
+    tokenizer = get_tokenizer(config["tokenizer"])
     config["generation"] = configure_generation_config(
         config["generation"], tokenizer, is_eval=True
     )

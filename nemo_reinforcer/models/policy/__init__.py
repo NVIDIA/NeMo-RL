@@ -12,9 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypedDict
+from typing import TypedDict, Optional, Union
 
 from nemo_reinforcer.models.generation.interfaces import GenerationConfig
+
+
+class DTensorConfig(TypedDict):
+    enabled: bool
+    cpu_offload: bool
+    sequence_parallel: bool
+    activation_checkpointing: bool
+    tensor_parallel_size: int
 
 
 class TokenizerConfig(TypedDict):
@@ -31,5 +39,8 @@ class PolicyConfig(TypedDict):
     logprob_batch_size: int
     generation: GenerationConfig
     precision: str
+    dtensor_cfg: DTensorConfig
+    make_sequence_length_divisible_by: int
+    max_grad_norm: Optional[Union[float, int]]
     fsdp_offload_enabled: bool
     activation_checkpointing_enabled: bool
