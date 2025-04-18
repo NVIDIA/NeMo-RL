@@ -729,11 +729,11 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
     "training_setup, config_name",
     [
         (
-            {"fsdp_offload_enabled": True, "activation_checkpointing_enabled": False},
+            {"fsdp_offload_enabled": True},
             "fsdp_offload",
         ),
         (
-            {"fsdp_offload_enabled": False, "activation_checkpointing_enabled": True},
+            {"activation_checkpointing_enabled": True},
             "activation_checkpointing",
         ),
     ],
@@ -743,7 +743,7 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
 def test_hf_policy_training_with_modified_setup(
     training_setup, tracker, num_gpus, config_name
 ):
-    """Test training with 2 GPUs and special FSDP configurations (offload or activation checkpointing)."""
+    """Test training with 2 GPUs and modified configs (offload or activation checkpointing)."""
 
     def verify_loss_tensor(loss_tensor):
         assert not torch.isnan(loss_tensor).any(), "Loss should not be NaN"
