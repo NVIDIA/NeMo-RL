@@ -49,10 +49,20 @@ def format_helpsteer3(data):
     response_2 = data["response2"]
     overall_preference = data["overall_preference"]
 
+    if overall_preference < 0:
+        chosen = response_1
+        rejected = response_2
+    elif overall_preference == 0:
+        chosen = response_1
+        rejected = response_1
+    else:
+        chosen = response_2
+        rejected = response_1
+
     return {
         "prompt": data["context"],
-        "chosen_response": response_1 if overall_preference < 0 else response_2,
-        "rejected_response": response_2 if overall_preference < 0 else response_1,
+        "chosen_response": chosen,
+        "rejected_response": rejected,
     }
 ```
 
@@ -68,7 +78,6 @@ Here's a minimal example which simply re-keys an existing jsonl dataset:
 
 ```{testcode}
 from datasets import load_dataset
-from nemo_reinforcer.data.hf_datasets.interfaces import HfDataset
 from nemo_reinforcer.data.interfaces import TaskDataSpec
 from docs.helpers import make_dpo_dataset
 
