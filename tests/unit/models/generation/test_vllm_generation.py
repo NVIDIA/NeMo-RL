@@ -799,8 +799,12 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     assert current_reserved == 0.0, "Memory should be 0 after refit completed"
     # memory threshold: memory during non-streaming weight update on 1B model on 2 GPUs
     # memory during streaming weight update should less than this baseline threshold
-    assert peak_allocated < 11286, "Peak allocated memory should be less than 11286MB"
-    assert peak_reserved < 11298, "Peak reserved memory should be less than 11298MB"
+    if enable_dtensor:
+        assert peak_allocated < 8074, "Peak allocated memory should < 8074 MB"
+        assert peak_reserved < 8088, "Peak reserved memory should < 8088 MB"
+    else:
+        assert peak_allocated < 11286, "Peak allocated memory should < 11286 MB"
+        assert peak_reserved < 11298, "Peak reserved memory should < 11298 MB"
 
     # Clean up
     vllm_policy.shutdown()
