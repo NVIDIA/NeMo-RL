@@ -356,30 +356,30 @@ class DTensorPolicyWorker:
 
                 losses.append(torch.tensor(mb_losses).sum().item())
 
-        # Compute global loss across all ranks
-        with torch.no_grad():
-            local_loss = torch.tensor(losses, device="cuda")
-            global_loss = torch.zeros_like(local_loss)
-            torch.distributed.all_reduce(local_loss)
-            global_loss = local_loss / self.dp_size
+            # Compute global loss across all ranks
+            with torch.no_grad():
+                local_loss = torch.tensor(losses, device="cuda")
+                global_loss = torch.zeros_like(local_loss)
+                torch.distributed.all_reduce(local_loss)
+                global_loss = local_loss / self.dp_size
 
-        # Aggregate metrics across all microbatches
-        mb_metrics = defaultdict(list)
-        for m in all_mb_metrics:
-            for k, v in m.items():
-                mb_metrics[k].append(v)
+            # Aggregate metrics across all microbatches
+            mb_metrics = defaultdict(list)
+            for m in all_mb_metrics:
+                for k, v in m.items():
+                    mb_metrics[k].append(v)
 
-        metrics = {
-            "global_loss": global_loss.cpu(),
-            "local_loss": local_loss.cpu(),
-            "rank": torch.distributed.get_rank(),
-            "all_mb_metrics": dict(mb_metrics),
-        }
+            metrics = {
+                "global_loss": global_loss.cpu(),
+                "local_loss": local_loss.cpu(),
+                "rank": torch.distributed.get_rank(),
+                "all_mb_metrics": dict(mb_metrics),
+            }
 
-        if not eval_mode:
-            metrics["grad_norm"] = grad_norm
+            if not eval_mode:
+                metrics["grad_norm"] = grad_norm
 
-        return metrics
+            return metrics
 
     def get_logprobs(
         self, data: BatchedDataDict, micro_batch_size: int = None
