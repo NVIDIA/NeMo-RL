@@ -6,14 +6,14 @@
   - [Installation](#installation)
   - [Quick start](#quick-start)
     - [GRPO](#grpo)
-      - [Single Node](#single-node-2)
-      - [Multi-node](#multi-node-2)
-    - [SFT](#sft)
       - [Single Node](#single-node)
       - [Multi-node](#multi-node)
-    - [DPO](#dpo)
+    - [SFT](#sft)
       - [Single Node](#single-node-1)
       - [Multi-node](#multi-node-1)
+    - [DPO](#dpo)
+      - [Single Node](#single-node-2)
+      - [Multi-node](#multi-node-2)
   - [Cluster Start](#cluster-start)
 
 **Nemo-Reinforcer** is a scalable and efficient post-training library designed for models ranging from 1 GPU to thousands, and from tiny to over 100 billion parameters.
@@ -202,7 +202,7 @@ uv run python examples/run_dpo.py \
   logger.wandb.name="llama-dpo-sft"
 ```
 
-Refer to [dpo.yaml](examples/configs/dpo.yaml) for a full list of parameters that can be overridden. For an in-depth explanation of how to add your own DPO dataset, refer to the [DPO documentation](docs/guides/dpo.md)
+Refer to [dpo.yaml](examples/configs/dpo.yaml) for a full list of parameters that can be overridden. For an in-depth explanation of how to add your own DPO dataset, refer to the [DPO documentation](docs/guides/dpo.md).
 
 #### Multi-node
 
