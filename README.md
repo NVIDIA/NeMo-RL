@@ -153,8 +153,7 @@ NUM_ACTOR_NODES=2
 # Add a timestamp to make each job name unique
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# SFT experiment uses Llama-3.1-8B model
-COMMAND="uv pip install -e .; uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'" \
+COMMAND="uv pip install -e .; uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama1b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama1b'" \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
@@ -182,11 +181,11 @@ uv run python examples/run_dpo.py
 
 This trains `Llama3.2-1B-Instruct` on one GPU.
 
-If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration and switch to an 8B Llama3.2 Instruct model:
+If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration and switch to an 8B Llama3.1 Instruct model:
 
 ```sh
 uv run python examples/run_dpo.py \
-  policy.model_name="meta-llama/Meta-Llama-3-8B-Instruct" \
+  policy.model_name="meta-llama/Llama-3.1-8B-Instruct" \
   policy.train_global_batch_size=256 \
   cluster.gpus_per_node=8
 ```
@@ -215,8 +214,7 @@ NUM_ACTOR_NODES=2
 # Add a timestamp to make each job name unique
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# DPO experiment uses Llama-3.1-8B model
-COMMAND="uv run ./examples/run_dpo.py --config examples/configs/dpo.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/dpo_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='dpo-llama8b'" \
+COMMAND="uv run ./examples/run_dpo.py --config examples/configs/dpo.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 dpo.val_global_batch_size=32 checkpointing.checkpoint_dir='results/dpo_llama81_2nodes' logger.wandb_enabled=True logger.wandb.name='dpo-llama1b'" \
 RAY_DEDUP_LOGS=0 \
 UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
 CONTAINER=YOUR_CONTAINER \
