@@ -19,6 +19,7 @@ import sys
 import os
 import ray
 import logging
+import time
 from ray.util.placement_group import placement_group, remove_placement_group
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
@@ -101,6 +102,10 @@ def init_ray(log_dir: Optional[str] = None):
         logger.info(f"Started local cluster with: {ray.cluster_resources()}")
 
 
+class ResourceInsufficientError(Exception):
+    """Exception raised when the cluster does not have enough resources to satisfy the requested configuration."""
+
+
 class RayVirtualCluster:
     """Creates a virtual distributed cluster using Ray placement groups.
 
@@ -146,7 +151,25 @@ class RayVirtualCluster:
             )
         self.max_colocated_worker_groups = max_colocated_worker_groups
         self.name = name
-        self._init_placement_groups(placement_group_strategy)
+        max_retries = int(os.environ.get("NRL_VIRTUAL_CLUSTER_MAX_RETRIES", 6))
+        assert max_retries > 0, (
+            f"NRL_VIRTUAL_CLUSTER_MAX_RETRIES={max_retries} must be an integer greater than 0"
+        )
+        for i in range(max_retries):
+            try:
+                self._init_placement_groups(placement_group_strategy)
+                # Reaching here means we were successful
+                break
+            except ResourceInsufficientError:
+                print(
+                    f"Retrying placement group creation... {i + 1}/{max_retries}. Next retry in {2**i} seconds."
+                )
+                time.sleep(2**i)
+                continue
+        else:
+            raise ResourceInsufficientError(
+                f"Maximum number of retries reached ({max_retries}). Cluster resources may be insufficient or cluster itself is highly unstable. Please check your cluster configuration and your cluster logs."
+            )
 
     def _init_placement_groups(self, strategy: str):
         """Creates placement groups for each node in the cluster. Has empty groups for nodes that don't have any bundles.
@@ -175,12 +198,12 @@ class RayVirtualCluster:
 
         # Validate resources
         if self.use_gpus and total_requested_gpus > total_available_gpus:
-            raise ValueError(
+            raise ResourceInsufficientError(
                 f"Not enough GPUs available. Requested {total_requested_gpus} GPUs, but only {total_available_gpus} are available in the cluster."
             )
 
         if total_requested_cpus > total_available_cpus:
-            raise ValueError(
+            raise ResourceInsufficientError(
                 f"Not enough CPUs available. Requested {total_requested_cpus} CPUs, but only {total_available_cpus} are available in the cluster."
             )
 
