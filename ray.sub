@@ -26,9 +26,11 @@ NODE_MANAGER_PORT=${NODE_MANAGER_PORT:-8077}
 DASHBOARD_AGENT_PORT=${DASHBOARD_AGENT_PORT:-52365}
 DASHBOARD_AGENT_GRPC_PORT=${DASHBOARD_AGENT_GRPC_PORT:-52366}
 METRICS_PORT=${METRICS_PORT:-9002}
-# NOTE: Ports start above 20000 since 10001-10257 frequently ran into conflicts
-MIN_WORKER_PORT=${MIN_WORKER_PORT:-20001}
-MAX_WORKER_PORT=${MAX_WORKER_PORT:-20257}
+# On our clusters, the largest port range on an idle worker appeared between 52367-64607
+# (not including the other ports set by this script). So this range is chosen to be
+# somewhere in the middle
+MIN_WORKER_PORT=${MIN_WORKER_PORT:-53001}
+MAX_WORKER_PORT=${MAX_WORKER_PORT:-53257}
 ########################################################
 
 # Defaults to placing uv cache inside the SLURM_SUBMIT_DIR
