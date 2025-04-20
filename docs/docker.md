@@ -24,3 +24,13 @@ This image sets up the python environment for you, so you do not have to use `uv
 any other packages.
 
 This image is useful in situations where you may not have network connectivity to re-download packages.
+
+# SquashFS Container
+
+To run reinforcer on a Slurm cluster, you need to build a SquashFS Container from the base docker image.
+
+Follow [these installation commands](https://github.com/NVIDIA/enroot/blob/master/doc/installation.md#standard-flavor) to install enroot. Then build the container with the following command.
+
+```sh
+enroot import -o reinforcer.sqsh dockerd://reinforcer
+```

@@ -10,13 +10,18 @@
 
 ### Batched Job Submission
 
-```sh
-# Run from the root of NeMo-Reinforcer repo
-NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
+Launch the following lines from your experiment directory. All ray logs will be stored in your experiment directory.
 
-COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py" \
+```sh
+NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
+WD=$(readlink -f $PWD) # Working directory with all soft links expanded
+REINFORCER_DIR=YOUR_ABSOLUTE_REINFORCER_DIR
+
+COMMAND="cd $REINFORCER_DIR; uv pip install -e .; uv run ./examples/run_grpo_math.py" \
 CONTAINER=YOUR_CONTAINER \
-MOUNTS="$PWD:$PWD" \
+MOUNTS="$WD:$WD,$REINFORCER_DIR:$REINFORCER_DIR" \
+HF_TOKEN=YOUR_HF_TOKEN \
+WANDB_API_KEY=YOUR_WANDB_API_KEY \
 sbatch \
     --nodes=${NUM_ACTOR_NODES} \
     --account=YOUR_ACCOUNT \
@@ -24,7 +29,7 @@ sbatch \
     --partition=YOUR_PARTITION \
     --time=1:0:0 \
     --gres=gpu:8 \
-    ray.sub
+    $REINFORCER_DIR/ray.sub
 ```
 
 Notes:
@@ -60,13 +65,17 @@ sbatch ... \
 A key advantage of running interactively on the head node is the ability to execute multiple multi-node jobs without needing to requeue in the SLURM job queue. This means during debugging sessions, you can avoid submitting a new `sbatch` command each time and instead debug and re-submit your Reinforcer job directly from the interactive session.
 :::
 
-To run interactively, launch the same command as the [Batched Job Submission](#batched-job-submission) except omit the `COMMAND` line:
+To run interactively, launch the same command as the [Batched Job Submission](#batched-job-submission) except omitting the `COMMAND` line:
+
 ```sh
-# Run from the root of NeMo-Reinforcer repo
 NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
+WD=$(readlink -f $PWD) # Working directory with all soft links expanded
+REINFORCER_DIR=YOUR_ABSOLUTE_REINFORCER_DIR
 
 CONTAINER=YOUR_CONTAINER \
-MOUNTS="$PWD:$PWD" \
+MOUNTS="$WD:$WD,$REINFORCER_DIR:$REINFORCER_DIR" \
+HF_TOKEN=YOUR_HF_TOKEN \
+WANDB_API_KEY=YOUR_WANDB_API_KEY \
 sbatch \
     --nodes=${NUM_ACTOR_NODES} \
     --account=YOUR_ACCOUNT \
@@ -74,19 +83,26 @@ sbatch \
     --partition=YOUR_PARTITION \
     --time=1:0:0 \
     --gres=gpu:8 \
-    ray.sub
+    $REINFORCER_DIR/ray.sub
 ```
+
 Which will print the `SLURM_JOB_ID`:
+
 ```text
 Submitted batch job 1980204
 ```
+
 Once the ray cluster is up, a script should be created to attach to the ray head node,
 which you can use launch experiments.
+
 ```sh
 bash 1980204-attach.sh
 ```
+
 Now that you are on the head node, you can launch the command like so:
+
 ```sh
+cd $REINFORCER_DIR
 uv venv .venv
 uv pip install -e .
 uv run ./examples/run_grpo_math.py
