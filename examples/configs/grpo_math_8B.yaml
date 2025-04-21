@@ -17,6 +17,7 @@ policy:
   precision: "bfloat16"
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
+  refit_buffer_size: 4 # used for refitting inference engine, the unit is GB
 
   optimizer:
     name: "torch.optim.AdamW"

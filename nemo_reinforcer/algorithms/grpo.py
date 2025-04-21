@@ -275,7 +275,7 @@ import time
 def refit_policy_generation(
     policy: PolicyInterface,
     policy_generation: GenerationInterface,
-    refit_buffer_size: int = 10,  # GB
+    refit_buffer_size: int,  # GB
 ):
     """Refit the policy generation interface with the latest policy weights."""
     s = time.time()
@@ -462,12 +462,13 @@ def grpo_train(
     consumed_samples = grpo_save_state["consumed_samples"]
     val_period = master_config["grpo"]["val_period"]
     val_at_start = master_config["grpo"]["val_at_start"]
+    refit_buffer_size = master_config["policy"]["refit_buffer_size"]
 
     # Run validation at the start if configured
     if val_at_start and step == 0:
         print("\n🔍 Running initial validation...")
         if NEED_REFIT and POLICY_GENERATION_STALE:
-            refit_policy_generation(policy, policy_generation)
+            refit_policy_generation(policy, policy_generation, refit_buffer_size)
             POLICY_GENERATION_STALE = False
         else:
             policy_generation.prepare_for_generation()
@@ -516,7 +517,7 @@ def grpo_train(
             print(f"▶ Generating responses for batch of size {len(input_ids)}...")
             with timer.time("prepare_for_generation"):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(policy, policy_generation)
+                    refit_policy_generation(policy, policy_generation, refit_buffer_size)
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
@@ -620,7 +621,7 @@ def grpo_train(
             # Run validation if it's a validation step
             if val_period > 0 and (step + 1) % val_period == 0:
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(policy, policy_generation)
+                    refit_policy_generation(policy, policy_generation, refit_buffer_size)
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
