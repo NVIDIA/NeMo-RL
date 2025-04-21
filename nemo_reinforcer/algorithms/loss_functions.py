@@ -112,7 +112,7 @@ class ClippedPGLossFn(LossFunction):
             next_token_logprobs = torch.nn.functional.log_softmax(
                 next_token_logits, dim=-1
             )
-            next_tokens = data["input_ids"][:, 1:]  # Skip first token
+            next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
             curr_logprobs = next_token_logprobs.gather(
                 dim=-1, index=next_tokens.unsqueeze(-1)
             ).squeeze(-1)
