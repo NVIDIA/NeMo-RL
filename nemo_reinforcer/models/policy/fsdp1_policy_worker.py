@@ -152,7 +152,7 @@ class FSDP1PolicyWorker:
 
         # used for streaming update inference engine weights
         self._held_sharded_state_dict_reference = None
-        self._held_single_streamed_param_reference = None
+        self._held_streamed_param_reference = None
 
         # register_fsdp_forward_method(self.model, "generate")
         if init_optimizer:
@@ -712,32 +712,45 @@ class FSDP1PolicyWorker:
                 state_dict_config=ShardedStateDictConfig(),
             ):
                 self._held_sharded_state_dict_reference = self.model.state_dict()
-        return self._held_sharded_state_dict_reference.keys()
+
+        # Collect info for streaming multiple tensors
+        state_dict_info = []
+        for name, tensor in self._held_sharded_state_dict_reference.items():
+            # dtensor's numel will return complete tensor instead of only local tensor
+            size_in_bytes = tensor.element_size() * tensor.numel()
+            state_dict_info.append((name, size_in_bytes))
+
+        return state_dict_info
 
     @torch.no_grad()
-    def get_weights_ipc_handles(self, key):
+    def get_weights_ipc_handles(self, keys):
         from torch.distributed.tensor import DTensor
         from torch.multiprocessing.reductions import reduce_tensor
 
-        # Get device UUID for IPC
-        device_uuid = self.report_device_id()
+        converted_params = {}
+        for key in keys:
+            # Get full_tensor for dtensor (GPU > 1)
+            tensor = self._held_sharded_state_dict_reference[key]
+            if isinstance(tensor, DTensor):
+                full_tensor = tensor.full_tensor()
+            else:
+                full_tensor = tensor
+            # Convert parameters to the configured dtype
+            converted_params[key] = full_tensor.to(self.dtype, non_blocking=True)
 
-        # Get full_tensor for dtensor (GPU > 1)
-        tensor = self._held_sharded_state_dict_reference[key]
-        if isinstance(tensor, DTensor):
-            full_tensor = tensor.full_tensor()
-        else:
-            full_tensor = tensor
-
-        # Convert parameters to the configured dtype
-        full_tensor = full_tensor.to(self.dtype, non_blocking=True)
         # Temporary record the full tensor for cleanup
         # It is needed for cleanup the last full_tensor in the refit process
-        self._held_single_streamed_param_reference = full_tensor
+        self._held_streamed_param_reference = converted_params
 
-        # Create a handle for the tensor
-        handle = reduce_tensor(full_tensor.detach())
-        return {device_uuid: (key, handle)}
+        # Get device UUID for IPC
+        device_uuid = self.report_device_id()
+        # Create handles for the tensors
+        all_handles = []
+        for key, p in converted_params.items():
+            handle = reduce_tensor(p.detach())
+            all_handles.append((key, handle))
+
+        return {device_uuid: all_handles}
 
     def prepare_for_lp_inference(self):
         self.model = self.manual_load_to_gpu(self.model)
@@ -792,9 +805,9 @@ class FSDP1PolicyWorker:
         if self._held_sharded_state_dict_reference is not None:
             del self._held_sharded_state_dict_reference
             self._held_sharded_state_dict_reference = None
-        if self._held_single_streamed_param_reference is not None:
-            del self._held_single_streamed_param_reference
-            self._held_single_streamed_param_reference = None
+        if self._held_streamed_param_reference is not None:
+            del self._held_streamed_param_reference
+            self._held_streamed_param_reference = None
 
         gc.collect()
         torch.cuda.empty_cache()

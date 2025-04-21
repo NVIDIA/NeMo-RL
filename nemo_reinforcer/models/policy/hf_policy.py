@@ -254,7 +254,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         """Prepare the weights for IPC.
 
         Returns:
-            dict: A dictionary containing the keys of the parameters.
+            dict: A dictionary containing the state_dict_info of the model.
         """
         futures = self.worker_group.run_all_workers_single_data(
             "prepare_weights_for_ipc", only_on="all_tied_workers"
