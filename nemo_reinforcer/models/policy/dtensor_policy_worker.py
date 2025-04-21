@@ -48,6 +48,7 @@ from nemo_reinforcer.utils.native_checkpoint import (
 from torch import nn
 from nemo_reinforcer.models.policy.utils import get_gpu_info
 
+import time
 
 @contextmanager
 def unshard_fsdp2_model(model: nn.Module):
@@ -171,6 +172,7 @@ class DTensorPolicyWorker:
             ],
         )
         self.model = self.model.cuda()
+        self.count = 0
 
         if self.cpu_offload:
             self.model = self.move_buffer_to_device(self.model, "cpu")
@@ -264,6 +266,13 @@ class DTensorPolicyWorker:
 
         losses = []
         all_mb_metrics = []
+        self.count = 0
+
+        global_seqlen = data.get("input_ids").shape[1]
+
+        print(f"DATA INPUTLENGTHS {data['input_lengths']}")
+        tic4 = time.time()
+
         for gb_start in range(0, dataset_size, local_gbs):
             self.optimizer.zero_grad()
             mb_losses = []
@@ -273,12 +282,22 @@ class DTensorPolicyWorker:
             # so its safe to not check for the case where the last data slice is smaller than mbs
             num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
 
+
             for mb in data.slice(
                 gb_start, gb_start + local_gbs
             ).make_microbatch_iterator(mbs):
-                input_ids = mb.get("input_ids").cuda()
+                
+                tic = time.time()
+                self.count +=1
 
+                if self.count == 5 and not eval_mode:
+                    torch.cuda.cudart().cudaProfilerStart()
+                    torch.autograd.profiler.emit_nvtx(record_shapes=True).__enter__()
+
+                input_ids = mb.get("input_ids").cuda()
                 input_lengths = mb.get("input_lengths")
+
+                input_ids = input_ids[:, :max(input_lengths)] 
                 batch_size, seq_len = input_ids.shape
 
                 attention_mask = torch.zeros(
@@ -289,6 +308,9 @@ class DTensorPolicyWorker:
                     attention_mask[i, :length] = 1
 
                 with torch.autocast(device_type="cuda", dtype=self.dtype):
+                    torch.cuda.synchronize()
+                    tic = time.time()
+
                     batch_size, seq_len = input_ids.shape
 
                     attention_mask_input_all_ones = torch.ones(
@@ -298,18 +320,29 @@ class DTensorPolicyWorker:
                         seq_len, device=input_ids.device
                     ).repeat(batch_size, 1)
 
+        
+                    torch._dynamo.mark_dynamic(input_ids, index=1)
                     outputs = self.model(
                         input_ids=input_ids,
                         attention_mask=attention_mask_input_all_ones,
                         position_ids=position_ids,
                         use_cache=False,
                     )
+                    
+                if self.count == 5 and not eval_mode:
+                    torch.cuda.cudart().cudaProfilerStop()
+                    torch.autograd.profiler.emit_nvtx().__exit__(None, None, None)
+
+                toc = time.time()
 
                 # Get logprobs
                 if not hasattr(outputs, "logits"):
                     logits = self.model.lm_head(outputs.last_hidden_state)
                 else:
                     logits = outputs.logits
+
+                logits = torch.nn.functional.pad(
+                    logits, (0,0,0,global_seqlen-seq_len), value=0)
 
                 loss, loss_metrics = loss_fn(logits, mb)
                 loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
@@ -321,6 +354,13 @@ class DTensorPolicyWorker:
                     loss.backward()
                 mb_losses.append(loss.item())
                 all_mb_metrics.append(loss_metrics)
+
+                torch.cuda.synchronize()
+                tic = time.time()
+                print(f"{tic-toc} DEBUG FLAG2 {self.count} {input_ids.shape}")
+
+            toc4 = time.time()
+            print(f"{toc4-tic4} DEBUG FLAG3")
 
             if not eval_mode:
                 with torch.no_grad():
@@ -569,6 +609,10 @@ class DTensorPolicyWorker:
         data = {}
         device_uuid = self.report_device_id()
         for name, p in params.items():
+            #torch.compile wraps the model as "_orig_mod", so remove the prefix here
+            if name.startswith("_orig_mod."):
+                name = name.removeprefix("_orig_mod.")
+                
             data[name] = reduce_tensor(p.detach())
 
         if offload_model or self.cpu_offload:

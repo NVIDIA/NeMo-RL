@@ -137,7 +137,10 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         return chunked_batch
 
     def shard_by_batch_size(
-        self, shards: int, batch_size: Optional[int] = None
+        self, 
+        shards: int, 
+        batch_size: Optional[int] = None, 
+        sort_by_seqlen = False,
     ) -> List["SlicedDataDict"]:
         """Shards a batch by first dividing it into chunks of size batch_size, then further dividing each chunk into shards equal parts. Finally aggregates the sub-shards by their position.
 
@@ -179,6 +182,35 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
         num_chunks = total_batch_size // batch_size
         shard_size = batch_size // shards
+
+        if sort_by_seqlen:
+            seqlens = self['input_lengths']
+            batch_sorted_indices = []
+            
+            for chunk_idx in range(num_chunks):
+                chunk_start = chunk_idx * batch_size
+                chunk_end = (chunk_idx + 1) * batch_size
+                chunk_seqlens = seqlens[chunk_start:chunk_end]
+
+                # sort the indices by sequence lengths
+                chunk_idx_indices = sorted(range(len(chunk_seqlens)), key=lambda i: chunk_seqlens[i])
+                # stride the sorted sequence lengths along the shards
+                chunk_idx_indices = [chunk_idx_indices[i::shards] for i in range(shards)]
+                chunk_idx_indices = sum(chunk_idx_indices, [])
+                # append the sorted sequence lengths for the chunk
+                batch_sorted_indices.extend(chunk_idx_indices)
+
+            # finally reorder the data along the sorted sequence len indices
+            for k,v  in self.data.items():
+                if torch.is_tensor(v):
+                    sorted_v = v.index_select(
+                        dim=0, index=torch.IntTensor(batch_sorted_indices))
+                else:
+                    sorted_v = [v[i] for i in batch_sorted_indices]
+
+                self.data[k] = sorted_v
+
+
         # Create one BatchedDataDict per shard position
         aggregated_shards = [SlicedDataDict() for _ in range(shards)]
 

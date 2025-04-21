@@ -362,9 +362,8 @@ def calculate_rewards(
         task_groups[task_name].append((i, to_env[i]))
 
 
-    rewards = torch.zeros([2048], device="cpu", dtype=torch.float)
-
-    return rewards, to_env
+    # rewards = torch.zeros([2048], device="cpu", dtype=torch.float)
+    # return rewards, to_env
 
     # Calculate rewards for each task group concurrently
     futures = []
