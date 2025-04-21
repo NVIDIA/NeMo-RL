@@ -4,6 +4,7 @@
   - [Slurm](#slurm)
     - [Batched Job Submission](#batched-job-submission)
     - [Interactive Launching](#interactive-launching)
+    - [Slurm UV\_CACHE\_DIR](#slurm-uv_cache_dir)
   - [Kubernetes](#kubernetes)
 
 ## Slurm
@@ -14,7 +15,7 @@
 # Run from the root of NeMo-Reinforcer repo
 NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
 
-COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py" \
+COMMAND="uv run ./examples/run_grpo_math.py" \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
 sbatch \
@@ -38,21 +39,6 @@ Make note of the the job submission number. Once the job begins you can track it
 ```sh
 tail -f 1980204-logs/ray-driver.log
 ```
-
-:::{note}
-`UV_CACHE_DIR` defaults to `$SLURM_SUBMIT_DIR/uv_cache` and is mounted to head and worker nodes
-to ensure fast `venv` creation. 
-
-If you would like to override it to somewhere else all head/worker nodes can access, you may set it
-via:
-
-```sh
-...
-UV_CACHE_DIR=/path/that/all/workers/and/head/can/access \
-sbatch ... \
-    ray.sub
-```
-:::
 
 ### Interactive Launching
 
@@ -87,10 +73,26 @@ bash 1980204-attach.sh
 ```
 Now that you are on the head node, you can launch the command like so:
 ```sh
-uv venv .venv
-uv pip install -e .
 uv run ./examples/run_grpo_math.py
 ```
+
+### Slurm UV_CACHE_DIR
+
+There several choices for `UV_CACHE_DIR` when using `ray.sub`:
+
+1. (default) `UV_CACHE_DIR` defaults to `$SLURM_SUBMIT_DIR/uv_cache` when not specified the shell environment, and is mounted to head and worker nodes to serve as a persistent cache between runs.
+2. Use the warm uv cache from our docker images
+    ```sh
+    ...
+    UV_CACHE_DIR=/home/ray/.cache/uv \
+    sbatch ... \
+        ray.sub
+    ```
+
+(1) is more efficient in general since the cache is not ephemeral and is persisted run to run; but for users that
+don't want to persist the cache, you can use (2), which is just as performant as (1) if the `uv.lock` is 
+covered by warmed cache.
+
 
 ## Kubernetes
 
