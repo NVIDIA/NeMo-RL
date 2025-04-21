@@ -329,6 +329,7 @@ class DTensorPolicyWorker:
                 mb_losses.append(loss.item())
                 all_mb_metrics.append(loss_metrics)
 
+            grad_norm = None
             if not eval_mode:
                 with torch.no_grad():
                     grad_norm = get_grad_norm(
@@ -355,7 +356,7 @@ class DTensorPolicyWorker:
         with torch.no_grad():
             local_loss = torch.tensor(losses, device="cuda")
             global_loss = torch.zeros_like(local_loss)
-            torch.distributed.all_reduce(local_loss)
+            torch.distributed.all_reduce(local_loss, group=self.dp_mesh.get_group())
             global_loss = local_loss / self.dp_size
 
         # Aggregate metrics across all microbatches

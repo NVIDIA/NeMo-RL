@@ -112,7 +112,7 @@ class ClippedPGLossFn(LossFunction):
             next_token_logprobs = torch.nn.functional.log_softmax(
                 next_token_logits, dim=-1
             )
-            next_tokens = data["input_ids"][:, 1:]  # Skip first token
+            next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
             curr_logprobs = next_token_logprobs.gather(
                 dim=-1, index=next_tokens.unsqueeze(-1)
             ).squeeze(-1)
@@ -168,14 +168,22 @@ class NLLLoss(LossFunction):
         sample_mask = data["sample_mask"]
         mask = token_mask * sample_mask.unsqueeze(-1)
 
-        next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
-        next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
-        logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
+        next_token_logits = next_token_logits.to(torch.float32)
 
         # Gather the logprobs for the actual next tokens
-        token_logprobs = logprobs.gather(
-            dim=-1, index=next_tokens.unsqueeze(-1)
-        ).squeeze(-1)
+        if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
+            token_logprobs = get_logprobs_from_vocab_parallel_logits(
+                next_token_logits, data["input_ids"]
+            )
+        else:
+            next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
+            next_token_logprobs = torch.nn.functional.log_softmax(
+                next_token_logits, dim=-1
+            )
+            logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
+            token_logprobs = logprobs.gather(
+                dim=-1, index=next_tokens.unsqueeze(-1)
+            ).squeeze(-1)
 
         # Only compute loss on generated tokens (not input tokens)
         # by applying the token_loss_mask (shifted by 1 since we're predicting next tokens)
