@@ -109,6 +109,8 @@ class VllmGenerationWorker:
             init_kwargs["fraction_of_gpus"] = num_gpus
 
         env_vars["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
+        # Skip vllm P2P check and rely on driver to report peer to peer capability.
+        env_vars["VLLM_SKIP_P2P_CHECK"] = "1"
 
         return resources, env_vars, init_kwargs
 
