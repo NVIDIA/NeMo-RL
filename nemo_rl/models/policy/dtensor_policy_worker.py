@@ -52,6 +52,7 @@ from nemo_rl.utils.native_checkpoint import (
     save_checkpoint,
 )
 
+import time
 
 @contextmanager
 def unshard_fsdp2_model(model: nn.Module):
@@ -184,6 +185,7 @@ class DTensorPolicyWorker:
             ],
         )
         self.model = self.model.cuda()
+        self.count = 0
 
         if self.cpu_offload:
             self.model = self.move_buffer_to_device(self.model, "cpu")
@@ -339,8 +341,8 @@ class DTensorPolicyWorker:
 
                 for mb in global_batch.make_microbatch_iterator(mbs):
                     input_ids = mb.get("input_ids").cuda()
-
                     input_lengths = mb.get("input_lengths")
+                    input_ids = input_ids[:, :max(input_lengths)] 
                     batch_size, seq_len = input_ids.shape
 
                     attention_mask = torch.zeros(

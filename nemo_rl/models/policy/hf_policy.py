@@ -119,7 +119,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
-        sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None)
+        sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None, sort_by_seqlen=True)
         futures = self.worker_group.run_all_workers_multiple_data(
             "get_logprobs", sharded_data, only_on="all_tied_workers"
         )
@@ -135,7 +135,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         Returns: Identical to get_logprobs.
         """
-        sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None)
+        sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None, sort_by_seqlen=True)
         futures = self.worker_group.run_all_workers_multiple_data(
             "get_reference_policy_logprobs",
             sharded_data,
@@ -160,7 +160,9 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         micro_batch_size = mbs or self.cfg["train_micro_batch_size"]
         # Shard and replicate the batch
         shards = self.dp_size
-        sharded_data = data.shard_by_batch_size(shards, batch_size=batch_size)
+        sharded_data = data.shard_by_batch_size(
+            shards, batch_size=batch_size, sort_by_seqlen=True
+        )
 
         # Train each shard in parallel
         futures = self.worker_group.run_all_workers_multiple_data(

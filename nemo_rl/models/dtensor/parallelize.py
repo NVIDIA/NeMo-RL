@@ -232,7 +232,9 @@ def _parallelize_llama(
     model = fully_shard(
         model, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
     )
-    return torch.compile(model)
+    # return model
+    torch._dynamo.config.dynamic_shapes=True
+    return torch.compile(model, dynamic=True)
 
 def _parallelize_qwen(
     model: Union[Qwen2ForCausalLM, Qwen3ForCausalLM],
