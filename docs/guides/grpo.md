@@ -126,6 +126,8 @@ where:
 - $\beta$ is the KL penalty coefficient
 - $\pi_{\text{ref}}$ is the reference policy
 
+#### Improvements to the GRPO loss formulation for stability and accuracy
+
 #### On-Policy KL Approximation
 
 In practice, we calculate the KL divergence using the estimator from Schulman 2020 (http://joschu.net/blog/kl-approx.html), which is unbiased and guaranteed to be positive.
