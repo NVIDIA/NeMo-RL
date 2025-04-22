@@ -22,6 +22,7 @@ python -u $PROJECT_ROOT/examples/run_dpo.py \
     cluster.gpus_per_node=2 \
     dpo.max_num_steps=3 \
     dpo.val_batches=1 \
+    dpo.val_global_batch_size=8 \
     policy.train_global_batch_size=8 \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
