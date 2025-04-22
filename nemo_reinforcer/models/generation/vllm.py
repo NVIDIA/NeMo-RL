@@ -224,24 +224,37 @@ class VllmGenerationWorker:
                 - generation_lengths: Lengths of each response
                 - unpadded_sequence_lengths: Lengths of each input + generated sequence
         """
-        # Verify input is right padded
-        assert isinstance(data, BatchedDataDict), (
-            f"data must be a BatchedDataDict, got type: {type(data)}"
-        )
-        assert "input_ids" in data and "input_lengths" in data, (
-            f"input_ids and input_lengths must be present in the BatchedDataDict, got keys: {data.keys()}"
-        )
-        is_right_padded, error_msg = verify_right_padding(
-            data, pad_value=self.cfg["pad_token_id"]
-        )
-        if not is_right_padded:
-            warnings.warn(
-                f"Input to vLLM worker is not properly right-padded: {error_msg}"
+        # Handle empty input case
+        if len(data["input_ids"]) == 0:
+            # Return empty BatchedDataDict with all required fields
+            return BatchedDataDict[GenerationOutputSpec](
+                {
+                    "output_ids": torch.zeros((0, 0), dtype=torch.long),
+                    "logprobs": torch.zeros((0, 0), dtype=torch.float),
+                    "generation_lengths": torch.zeros(0, dtype=torch.long),
+                    "unpadded_sequence_lengths": torch.zeros(0, dtype=torch.long),
+                }
             )
 
-        # Convert inputs to vLLM format
         input_ids = data["input_ids"]
         input_lengths = data["input_lengths"]
+        # this function requires all generations have the same stop strings, so we collect all here
+        batch_stop_strings = data.get("stop_strings", [])
+        stop_strings = set()
+        for sample_stop_strings in batch_stop_strings:
+            if sample_stop_strings:
+                stop_strings.update(sample_stop_strings)
+
+        # Add default stop strings from config
+        if self.cfg.get("stop_strings", None):
+            stop_strings.update(self.cfg["stop_strings"])
+
+        stop_strings = list(stop_strings)
+
+        # verify inputs have correct padding
+        verify_right_padding(data, pad_value=self.cfg["pad_token_id"])
+
+        # Convert inputs to vLLM format
         batch_size = input_ids.shape[0]
         # Original input length with padding
         padded_input_length = input_ids.size(1)
@@ -269,7 +282,7 @@ class VllmGenerationWorker:
             max_tokens=self.cfg["max_new_tokens"],
             logprobs=0,  # Return logprobs for the generated tokens
             stop_token_ids=self.cfg["stop_token_ids"],
-            stop=self.cfg["stop_strings"],
+            stop=stop_strings,
             include_stop_str_in_output=True,  # returning stop strings like hf
         )
 
@@ -359,6 +372,23 @@ class VllmGenerationWorker:
             BatchedDataDict containing:
                 - texts: List of generated text responses
         """
+        # Extract stop_strings if provided, else use default from config
+        batch_stop_strings = data.get(
+            "stop_strings", [self.cfg.get("stop_strings")] * len(data["prompts"])
+        )
+
+        # This function requires all generations have the same stop strings, so we collect all here
+        stop_strings = set()
+        for sample_stop_strings in batch_stop_strings:
+            if sample_stop_strings:
+                stop_strings.update(sample_stop_strings)
+
+        # Add default stop strings from config
+        if self.cfg.get("stop_strings", None):
+            stop_strings.update(self.cfg["stop_strings"])
+
+        stop_strings = list(stop_strings) if len(stop_strings) > 0 else None
+
         # Read generation parameters from config
         top_k = self.cfg["top_k"] if self.cfg["top_k"] is not None else -1
         sampling_params = self.SamplingParams(
@@ -367,7 +397,7 @@ class VllmGenerationWorker:
             top_k=top_k if not greedy else 1,
             max_tokens=self.cfg["max_new_tokens"],
             stop_token_ids=self.cfg["stop_token_ids"],
-            stop=self.cfg["stop_strings"],
+            stop=stop_strings,
             include_stop_str_in_output=True,  # returning stop strings like hf
         )
 
@@ -517,10 +547,8 @@ class VllmGeneration(GenerationInterface):
             "input_ids and input_lengths are required in data for vLLM generation"
         )
 
-        batch_size = data["input_ids"].shape[0]
-
         # Shard the data across the tied worker groups
-        sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=batch_size)
+        sharded_data = data.shard_by_batch_size(self.dp_size, allow_uneven_shards=True)
         future_bundle = self.worker_group.run_all_workers_multiple_data(
             "generate",
             sharded_data,

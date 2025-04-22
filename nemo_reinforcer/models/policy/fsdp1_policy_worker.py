@@ -527,6 +527,19 @@ class FSDP1PolicyWorker:
                     # Set attention mask for the actual tokens (at the end for left padding)
                     left_padded_attention_mask[i, seq_len - length :] = 1
 
+                # this function requires all generations have the same stop strings, so we collect all here
+                batch_stop_strings = gen_batch.get("stop_strings", [])
+                stop_strings = set()
+                for sample_stop_strings in batch_stop_strings:
+                    if sample_stop_strings:
+                        stop_strings.update(sample_stop_strings)
+
+                # Add default stop strings from config
+                if gen_cfg.get("stop_strings", None):
+                    stop_strings.update(gen_cfg["stop_strings"])
+
+                stop_strings = list(stop_strings) if len(stop_strings) > 0 else None
+
                 if isinstance(
                     self.model, torch.distributed.fsdp.FullyShardedDataParallel
                 ):
@@ -543,7 +556,7 @@ class FSDP1PolicyWorker:
                     top_k=gen_cfg["top_k"],
                     pad_token_id=gen_cfg["pad_token_id"],
                     eos_token_id=gen_cfg["stop_token_ids"],
-                    stop_strings=gen_cfg["stop_strings"],
+                    stop_strings=stop_strings,
                     tokenizer=self.tokenizer,  # needs for stop_strings
                     return_dict_in_generate=True,
                     output_scores=True,

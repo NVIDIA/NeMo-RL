@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from itertools import tee
-from typing import Dict, List, Tuple, TypedDict
+from typing import Dict, List, Tuple, TypedDict, Optional
 
 import ray
 import torch
 from math_verify import parse, verify
 
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.environments.interfaces import EnvironmentInterface
+from nemo_reinforcer.environments.interfaces import (
+    EnvironmentInterface,
+    EnvironmentReturn,
+)
 from nemo_reinforcer.environments.metrics import (
     calculate_pass_rate_per_prompt,
 )
@@ -29,6 +32,7 @@ from nemo_reinforcer.distributed.virtual_cluster import PY_EXECUTABLES
 
 class MathEnvConfig(TypedDict):
     num_workers: int
+    stop_strings: Optional[List[str]] = None  # Default stop strings for this env
 
 
 @ray.remote
@@ -66,7 +70,8 @@ class MathEnvironmentMetadata(TypedDict):
 class MathEnvironment(EnvironmentInterface):
     DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.SYSTEM
 
-    def __init__(self, cfg: Dict):
+    def __init__(self, cfg: MathEnvConfig):
+        self.cfg = cfg
         self.num_workers = cfg["num_workers"]
         self.workers = [
             HFVerifyWorker.options(
@@ -84,7 +89,7 @@ class MathEnvironment(EnvironmentInterface):
         self,
         message_log_batch: List[List[Dict[str, str]]],
         metadata: List[MathEnvironmentMetadata],
-    ):
+    ) -> EnvironmentReturn:
         """Runs a step in the math environment.
 
         Args:
@@ -95,6 +100,7 @@ class MathEnvironment(EnvironmentInterface):
             EnvironmentReturn: A tuple containing:
                 - List[Dict[str, str]]: Observations/responses batch
                 - List[Dict]: Updated metadata
+                - List[str]: Next stop strings for the next turn
                 - Tensor: Rewards tensor
                 - Tensor: Done flags tensor
         """
@@ -129,7 +135,12 @@ class MathEnvironment(EnvironmentInterface):
         # flatten the results
         results = [item for sublist in results for item in sublist]
         observations = [
-            {"role": "user", "content": "correct" if result else "incorrect"}
+            {
+                "role": "environment",
+                "content": "Environment: correct"
+                if result
+                else "Environment: incorrect",
+            }
             for result in results
         ]
 
@@ -137,7 +148,15 @@ class MathEnvironment(EnvironmentInterface):
         rewards = torch.tensor(results).cpu()
         done = torch.ones_like(rewards).cpu()
 
-        return observations, metadata, rewards, done
+        next_stop_strings = [None] * len(message_log_batch)
+
+        return EnvironmentReturn(
+            observations=observations,
+            metadata=metadata,
+            next_stop_strings=next_stop_strings,
+            rewards=rewards,
+            terminateds=done,
+        )
 
     def global_post_process_and_metrics(
         self, batch: BatchedDataDict

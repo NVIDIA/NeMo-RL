@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from typing import Any, TypedDict, Union, Tuple, List
+from typing import Any, TypedDict, Union, Tuple, List, Optional
 
 import torch
 from transformers import AutoTokenizer
@@ -139,6 +139,7 @@ class GenerationDatumSpec(TypedDict):
 
     - input_ids: Tensor of token IDs representing the input sequences (right padded)
     - input_lengths: Tensor containing the actual length of each sequence (without padding)
+    - stop_strings: Optional list of strings to stop generation (per sample)
     - __extra__: Additional model-specific data fields
 
     Example of a batch with 4 entries with different sequence lengths:
@@ -163,6 +164,7 @@ class GenerationDatumSpec(TypedDict):
 
     input_ids: torch.Tensor
     input_lengths: torch.Tensor
+    stop_strings: Optional[List[str]] = None
     __extra__: Any
 
 

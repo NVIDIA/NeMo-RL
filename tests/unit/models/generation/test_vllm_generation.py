@@ -814,3 +814,33 @@ def test_vllm_generation_with_stop(
     vllm_generation.shutdown()
     if not is_eval:
         hf_policy.shutdown()
+
+
+def test_vllm_non_divisible_batch_handling(policy):
+    """Test that VLLM generation handles non divisible input batches correctly."""
+    # This test runs on 2 GPUs but has a batch size of 1. The first GPU will run a batch
+    # and the second will run a batch of size 0.
+
+    # Create and run with non divisible batch
+    empty_batch = BatchedDataDict(
+        {
+            "input_ids": torch.zeros((1, 1), dtype=torch.long),
+            "input_lengths": torch.ones(1, dtype=torch.long),
+        }
+    )
+
+    outputs = policy.generate(empty_batch)
+
+    # Verify output structure and dimensions
+    required_keys = [
+        "output_ids",
+        "logprobs",
+        "generation_lengths",
+        "unpadded_sequence_lengths",
+    ]
+    assert all(key in outputs for key in required_keys), (
+        "Missing required output fields"
+    )
+    assert all(outputs[key].shape[0] == 1 for key in required_keys), (
+        "Output tensors should have a batch dimension of 1"
+    )
