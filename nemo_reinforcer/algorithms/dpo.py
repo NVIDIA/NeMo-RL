@@ -13,24 +13,23 @@
 # limitations under the License.
 import os
 import warnings
-from transformers import AutoTokenizer
+from collections import defaultdict
+from functools import partial
 from pathlib import Path
+from transformers import AutoTokenizer
 from typing import Optional, Tuple, TypedDict
+from tqdm import tqdm
 
 import numpy as np
 import torch
 from torchdata.stateful_dataloader import StatefulDataLoader
 from nemo_reinforcer.algorithms.loss_functions import (
-    NLLLoss,
+    DPOLossFn,
 )
-from nemo_reinforcer.algorithms.utils import set_seed
+from nemo_reinforcer.algorithms.utils import set_seed, get_tokenizer
 from nemo_reinforcer.data import DataConfig
-from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, rl_collate_fn
+from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, dpo_collate_fn
 from nemo_reinforcer.data.interfaces import TaskDataSpec
-from nemo_reinforcer.data.llm_message_utils import (
-    add_loss_mask_to_message_log,
-    batched_message_log_to_flat_message,
-)
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.distributed.virtual_cluster import ClusterConfig, RayVirtualCluster
 from nemo_reinforcer.models.interfaces import PolicyInterface
@@ -41,7 +40,7 @@ from nemo_reinforcer.utils.logger import Logger, LoggerConfig
 from nemo_reinforcer.utils.timer import Timer
 
 
-class SFTSaveState(TypedDict):
+class DPOSaveState(TypedDict):
     epoch: int  # Track current epoch
     step: int  # Track step within current epoch
     total_steps: int  # Track total number of steps across all epochs
@@ -49,7 +48,7 @@ class SFTSaveState(TypedDict):
     consumed_samples: int
 
 
-def _default_sft_save_state() -> SFTSaveState:
+def _default_dpo_save_state() -> DPOSaveState:
     return {
         "epoch": 0,
         "step": 0,
@@ -58,9 +57,9 @@ def _default_sft_save_state() -> SFTSaveState:
     }
 
 
-class SFTConfig(TypedDict):
-    max_num_steps: int
+class DPOConfig(TypedDict):
     max_num_epochs: int
+    max_num_steps: int
     val_period: int
     val_batches: int
     val_global_batch_size: int
@@ -68,11 +67,21 @@ class SFTConfig(TypedDict):
     val_at_start: bool
     seed: int
 
+    reference_policy_kl_penalty: float
+    preference_average_log_probs: bool
+    sft_average_log_probs: bool
+    ## TODO(@ashors) support other loss functions
+    ## https://github.com/NVIDIA/reinforcer/issues/193
+    # preference_loss: str
+    # gt_reward_scale: float
+    preference_loss_weight: float
+    sft_loss_weight: float
+
 
 class MasterConfig(TypedDict):
     policy: PolicyConfig
     data: DataConfig
-    sft: SFTConfig
+    dpo: DPOConfig
     logger: LoggerConfig
     cluster: ClusterConfig
     checkpointing: CheckpointingConfig
@@ -91,25 +100,25 @@ def setup(
     RayVirtualCluster,
     StatefulDataLoader,
     StatefulDataLoader,
-    NLLLoss,
+    DPOLossFn,
     MasterConfig,
     Logger,
     TaskDataSpec,
-    SFTSaveState,
+    DPOSaveState,
 ]:
-    """Main entry point for running SFT algorithm.
+    """Main entry point for running DPO algorithm.
 
     Returns:
         Tuple of policy, cluster, dataloader, tokenizer, loss_fn, math_env, master_config, logger
     """
-    set_seed(master_config["sft"]["seed"])
+    set_seed(master_config["dpo"]["seed"])
 
     # Extract individual configs for easier access
     policy_config = master_config["policy"]
     data_config = master_config["data"]
     logger_config = master_config["logger"]
     cluster_config = master_config["cluster"]
-    sft_config = master_config["sft"]
+    dpo_config = master_config["dpo"]
 
     # ==========================
     #         Logger
@@ -122,7 +131,7 @@ def setup(
     # ==========================
     checkpointer = CheckpointManager(master_config["checkpointing"])
     last_checkpoint_path = checkpointer.get_latest_checkpoint_path()
-    sft_save_state: Optional[SFTSaveState] = checkpointer.load_training_info(
+    dpo_save_state: Optional[DPOSaveState] = checkpointer.load_training_info(
         last_checkpoint_path
     )
     # config validation checks
@@ -130,22 +139,29 @@ def setup(
         assert master_config["checkpointing"]["save_period"] > 0
         assert (
             master_config["checkpointing"]["save_period"]
-            % master_config["sft"]["val_period"]
+            % master_config["dpo"]["val_period"]
             == 0
         ), (
             f"Checkpointing save period {master_config['checkpointing']['save_period']} "
-            f"must be a multiple of validation period {master_config['sft']['val_period']}"
+            f"must be a multiple of validation period {master_config['dpo']['val_period']}"
             f", or we won't know what metric to save!"
         )
 
     # ==========================
     #           Data
     # ==========================
+    ## TODO(@ashors) reduce boilerplate and move reused code into utils
     train_dataloader = StatefulDataLoader(
         train_dataset,
         batch_size=policy_config["train_global_batch_size"],
         shuffle=True,
-        collate_fn=rl_collate_fn,
+        collate_fn=partial(
+            dpo_collate_fn,
+            tokenizer=tokenizer,
+            make_sequence_length_divisible_by=policy_config[
+                "make_sequence_length_divisible_by"
+            ],
+        ),
         drop_last=True,
     )
 
@@ -157,9 +173,15 @@ def setup(
 
     val_dataloader = StatefulDataLoader(
         val_dataset,
-        batch_size=sft_config["val_global_batch_size"],
+        batch_size=dpo_config["val_global_batch_size"],
         shuffle=False,
-        collate_fn=rl_collate_fn,
+        collate_fn=partial(
+            dpo_collate_fn,
+            tokenizer=tokenizer,
+            make_sequence_length_divisible_by=policy_config[
+                "make_sequence_length_divisible_by"
+            ],
+        ),
         drop_last=True,
     )
 
@@ -168,7 +190,7 @@ def setup(
     # ==========================
     print("\n▶ Setting up compute cluster...")
     cluster = RayVirtualCluster(
-        name="sft_cluster",
+        name="dpo_cluster",
         bundle_ct_per_node_list=[cluster_config["gpus_per_node"]]
         * cluster_config["num_nodes"],
         use_gpus=True,
@@ -192,9 +214,9 @@ def setup(
         if last_checkpoint_path
         else None,
         init_optimizer=True,
-        init_reference_model=False,
+        init_reference_model=True,
     )
-    loss_fn = NLLLoss()
+    loss_fn = DPOLossFn(master_config["dpo"])
     print(f"  ✓ Model initialized")
 
     print("\n" + "=" * 60)
@@ -209,9 +231,30 @@ def setup(
         loss_fn,
         logger,
         checkpointer,
-        sft_save_state,
+        dpo_save_state,
         master_config,
     )
+
+
+def add_ref_logprobs_to_data(dataloader, policy, master_config):
+    dataloader_iter = iter(dataloader)
+    while True:
+        try:
+            batch = next(dataloader_iter)
+
+            ## append ref policy logprobs to batch
+            logprobs = policy.get_reference_policy_logprobs(
+                batch,
+                micro_batch_size=master_config["policy"]["train_micro_batch_size"] * 2,
+            )["reference_logprobs"]
+            ## want logprobs for batch to correspond to the log probabilities of the next tokens
+            ## so we roll the logprobs to the left by one
+            batch["reference_policy_logprobs"] = torch.roll(logprobs, -1, dims=-1)
+
+            yield batch
+
+        except StopIteration:
+            break
 
 
 # =======================================================
@@ -224,7 +267,6 @@ def validate(
     loss_fn,
     step: int,
     master_config: MasterConfig,
-    sft_task_spec: TaskDataSpec,
     val_batches: int,
     val_batch_size: int,
     val_mbs: int,
@@ -239,44 +281,18 @@ def validate(
     with timer.time("total_validation_time"):
         print(f"▶ Starting validation at step {step}...")
 
-        # Show a progress indicator for validation
-        # val_total = len(val_dataloader)
-
-        val_metrics = {"val_loss": 0.0}
+        val_metrics = defaultdict(lambda: 0.0)
         num_valid_batches = 0
-
-        policy.prepare_for_training()
-        for batch_idx, val_batch in enumerate(val_dataloader):
-            ## add loss mask based on role to every message
-            add_loss_mask_to_message_log(
-                val_batch["message_log"],
-                roles_to_train_on=["assistant"],
-            )
-
-            cat_and_padded, input_lengths = batched_message_log_to_flat_message(
-                val_batch["message_log"],
-                pad_value_dict={"token_ids": tokenizer.pad_token_id},
-                make_sequence_length_divisible_by=master_config["policy"][
-                    "make_sequence_length_divisible_by"
-                ],
-            )
-
-            val_data: BatchedDataDict = BatchedDataDict(
-                {
-                    "input_ids": cat_and_padded["token_ids"],
-                    "input_lengths": input_lengths,
-                    "token_mask": cat_and_padded["token_loss_mask"],
-                    "sample_mask": val_batch["loss_multiplier"],
-                }
-            )
-
+        for batch_idx, val_batch in enumerate(
+            add_ref_logprobs_to_data(val_dataloader, policy, master_config)
+        ):
             ## just run model fwd
             val_results = policy.train(
-                val_data,
+                val_batch,
                 loss_fn,
                 eval_mode=True,
-                gbs=val_batch_size,
-                mbs=val_mbs,
+                gbs=val_batch_size * 2,
+                mbs=val_mbs * 2,
             )
 
             if len(val_results["all_mb_metrics"]) == 0:
@@ -284,20 +300,19 @@ def validate(
                     "No validation metrics were collected for this batch."
                     " This is likely because there were no valid samples."
                 )
+
             else:
-                val_metrics["val_loss"] += float(val_results["loss"])
+                for k, v in val_results["all_mb_metrics"].items():
+                    val_metrics[k] += np.mean(v).item()
                 num_valid_batches += 1
 
             if val_batches > 0 and batch_idx >= val_batches - 1:
                 break
 
-        if num_valid_batches > 0:
-            val_metrics["val_loss"] /= num_valid_batches
-        else:
-            warnings.warn(
-                "No validation metrics were collected."
-                " This is likely because there were no valid samples in the validation set."
-            )
+        for k, v in val_metrics.items():
+            if k == "num_valid_samples":
+                continue
+            val_metrics[k] /= num_valid_batches
 
         # Calculate validation metrics
         policy.prepare_for_training()
@@ -306,10 +321,17 @@ def validate(
     timing_metrics = timer.get_timing_metrics(reduction_op="sum")
     validation_time = timing_metrics.get("total_validation_time", 0)
 
-    if num_valid_batches > 0:
+    if len(val_metrics) == 0:
+        warnings.warn(
+            "No validation metrics were collected."
+            " This is likely because there were no valid samples in the validation set."
+        )
+
+    else:
         # Print summary of validation results
         print("\n📊 Validation Results:")
-        print(f"    • Validation loss: {val_metrics['val_loss']:.4f}")
+        print(f"    • Validation loss: {float(val_metrics['loss']):.4f}")
+        print(f"    • Validation accuracy: {float(val_metrics['accuracy']):.4f}")
 
         # Print timing information
         print("\n  ⏱️  Validation Timing:")
@@ -322,7 +344,7 @@ def validate(
     return val_metrics, timing_metrics
 
 
-def sft_train(
+def dpo_train(
     policy,
     train_dataloader,
     val_dataloader,
@@ -330,28 +352,27 @@ def sft_train(
     loss_fn,
     master_config,
     logger,
-    sft_task_spec,
     checkpointer,
-    sft_save_state,
+    dpo_save_state,
 ):
-    # Run basic sft training
+    # Run dpo training
     timer = Timer()
 
-    if sft_save_state is None:
-        sft_save_state = _default_sft_save_state()
+    if dpo_save_state is None:
+        dpo_save_state = _default_dpo_save_state()
         current_epoch = 0
         current_step = 0
         total_steps = 0
     else:
-        current_epoch = sft_save_state["epoch"]
-        current_step = sft_save_state["step"]
-        total_steps = sft_save_state["total_steps"]
+        current_epoch = dpo_save_state["epoch"]
+        current_step = dpo_save_state["step"]
+        total_steps = dpo_save_state["total_steps"]
 
-    sft_config = master_config["sft"]
+    dpo_config = master_config["dpo"]
     # Validation configuration
-    val_period = sft_config["val_period"]
-    val_at_start = sft_config["val_at_start"]
-    max_num_epochs = sft_config["max_num_epochs"]
+    val_period = dpo_config["val_period"]
+    val_at_start = dpo_config["val_at_start"]
+    max_num_epochs = dpo_config["max_num_epochs"]
 
     # Run validation at the start if configured
     if val_at_start and total_steps == 0:
@@ -363,10 +384,9 @@ def sft_train(
             loss_fn,
             step=0,
             master_config=master_config,
-            sft_task_spec=sft_task_spec,
-            val_batches=sft_config["val_batches"],
-            val_batch_size=sft_config["val_global_batch_size"],
-            val_mbs=sft_config["val_micro_batch_size"],
+            val_batches=dpo_config["val_batches"],
+            val_batch_size=dpo_config["val_global_batch_size"],
+            val_mbs=dpo_config["val_micro_batch_size"],
         )
 
         logger.log_metrics(val_metrics, total_steps, prefix="validation")
@@ -376,44 +396,26 @@ def sft_train(
 
     while (
         current_epoch < max_num_epochs
-        and total_steps < master_config["sft"]["max_num_steps"]
+        and total_steps < master_config["dpo"]["max_num_steps"]
     ):
         print(f"\n{'=' * 25} Epoch {current_epoch + 1}/{max_num_epochs} {'=' * 25}")
 
-        for batch in train_dataloader:
+        for batch in add_ref_logprobs_to_data(train_dataloader, policy, master_config):
             print(
-                f"\n{'=' * 25} Step {current_step + 1}/{min(len(train_dataloader), master_config['sft']['max_num_steps'])} {'=' * 25}"
+                f"\n{'=' * 25} Step {current_step + 1}/{min(len(train_dataloader), master_config['dpo']['max_num_steps'])} {'=' * 25}"
             )
 
             with timer.time("total_step_time"):
-                # Prepare batch and generate responses
-                print("▶ Preparing batch...")
-                with timer.time("data_processing"):
-                    ## add loss mask based on role to every message
-                    add_loss_mask_to_message_log(
-                        batch["message_log"],
-                        roles_to_train_on=["assistant"],
-                    )
-
-                    cat_and_padded, input_lengths = batched_message_log_to_flat_message(
-                        batch["message_log"],
-                        pad_value_dict={"token_ids": tokenizer.pad_token_id},
-                        make_sequence_length_divisible_by=master_config["policy"][
-                            "make_sequence_length_divisible_by"
-                        ],
-                    )
-
-                    train_data: BatchedDataDict = BatchedDataDict(
-                        {
-                            "input_ids": cat_and_padded["token_ids"],
-                            "input_lengths": input_lengths,
-                            "token_mask": cat_and_padded["token_loss_mask"],
-                            "sample_mask": batch["loss_multiplier"],
-                        }
-                    )
-
                 print("▶ Taking a training step...")
-                train_results = policy.train(train_data, loss_fn)
+                train_results = policy.train(
+                    batch,
+                    loss_fn,
+                    eval_mode=False,
+                    ## NOTE: we double the batch size here because each preference example corresponds to a pair of
+                    ## examples, chosen and rejected, and the pair needs to be processed as part of the same microbatch.
+                    gbs=master_config["policy"]["train_global_batch_size"] * 2,
+                    mbs=master_config["policy"]["train_micro_batch_size"] * 2,
+                )
 
                 # Run validation if it's a validation step
                 if val_period > 0 and (total_steps + 1) % val_period == 0:
@@ -424,10 +426,9 @@ def sft_train(
                         loss_fn,
                         step=total_steps + 1,
                         master_config=master_config,
-                        sft_task_spec=sft_task_spec,
-                        val_batches=sft_config["val_batches"],
-                        val_batch_size=sft_config["val_global_batch_size"],
-                        val_mbs=sft_config["val_micro_batch_size"],
+                        val_batches=dpo_config["val_batches"],
+                        val_batch_size=dpo_config["val_global_batch_size"],
+                        val_mbs=dpo_config["val_micro_batch_size"],
                     )
                     logger.log_metrics(
                         validation_timings, total_steps + 1, prefix="timing/validation"
@@ -437,7 +438,7 @@ def sft_train(
                     )
 
                 ## Checkpointing
-                sft_save_state["consumed_samples"] += master_config["policy"][
+                dpo_save_state["consumed_samples"] += master_config["policy"][
                     "train_global_batch_size"
                 ]
                 if (
@@ -449,31 +450,26 @@ def sft_train(
                     is_last_checkpoint = (
                         min(
                             len(train_dataloader) * max_num_epochs,
-                            master_config["sft"]["max_num_steps"],
+                            master_config["dpo"]["max_num_steps"],
                         )
                         - (total_steps + 1)
                         < master_config["checkpointing"]["save_period"]
                     )
-
-                    sft_save_state["step"] = (current_step + 1) % len(train_dataloader)
-                    sft_save_state["total_steps"] = total_steps + 1
-                    sft_save_state["epoch"] = current_epoch
-                    sft_save_state["val_loss"] = val_metrics["val_loss"]
+                    dpo_save_state["step"] = (current_step + 1) % len(train_dataloader)
+                    dpo_save_state["total_steps"] = total_steps + 1
+                    dpo_save_state["epoch"] = current_epoch
+                    dpo_save_state["val_loss"] = val_metrics["loss"]
                     with timer.time("checkpointing"):
                         print(f"Saving checkpoint for step {total_steps + 1}...")
                         checkpoint_path = checkpointer.init_tmp_checkpoint(
-                            total_steps + 1, sft_save_state, master_config
+                            total_steps + 1, dpo_save_state, master_config
                         )
-
                         policy.save_checkpoint(
                             weights_path=os.path.join(
                                 checkpoint_path, "policy", "weights"
                             ),
                             optimizer_path=os.path.join(
                                 checkpoint_path, "policy", "optimizer"
-                            ),
-                            tokenizer_path=os.path.join(
-                                checkpoint_path, "policy", "tokenizer"
                             ),
                             save_hf=is_last_checkpoint,
                         )
@@ -517,7 +513,7 @@ def sft_train(
             current_step += 1
             total_steps += 1
 
-            if total_steps >= master_config["sft"]["max_num_steps"]:
+            if total_steps >= master_config["dpo"]["max_num_steps"]:
                 return
 
         current_epoch += 1

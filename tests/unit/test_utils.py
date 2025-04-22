@@ -22,7 +22,10 @@ def simple_loss(
 ) -> Tuple[torch.Tensor, Dict[str, Any]]:
     # Just return mean of logprobs as the loss for testing
     loss = next_token_logits.mean()
-    metrics = {"test_metric": loss.item() * 0.5}
+    metrics = {
+        "test_metric": loss.item() * 0.5,
+        "num_valid_samples": 1,
+    }
     return loss, metrics
 
 
@@ -46,4 +49,7 @@ def nll_loss(
     token_loss_mask = data.get("token_loss_mask")[:, 1:].cuda()
     loss = -torch.sum(token_logprobs * token_loss_mask)
 
-    return loss, {"loss": loss.item()}
+    return loss, {
+        "loss": loss.item(),
+        "num_valid_samples": 1,
+    }
