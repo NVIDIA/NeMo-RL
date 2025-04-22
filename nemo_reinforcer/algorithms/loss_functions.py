@@ -161,6 +161,7 @@ class ClippedPGLossFn(LossFunction):
         loss2 = -advantages * ratios_clamped
 
         if self.use_importance_sampling_correction:
+            # See: docs/guides/grpo.md#importance-sampling-correction
             actor_importance_weights = torch.exp(prev_logprobs - generation_logprobs)
             actor_importance_weights = torch.nan_to_num(
                 actor_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
