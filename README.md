@@ -3,7 +3,7 @@
 <!-- markdown all in one -->
 - [Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to \>100B Parameters, scaling from 1 GPU to 100s](#nemo-reinforcer-a-scalable-and-efficient-post-training-library-for-models-ranging-from-tiny-to-100b-parameters-scaling-from-1-gpu-to-100s)
   - [Features](#features)
-  - [Installation](#installation)
+  - [Prerequisuites](#prerequisuites)
   - [Quick start](#quick-start)
     - [SFT](#sft)
       - [Single Node](#single-node)
@@ -25,7 +25,7 @@ What you can expect:
 
 ## Features
 
-_✅ Available now | 🔜 Coming in v0.2_
+✅ _Available now_ | 🔜 _Coming in v0.2_
 
 - ✅ **Fast Generation** - vLLM backend for optimized inference
 - ✅ **HuggingFace Integration** - Works with 1-8B models (Qwen1.5, Llama)
@@ -38,28 +38,26 @@ _✅ Available now | 🔜 Coming in v0.2_
 - 🔜 **Environment Isolation** - Dependency isolation between components
 - 🔜 **DPO Algorithm** - Direct Preference Optimization for alignment
 
-## Installation
+## Prerequisuites
 
 ```sh
-# For faster setup we use `uv`
+# For faster setup and environment isolation, we use `uv`
 pip install uv
 
-# Specify a virtual env that uses Python 3.12
-uv venv -p python3.12.9 .venv
-# Install NeMo-Reinforcer with vllm
-uv pip install -e .[vllm]
-# Install NeMo-Reinforcer with dev/test dependencies
-uv pip install -e '.[dev,test]'
+# If you cannot install at the system level, you can install for your user with
+# pip install --user uv
 
-# Use uv run to launch any runs. 
-# Note that it is recommended to not activate the venv and instead use `uv run` since
+# Use `uv run` to launch all commands. It handles pip installing implicitly and
+# ensures your environment is up to date with our lock file.
+
+# Note that it is not recommended to activate the venv and instead use `uv run` since
 # it ensures consistent environment usage across different shells and sessions.
 # Example: uv run python examples/run_grpo_math.py
 ```
 
 ## Quick start
 
-**Reminder**: Don't forget to set your HF_HOME and WANDB_API_KEY (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
+**Reminder**: Don't forget to set your `HF_HOME`, `WANDB_API_KEY`, and `HF_DATASETS_CACHE` (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
 
 ### SFT
 
@@ -85,16 +83,11 @@ uv run python examples/run_sft.py \
   cluster.gpus_per_node=8
 ```
 
-Refer to [sft.yaml](examples/configs/sft.yaml) for a full list of parameters that can be overridden.
+Refer to `examples/configs/sft.yaml` for a full list of parameters that can be overridden.
 
 #### Multi-node
 
 For distributed training across multiple nodes:
-
-Set `UV_CACHE_DIR` to a directory that can be read from all workers before running any uv run command.
-```sh
-export UV_CACHE_DIR=/path/that/all/workers/can/access/uv_cache
-```
 
 ```sh
 # Run from the root of NeMo-Reinforcer repo
@@ -103,9 +96,7 @@ NUM_ACTOR_NODES=2
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # SFT experiment uses Llama-3.1-8B model
-COMMAND="uv pip install -e .; uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'" \
-RAY_DEDUP_LOGS=0 \
-UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
+COMMAND="uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'" \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
 sbatch \
@@ -159,9 +150,7 @@ NUM_ACTOR_NODES=2
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # grpo_math_8b uses Llama-3.1-8B-Instruct model
-COMMAND="uv pip install -e .; uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml cluster.num_nodes=2 checkpointing.checkpoint_dir='results/llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='grpo-llama8b_math'" \
-RAY_DEDUP_LOGS=0 \
-UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
+COMMAND="uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml cluster.num_nodes=2 checkpointing.checkpoint_dir='results/llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='grpo-llama8b_math'" \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
 sbatch \

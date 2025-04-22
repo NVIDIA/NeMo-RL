@@ -236,6 +236,7 @@ def setup(
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
+        tokenizer=tokenizer,
         weights_path=Path(last_checkpoint_path) / "policy" / "weights"
         if last_checkpoint_path
         else None,
@@ -289,7 +290,7 @@ def generate_responses(
     tokenizer,
     input_lengths: torch.Tensor,
     include_logprobs: bool = True,
-) -> Tuple[List[torch.Tensor], List[str], torch.Tensor]:
+) -> Tuple[BatchedDataDict[DatumSpec], List[List[int]], Dict[str, float | int]]:
     """Generate responses from policy."""
     # Generate responses
     generation_outputs = policy_generation.generate(generation_input_data)
@@ -451,6 +452,7 @@ def grpo_train(
         logger.log_metrics(validation_timings, step, prefix="timing/validation")
 
     # Run grpo training (single-turn)
+    batch: BatchedDataDict[DatumSpec]
     for batch in dataloader:
         print(
             f"\n{'=' * 25} Step {step + 1}/{min(len(dataloader), master_config['grpo']['max_num_steps'])} {'=' * 25}"
@@ -543,6 +545,9 @@ def grpo_train(
                 flat_messages, input_lengths = batched_message_log_to_flat_message(
                     repeated_batch["message_log"],
                     pad_value_dict={"token_ids": tokenizer.pad_token_id},
+                    make_sequence_length_divisible_by=master_config["policy"][
+                        "make_sequence_length_divisible_by"
+                    ],
                 )
 
                 # Create training data from flattened messages
@@ -628,6 +633,9 @@ def grpo_train(
                         optimizer_path=os.path.join(
                             checkpoint_path, "policy", "optimizer"
                         ),
+                        tokenizer_path=os.path.join(
+                            checkpoint_path, "policy", "tokenizer"
+                        ),
                         save_hf=is_last_checkpoint,
                     )
                     torch.save(
@@ -638,6 +646,14 @@ def grpo_train(
                 policy.offload_after_refit()
 
         # Logging
+        # Log training data
+        log_data = {"content": flat_messages["content"]}
+        log_data["rewards"] = rewards.tolist()
+        log_data["generation_logprobs"] = train_data["generation_logprobs"].tolist()
+        log_data["prev_logprobs"] = train_data["prev_logprobs"].tolist()
+        log_data["input_lengths"] = input_lengths.tolist()
+        logger.log_batched_dict_as_jsonl(log_data, f"train_data_step{step}.jsonl")
+
         print("\n📊 Training Results:")
         metrics = {
             "loss": train_results["loss"].numpy(),

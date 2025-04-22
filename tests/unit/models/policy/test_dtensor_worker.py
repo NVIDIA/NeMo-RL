@@ -1,0 +1,451 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import ray
+import pytest
+import pprint
+import torch
+import os
+import unittest.mock
+import torch.distributed as dist
+
+# Define a custom marker for model configuration tests
+pytestmark = pytest.mark.modelconfig
+
+from nemo_reinforcer.algorithms.interfaces import LossFunction
+from nemo_reinforcer.algorithms.utils import get_tokenizer
+from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
+from nemo_reinforcer.models.generation.interfaces import configure_generation_config
+from nemo_reinforcer.models.policy import PolicyConfig
+from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+from nemo_reinforcer.models.policy.dtensor_policy_worker import DTensorPolicyWorker
+from tests.unit.test_utils import simple_loss
+from tests.unit.conftest import TEST_ASSETS
+from transformers import AutoModelForCausalLM
+
+
+def create_test_config(
+    model_name: str = TEST_ASSETS.TINY_LLAMA_MODEL_PATH,
+    tp: int = 1,
+    sequence_parallel: bool = False,
+    cpu_offload: bool = False,
+    activation_checkpointing: bool = False,
+) -> PolicyConfig:
+    return {
+        "model_name": model_name,
+        "tokenizer": {"name": model_name},
+        "generation_batch_size": 1,  # Small batch size for testing
+        "train_global_batch_size": 4,
+        "train_micro_batch_size": 1,
+        "learning_rate": 5e-6,
+        "logprob_batch_size": 1,
+        "precision": "float32",
+        "generation": {
+            "backend": "hf",
+            "temperature": 1.0,
+            "max_new_tokens": 16,  # Small number of tokens for testing
+            "top_p": 1.0,
+            "top_k": None,
+            "stop_token_ids": None,
+            "stop_strings": None,
+        },
+        "dtensor_cfg": {
+            "enabled": True,
+            "cpu_offload": cpu_offload,
+            "sequence_parallel": sequence_parallel,
+            "activation_checkpointing": activation_checkpointing,
+            "tensor_parallel_size": tp,
+        },
+        "optimizer": {
+            "name": "torch.optim.AdamW",
+            "kwargs": {
+                "lr": 5e-6,
+                "weight_decay": 0.01,
+                "betas": [0.9, 0.999],
+                "eps": 1e-8,
+                "foreach": False,
+                "fused": False,
+            },
+        },
+        "scheduler": {
+            "name": "torch.optim.lr_scheduler.CosineAnnealingLR",
+            "kwargs": {
+                "T_max": 100,
+            },
+        },
+        "max_grad_norm": 1.0,
+    }
+
+
+@pytest.fixture(scope="module")
+def two_gpu_virtual_cluster():
+    cluster_name = "test"
+    print(f"Creating virtual cluster '{cluster_name}'...")
+    cluster = RayVirtualCluster(
+        name=cluster_name,
+        bundle_ct_per_node_list=[2],  # Use tp bundles, one per GPU
+        use_gpus=True,
+        num_gpus_per_node=2,  # Using tp GPUs
+        max_colocated_worker_groups=1,  # Only one worker group
+    )
+    yield cluster
+    print("Shutting down virtual cluster...")
+    cluster.shutdown()
+
+
+@pytest.fixture(scope="function")
+def gc_collect():
+    """Helper function to force garbage collection after a test"""
+    import gc
+
+    yield
+    gc.collect()
+
+
+@pytest.fixture
+def policy_setup(two_gpu_virtual_cluster):
+    """Setup and teardown for policy tests - creates a virtual cluster and policy."""
+    config = create_test_config()
+    tokenizer = get_tokenizer(config["tokenizer"])
+    config["generation"] = configure_generation_config(config["generation"], tokenizer)
+
+    print("Creating HfPolicy...")
+    policy = HfPolicy(
+        cluster=two_gpu_virtual_cluster, config=config, tokenizer=tokenizer
+    )
+
+    yield policy
+
+    print("Shutting down policy...")
+    policy.shutdown()
+
+
+@pytest.mark.timeout(180)
+def test_hf_policy_init(policy_setup):
+    policy = policy_setup
+
+    # Verify we have two workers, one per GPU
+    assert len(policy.worker_group.workers) == 2, "Should have 2 workers, one per GPU"
+
+    # Check workers are alive
+    worker_alive = ray.get([w.is_alive.remote() for w in policy.worker_group.workers])
+    assert all(worker_alive), f"Not all workers are alive: {worker_alive}"
+
+    # Get GPU info from both workers to verify GPU usage
+    print("\nGetting GPU information from workers...")
+    gpu_infos = ray.get([w.get_gpu_info.remote() for w in policy.worker_group.workers])
+    print("\nGPU Information:")
+    for i, info in enumerate(gpu_infos):
+        print(f"\nWorker {i} GPU Info:")
+        pprint.pprint(info)
+
+    # Check 1: Verify workers have different ranks
+    gpu_ranks = [info["rank"] for info in gpu_infos]
+    assert len(set(gpu_ranks)) == 2, f"Expected 2 different ranks, got {gpu_ranks}"
+    assert set(gpu_ranks) == {0, 1}, f"Expected ranks 0 and 1, got {gpu_ranks}"
+
+    # Check 2: Verify workers have different local_ranks
+    local_ranks = [info["local_rank"] for info in gpu_infos]
+    assert len(set(local_ranks)) == 2, (
+        f"Expected 2 different local_ranks, got {local_ranks}"
+    )
+    assert set(local_ranks) == {0, 1}, (
+        f"Expected local_ranks 0 and 1, got {local_ranks}"
+    )
+
+    # Check 3: Verify workers have different CUDA_VISIBLE_DEVICES
+    cuda_visible_devices = [
+        info["env_vars"].get("CUDA_VISIBLE_DEVICES") for info in gpu_infos
+    ]
+    assert len(set(cuda_visible_devices)) == 2, (
+        f"Expected different CUDA_VISIBLE_DEVICES, got {cuda_visible_devices}"
+    )
+
+    # Check 4: Verify all workers report correct world_size
+    for info in gpu_infos:
+        assert info["world_size"] == 2, (
+            f"Expected world_size=2, got {info['world_size']}"
+        )
+        assert info["env_vars"]["WORLD_SIZE"] == "2", (
+            f"Expected WORLD_SIZE=2, got {info['env_vars']['WORLD_SIZE']}"
+        )
+
+    # Check 5: Verify GPU memory is allocated on both GPUs
+    for info in gpu_infos:
+        assert info["memory_allocated_mb"] > 10, (
+            f"Not enough memory allocated on GPU for rank {info['rank']}: {info['memory_allocated_mb']:.2f} MB"
+        )
+
+    # Check 6: Verify model parameters are on CUDA devices for both workers
+    for info in gpu_infos:
+        param_sample = list(info["parameter_sample"].values())[0]
+        assert "cuda" in param_sample["device"], (
+            f"Parameter not on CUDA device: {param_sample['device']}"
+        )
+
+    # Check 8: Verify same model parameters are being tracked across workers
+    param_names = [list(info["parameter_sample"].keys())[0] for info in gpu_infos]
+    assert len(set(param_names)) == 1, (
+        f"Workers are not tracking the same parameter: {param_names}"
+    )
+
+    # Check 9: Both workers should see their device as cuda:0 (correct distributed behavior)
+    for info in gpu_infos:
+        param_device = list(info["parameter_sample"].values())[0]["device"]
+        assert param_device == "cuda:0", (
+            f"Expected parameter device to be cuda:0, got {param_device}"
+        )
+
+
+@pytest.fixture
+def training_setup(request, two_gpu_virtual_cluster):
+    """Setup and teardown specifically for training tests."""
+    model_name, tp, cpu_offload, sequence_parallel, activation_checkpointing = (
+        request.param
+    )
+    policy = None
+    data = None
+    loss_fn = None
+
+    try:
+        config = create_test_config(
+            model_name, tp, cpu_offload, sequence_parallel, activation_checkpointing
+        )
+        tokenizer = get_tokenizer(config["tokenizer"])
+        print(
+            f"Creating training HfPolicy with tp={tp}, cpu_offload={cpu_offload}, sequence_parallel={sequence_parallel}, activation_checkpointing={activation_checkpointing}..."
+        )
+        policy = HfPolicy(
+            cluster=two_gpu_virtual_cluster,
+            config=config,
+            tokenizer=tokenizer,
+            init_reference_model=False,
+        )
+
+        # Create a test batch
+        print("Creating test batch...")
+        # set random seed
+        torch.manual_seed(42)
+
+        # Create test input_ids and attention_mask
+        input_ids = torch.randint(0, 32000, (8, 128))  # 8 sequences, each of length 128
+        attention_mask = torch.ones(8, 128)
+
+        # Calculate input_lengths (all sequences are full length in this test)
+        input_lengths = attention_mask.sum(dim=1).to(torch.int32)
+
+        data = BatchedDataDict(
+            {
+                "input_ids": input_ids,
+                "input_lengths": input_lengths,
+                "attention_mask": attention_mask,  # Keep for compatibility with loss functions
+                "labels": torch.randint(0, 32000, (8, 128)),
+            }
+        )
+
+        # Create loss function
+        loss_fn: LossFunction = simple_loss
+
+        # Provide the resources to the test
+        yield policy, data, loss_fn
+
+    except Exception as e:
+        print(f"Error during training setup: {e}")
+        pytest.skip(f"Training setup failed: {e}")
+    finally:
+        # Clean up after the test
+        print("Cleaning up resources for test")
+        policy.shutdown()
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize(
+    "training_setup",
+    [
+        # model_name, tp, cpu_offload, sequence_parallel, activation_checkpointing
+        # Split grid over tp/cpu/sp/act across qwen and llama
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 1, False, False, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 1, True, False, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 1, False, True, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 1, False, False, True),
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 1, True, True, False),
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 1, True, False, True),
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 1, False, True, True),
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 1, True, True, True),
+    ],
+    indirect=True,
+)
+def test_dtensor_worker_training(training_setup):
+    def verify_loss_tensor(loss_tensor):
+        assert not torch.isnan(loss_tensor).any(), "Loss should not be NaN"
+        assert not torch.isinf(loss_tensor).any(), "Loss should not be Inf"
+        return loss_tensor
+
+    policy, data, loss_fn = training_setup
+
+    # Verify resources were created properly
+    assert policy is not None, "Training policy was not created properly"
+    assert data is not None, "Test data was not created properly"
+    assert loss_fn is not None, "Loss function was not created properly"
+
+    # Call prepare_for_training if available
+    print("\nPreparing for training...")
+    policy.prepare_for_training()
+
+    losses = []
+    for steps in range(2):
+        results = policy.train(data, loss_fn)
+
+        # Verify results
+        assert "loss" in results, "Training results should contain 'loss'"
+        loss_tensor = results["loss"]
+        verify_loss_tensor(loss_tensor)
+        losses.append(loss_tensor[-1].item())
+
+        print(f"Training loss: {results['loss']}")
+
+    policy.finish_training()
+
+    # Verify loss changed between iterations (model parameters were updated)
+    assert losses[0] > losses[-1], "Loss should decrease over training iterations"
+
+
+@pytest.fixture
+def logprob_setup(request, two_gpu_virtual_cluster):
+    """Setup and teardown specifically for training tests."""
+    model_name, tp, cpu_offload, sequence_parallel, activation_checkpointing = (
+        request.param
+    )
+    policy = None
+    data = None
+
+    try:
+        config = create_test_config(
+            model_name, tp, cpu_offload, sequence_parallel, activation_checkpointing
+        )
+        tokenizer = get_tokenizer(config["tokenizer"])
+        print(
+            f"Creating logprob HfPolicy with tp={tp}, cpu_offload={cpu_offload}, sequence_parallel={sequence_parallel}, activation_checkpointing={activation_checkpointing}..."
+        )
+        policy = HfPolicy(
+            cluster=two_gpu_virtual_cluster,
+            config=config,
+            tokenizer=tokenizer,
+            init_reference_model=False,
+        )
+
+        # Create a test batch
+        print("Creating test batch...")
+        # set random seed
+        torch.manual_seed(66)
+
+        # Create test input_ids and attention_mask
+        input_ids = torch.randint(
+            0, 32000, (8, 128)
+        ).cuda()  # 8 sequences, each of length 128
+        attention_mask = torch.ones(8, 128).cuda()
+
+        # Calculate input_lengths (all sequences are full length in this test)
+        input_lengths = attention_mask.sum(dim=1).to(torch.int32).cuda()
+
+        data = BatchedDataDict(
+            {
+                "input_ids": input_ids,
+                "input_lengths": input_lengths,
+                "attention_mask": attention_mask,  # Keep for compatibility with loss functions
+            }
+        )
+
+        with torch.no_grad():
+            # run the log prob of regular hf model here
+            hf_model = AutoModelForCausalLM.from_pretrained(
+                model_name, device_map="cuda", torch_dtype=torch.float32
+            )
+            hf_model.eval()
+            outputs = hf_model(**data)
+
+        log_probs = torch.nn.functional.log_softmax(
+            outputs.logits.to(torch.float32), dim=-1
+        )
+        next_tokens = input_ids[:, 1:]
+        log_probs = log_probs[:, :-1]
+        token_logprobs = log_probs.gather(
+            dim=-1, index=next_tokens.unsqueeze(-1)
+        ).squeeze(-1)
+        token_logprobs = torch.cat(
+            [torch.zeros_like(token_logprobs[:, :1]), token_logprobs], dim=1
+        ).cpu()
+
+        data = data.to("cpu")
+
+        # Provide the resources to the test
+        yield policy, data, token_logprobs
+
+    except Exception as e:
+        print(f"Error during training setup: {e}")
+        pytest.skip(f"Training setup failed: {e}")
+    finally:
+        # Clean up after the test
+        print("Cleaning up resources for test")
+        policy.shutdown()
+
+
+@pytest.mark.timeout(360)
+@pytest.mark.parametrize(
+    "logprob_setup",
+    [
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 2, False, True, False),
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 2, False, False, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, False, False, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, False, True, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, False, True, True),
+    ],
+    indirect=True,
+)
+def test_dtensor_worker_logprob_tp2_matches_no_tp(logprob_setup):
+    policy, data, logprobs = logprob_setup
+
+    # Verify resources were created properly assert policy is not None, "Policy was not created properly"
+    assert data is not None, "Test data was not created properly"
+
+    # Generate logprobs
+    print("\nGenerating logprobs...")
+    policy.prepare_for_lp_inference()
+    policy_logprobs = policy.get_logprobs(data)["logprobs"]
+
+    print("## MAX DIFF ###", torch.max(torch.abs(policy_logprobs - logprobs)))
+    assert torch.allclose(policy_logprobs, logprobs), (
+        f"max diff {torch.max(torch.abs(policy_logprobs - logprobs))}"
+    )
+
+
+def test_dtensor_fails_with_tp_and_tied_model(mock_2gpu_distributed_env):
+    """Test that DTensor fails with a tp > 1 and a tied model."""
+    config = create_test_config(
+        model_name=TEST_ASSETS.TINY_LLAMA_TIED_MODEL_PATH,
+        tp=2,
+        cpu_offload=False,
+        sequence_parallel=False,
+        activation_checkpointing=False,
+    )
+    tokenizer = get_tokenizer(config["tokenizer"])
+    with pytest.raises(
+        AssertionError, match="Tie word embeddings not supported when TP is enabled"
+    ):
+        DTensorPolicyWorker.__ray_actor_class__(
+            config=config,
+            tokenizer=tokenizer,
+            init_optimizer=False,
+            init_reference_model=False,
+        )

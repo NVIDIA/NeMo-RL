@@ -20,7 +20,11 @@ from nemo_reinforcer.algorithms.utils import (
     calculate_kl_penalty_joschu2020,
     masked_mean,
 )
+
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.models.dtensor.parallelize import (
+    get_logprobs_from_vocab_parallel_logits,
+)
 
 
 class ClippedPGLossConfig(TypedDict):
@@ -67,6 +71,8 @@ class ClippedPGLossFn(LossFunction):
 
     For REINFORCE/RLOO (when disable_ppo_ratio=True), the formula simplifies to:
     L(θ) = E_t [ π_θ(a_t|s_t) * A_t ] - β * KL(π_θ || π_ref)
+
+    Due to potential numerical instability, we cast the logits to float32 before computing the loss.
     """
 
     def __init__(self, cfg: ClippedPGLossConfig):
@@ -91,15 +97,25 @@ class ClippedPGLossFn(LossFunction):
         mask = token_mask * sample_mask.unsqueeze(-1)
 
         lp_error = torch.abs(generation_logprobs - prev_logprobs)  # noqa: F841  (precommit ignore for now)
-        mult_prob_error = ((torch.exp(lp_error) * mask).sum() / mask.sum()).item()
+        mult_prob_error = masked_mean(torch.exp(lp_error), mask).item()
 
-        next_token_logits = next_token_logits[:, :-1]  # Remove last position's logits
-        next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
+        next_token_logits = next_token_logits.to(torch.float32)
 
-        next_tokens = data["input_ids"][:, 1:]  # Skip first token
-        curr_logprobs = next_token_logprobs.gather(
-            dim=-1, index=next_tokens.unsqueeze(-1)
-        ).squeeze(-1)
+        if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
+            curr_logprobs = get_logprobs_from_vocab_parallel_logits(
+                next_token_logits, data["input_ids"]
+            )
+        else:
+            next_token_logits = next_token_logits[
+                :, :-1
+            ]  # Remove last position's logits
+            next_token_logprobs = torch.nn.functional.log_softmax(
+                next_token_logits, dim=-1
+            )
+            next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
+            curr_logprobs = next_token_logprobs.gather(
+                dim=-1, index=next_tokens.unsqueeze(-1)
+            ).squeeze(-1)
 
         # Calculate KL regularization.
         if self.reference_policy_kl_penalty != 0:
@@ -124,13 +140,8 @@ class ClippedPGLossFn(LossFunction):
         loss1 = -advantages * ratios
         loss2 = -advantages * ratios_clamped
 
-        if mask.sum() > 0:
-            actor_loss = masked_mean(torch.max(loss1, loss2), mask)
-            loss = actor_loss + kl
-        else:
-            # disable this update since there are no valid tokens
-            loss = loss1.view(-1)[0] * 0
-
+        actor_loss = masked_mean(torch.max(loss1, loss2), mask)
+        loss = actor_loss + kl
         with torch.no_grad():
             probs_ratio = masked_mean(ratios.detach(), mask).item()
             probs_ratio_clamped = masked_mean(ratios_clamped.detach(), mask).item()
@@ -157,14 +168,22 @@ class NLLLoss(LossFunction):
         sample_mask = data["sample_mask"]
         mask = token_mask * sample_mask.unsqueeze(-1)
 
-        next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
-        next_token_logprobs = torch.nn.functional.log_softmax(next_token_logits, dim=-1)
-        logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
+        next_token_logits = next_token_logits.to(torch.float32)
 
         # Gather the logprobs for the actual next tokens
-        token_logprobs = logprobs.gather(
-            dim=-1, index=next_tokens.unsqueeze(-1)
-        ).squeeze(-1)
+        if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
+            token_logprobs = get_logprobs_from_vocab_parallel_logits(
+                next_token_logits, data["input_ids"]
+            )
+        else:
+            next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
+            next_token_logprobs = torch.nn.functional.log_softmax(
+                next_token_logits, dim=-1
+            )
+            logprobs = next_token_logprobs[:, :-1]  # Remove last position's logits
+            token_logprobs = logprobs.gather(
+                dim=-1, index=next_tokens.unsqueeze(-1)
+            ).squeeze(-1)
 
         # Only compute loss on generated tokens (not input tokens)
         # by applying the token_loss_mask (shifted by 1 since we're predicting next tokens)

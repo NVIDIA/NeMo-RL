@@ -18,7 +18,8 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 import torch
-
+from torch.distributed.fsdp import FullyShardedDataParallel
+from transformers import AutoConfig, AutoTokenizer
 import torch.distributed.checkpoint as dcp
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.distributed.checkpoint.state_dict import (
@@ -27,6 +28,7 @@ from torch.distributed.checkpoint.state_dict import (
     get_optimizer_state_dict,
     set_optimizer_state_dict,
 )
+from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
 
 
 ## modified from pytorch tutorial https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html
@@ -135,6 +137,8 @@ def save_checkpoint(
     optimizer: Optional[torch.optim.Optimizer] = None,
     scheduler: Optional[Any] = None,
     optimizer_path: Optional[str] = None,
+    tokenizer: Optional[Any] = None,
+    tokenizer_path: Optional[str] = None,
     save_torch_dist: bool = True,
     save_hf: bool = False,
 ) -> None:
@@ -150,7 +154,15 @@ def save_checkpoint(
         save_hf: Whether to save in HuggingFace format
     """
     if save_hf:
-        model_state_dict = model._fsdp_wrapped_module.state_dict()
+        if hasattr(model, "_fsdp_wrapped_module"):
+            model_state_dict = model._fsdp_wrapped_module.state_dict()
+        else:
+            model_state_dict = {
+                k: v.full_tensor()
+                if isinstance(v, torch.distributed.tensor.DTensor)
+                else v
+                for k, v in model.state_dict().items()
+            }
 
         if torch.distributed.get_rank() == 0:
             # Create a new path by appending "-hf" to the weights path
@@ -172,6 +184,13 @@ def save_checkpoint(
                 )
             optimizer_state = {"optim": OptimizerState(model, optimizer, scheduler)}
             dcp.save(optimizer_state, checkpoint_id=optimizer_path)
+
+    if tokenizer is not None:
+        if tokenizer_path is None:
+            raise ValueError(
+                "tokenizer_path must be provided when saving tokenizer state"
+            )
+        tokenizer.save_pretrained(tokenizer_path)
 
 
 def load_checkpoint(
@@ -202,3 +221,60 @@ def load_checkpoint(
         print(f"Loading optimizer from {optimizer_path}")
         optimizer_state_dict = {"optim": OptimizerState(model, optimizer, scheduler)}
         dcp.load(state_dict=optimizer_state_dict, checkpoint_id=optimizer_path)
+
+
+def convert_dcp_to_hf(
+    dcp_ckpt_path: str,
+    hf_ckpt_path: str,
+    model_name_or_path: str,
+    tokenizer_name_or_path: str,
+    overwrite: bool = False,
+):
+    """Convert a Torch DCP checkpoint to a Hugging Face checkpoint.
+
+    This is not an optimized utility. If checkpoint is too large, consider saving DCP during training
+    and using this utility to convert to HF format.
+
+    Args:
+        dcp_ckpt_path (str): Path to DCP checkpoint
+        hf_ckpt_path (str): Path to save HF checkpoint
+        model_name_or_path (str): Model name or path for config
+        tokenizer_name_or_path (str, optional): Tokenizer name or path.
+                                               Defaults to model_name_or_path if None.
+        overwrite (bool, optional): Whether to overwrite existing checkpoint. Defaults to False.
+
+    Returns:
+        str: Path to the saved HF checkpoint
+
+    Raises:
+        FileExistsError: If HF checkpoint already exists and overwrite is False
+    """
+    if os.path.exists(hf_ckpt_path) and not overwrite:
+        raise FileExistsError(
+            f"HF checkpoint already exists at {hf_ckpt_path}. Delete it to run or set overwrite=True."
+        )
+
+    os.makedirs(hf_ckpt_path, exist_ok=True)
+    weights_path = os.path.join(hf_ckpt_path, "pytorch_model.bin")
+    dcp_to_torch_save(dcp_ckpt_path, weights_path)
+
+    # Need to reload and save b/c the state dict is scoped inside the model key {"model": actual_state_dict}
+    state_dict = torch.load(weights_path)
+    assert set(state_dict.keys()) == {"model"}, (
+        f"We expect that the state dict only has the top level model key, but found: {state_dict.keys()}"
+    )
+    torch.save(state_dict["model"], weights_path)
+
+    config = AutoConfig.from_pretrained(model_name_or_path)
+    config.save_pretrained(hf_ckpt_path)
+
+    # TODO: After the following PR gets merged:
+    # https://github.com/NVIDIA/reinforcer/pull/148/files
+    # tokenizer should be copied from policy/tokenizer/* instead of relying on the model name
+    # We can expose a arg at the top level --tokenizer_path to plumb that through.
+    # This is more stable than relying on the current NeMo-RL get_tokenizer() which can
+    # change release to release.
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
+    tokenizer.save_pretrained(hf_ckpt_path)
+
+    return hf_ckpt_path

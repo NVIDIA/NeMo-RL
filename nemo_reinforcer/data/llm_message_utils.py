@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import warnings
 from typing import Dict, List
 
 import torch
 from datasets import Dataset
-
 from nemo_reinforcer.data.interfaces import (
     LLMMessageLogType,
     FlatMessagesType,
@@ -185,6 +185,7 @@ def _validate_tensor_consistency(tensors: List[torch.Tensor]) -> None:
 def batched_message_log_to_flat_message(
     message_log_batch: List[LLMMessageLogType],
     pad_value_dict: Dict[str, int] = None,
+    make_sequence_length_divisible_by: int = 1,
 ) -> tuple[BatchedDataDict[FlatMessagesType], torch.Tensor]:
     """Process and pad a batch of message logs for model input.
 
@@ -198,6 +199,7 @@ def batched_message_log_to_flat_message(
     Args:
         message_log_batch: List of LLMMessageLogType (each a conversation with multiple turns)
         pad_value_dict: Dictionary mapping keys to padding values (default is 0)
+        make_sequence_length_divisible_by: forces the data to be divisible by this value
 
     Returns:
         BatchedDataDict[FlatMessagesType]: Dictionary containing padded stacked tensors
@@ -256,6 +258,11 @@ def batched_message_log_to_flat_message(
             if isinstance(value, torch.Tensor):
                 tensor_keys.append(key)
                 max_len = max(max_len, value.size(0))
+
+    if max_len % make_sequence_length_divisible_by != 0:
+        max_len = (
+            (max_len // make_sequence_length_divisible_by) + 1
+        ) * make_sequence_length_divisible_by
 
     # Handle non-tensor case
     if not tensor_keys:
@@ -342,6 +349,8 @@ def get_formatted_message_log(
     message_log: LLMMessageLogType,
     tokenizer,
     task_data_spec: TaskDataSpec,
+    add_bos_token: bool = True,
+    add_eos_token: bool = True,
 ) -> LLMMessageLogType:
     """Format and tokenize chat messages using the specified template.
 
@@ -355,12 +364,10 @@ def get_formatted_message_log(
     """
     new_message_log = []
     prev_formatted_message = ""
-    template = task_data_spec.custom_template
 
     for i, message in enumerate(message_log):
         formatted_message = tokenizer.apply_chat_template(
             message_log[: i + 1],
-            chat_template=template,
             add_generation_prompt=False,
             tokenize=False,
             add_special_tokens=False,
@@ -375,16 +382,24 @@ def get_formatted_message_log(
         ## pull out the chunk corresponding to the current message
         message_chunk = formatted_message[prev_message_len_no_eos:]
 
-        if tokenizer.bos_token is not None:
-            if i == 0 and not message_chunk.startswith(tokenizer.bos_token):
-                message_chunk = tokenizer.bos_token + message_chunk
+        if i == 0:
+            if add_bos_token:
+                if tokenizer.bos_token is None:
+                    warnings.warn(
+                        "add_bos_token is True but the tokenizer does not have a BOS token. Skipping BOS token addition."
+                    )
+                elif not message_chunk.startswith(tokenizer.bos_token):
+                    message_chunk = tokenizer.bos_token + message_chunk
 
         if i == len(message_log) - 1:
             message_chunk = message_chunk.rstrip("\n")
-            if tokenizer.eos_token is not None and not message_chunk.endswith(
-                tokenizer.eos_token
-            ):
-                message_chunk += tokenizer.eos_token
+            if add_eos_token:
+                if tokenizer.eos_token is None:
+                    warnings.warn(
+                        "add_eos_token is True but the tokenizer does not have an EOS token. Skipping EOS token addition."
+                    )
+                elif not message_chunk.endswith(tokenizer.eos_token):
+                    message_chunk += tokenizer.eos_token
 
         new_message = message.copy()
         new_message["token_ids"] = tokenizer(

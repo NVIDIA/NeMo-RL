@@ -15,11 +15,12 @@ import ray
 import pytest
 import pprint
 import torch
+from copy import deepcopy
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
 from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.models.generation.interfaces import configure_generation_config
 from nemo_reinforcer.models.policy import PolicyConfig
 from nemo_reinforcer.models.policy.hf_policy import HfPolicy
@@ -28,19 +29,30 @@ from tests.unit.test_utils import simple_loss, nll_loss
 
 basic_llama_test_config: PolicyConfig = {
     "model_name": "meta-llama/Llama-3.2-1B",
-    "tokenizer_name": "meta-llama/Llama-3.2-1B",
+    "tokenizer": {"name": "meta-llama/Llama-3.2-1B"},
     "generation_batch_size": 1,  # Small batch size for testing
     "train_global_batch_size": 4,
     "train_micro_batch_size": 1,
     "learning_rate": 5e-6,
     "logprob_batch_size": 1,
     "precision": "float32",
+    "fsdp_offload_enabled": False,
+    "activation_checkpointing_enabled": False,
     "generation": {
         "backend": "hf",
         "temperature": 1.0,
         "max_new_tokens": 16,  # Small number of tokens for testing
         "top_p": 1.0,
         "top_k": None,
+        "stop_token_ids": None,
+        "stop_strings": None,
+    },
+    "dtensor_cfg": {
+        "enabled": False,
+        "cpu_offload": False,
+        "sequence_parallel": False,
+        "activation_checkpointing": False,
+        "tensor_parallel_size": 1,
     },
     "optimizer": {
         "name": "torch.optim.AdamW",
@@ -57,6 +69,7 @@ basic_llama_test_config: PolicyConfig = {
             "T_max": 100,
         },
     },
+    "max_grad_norm": 1.0,
 }
 
 
@@ -71,33 +84,80 @@ def gc_collect():
 @pytest.fixture(scope="function")
 def tokenizer():
     """Initialize tokenizer for the test model."""
-    model_name = basic_llama_test_config["model_name"]
-    tokenizer = get_tokenizer(model_name)
+    tokenizer = get_tokenizer(basic_llama_test_config["tokenizer"])
     return tokenizer
 
 
+@pytest.fixture(scope="function")
+def test_input_data(tokenizer):
+    """Create test input data for inference."""
+    prompts = [
+        "Write a story about a magical forest",
+        "Explain how photosynthesis works",
+        "What are the benefits of exercise?",
+        "Describe the water cycle",
+        "What is the capital of France?",
+        "Who is the president of the USA?",
+        "What is the capital of the moon?",
+        "Where is the sun?",
+    ]
+
+    expected_generations = [
+        "Write a story about a magical forest. The forest is magical because it is full of magical creatures. The creatures are",
+        "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis is the process by which plants",
+        "What are the benefits of exercise? The benefits of exercise are many and varied. It is a great way to improve",
+        "Describe the water cycle in your own words.\nDescribe the water cycle in your own words.\nDescribe the",
+        "What is the capital of France? A. Paris B. New York C. Washington D. Baton Rouge\nA",
+        "Who is the president of the USA? Who is the president of the USA? Who is the president of the USA?",
+        "What is the capital of the moon? A. Houston B. New York C. Washington D. Denver\nA.",
+        "Where is the sun? Where is the moon? Where is the earth? Where is the sky? Where",
+    ]
+
+    # Tokenize the prompts
+    tokenized = tokenizer(
+        prompts,
+        padding=True,
+        truncation=True,
+        max_length=64,
+        return_tensors="pt",
+        padding_side="right",
+    )
+
+    # Calculate input lengths from attention mask
+    input_lengths = tokenized["attention_mask"].sum(dim=1).to(torch.int32)
+
+    data = BatchedDataDict(
+        {
+            "input_ids": tokenized["input_ids"],
+            "input_lengths": input_lengths,
+        }
+    )
+
+    return data, prompts, expected_generations
+
+
 @pytest.fixture
-def policy_setup(tokenizer):
+def policy_setup(tokenizer, num_gpus):
     """Setup and teardown for policy tests - creates a virtual cluster and policy."""
     policy = None
     cluster = None
 
-    cluster_name = "test"
-    print(f"Creating virtual cluster '{cluster_name}'...")
+    cluster_name = f"test-init-{num_gpus}gpu"
+    print(f"Creating virtual cluster '{cluster_name}' for {num_gpus} GPUs...")
 
     cluster = RayVirtualCluster(
         name=cluster_name,
-        bundle_ct_per_node_list=[2],  # Single node, 2 gpus
+        bundle_ct_per_node_list=[num_gpus],
         use_gpus=True,
-        num_gpus_per_node=2,  # Using both GPUs
-        max_colocated_worker_groups=1,  # Only one worker group
+        num_gpus_per_node=num_gpus,
+        max_colocated_worker_groups=1,
     )
 
     config = basic_llama_test_config
     config["generation"] = configure_generation_config(config["generation"], tokenizer)
 
     print("Creating HfPolicy...")
-    policy = HfPolicy(cluster=cluster, config=config)
+    policy = HfPolicy(cluster=cluster, config=config, tokenizer=tokenizer)
 
     yield policy, cluster
 
@@ -108,15 +168,18 @@ def policy_setup(tokenizer):
 
 
 @pytest.mark.timeout(180)
-def test_hf_policy_init(policy_setup):
+@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
+def test_hf_policy_init(policy_setup, num_gpus):
     policy, cluster = policy_setup
 
     # Verify cluster and policy were properly created
     assert policy is not None, "Policy was not created properly"
     assert cluster is not None, "Cluster was not created properly"
 
-    # Verify we have two workers, one per GPU
-    assert len(policy.worker_group.workers) == 2, "Should have 2 workers, one per GPU"
+    # Verify we have workers matching the GPU count
+    assert len(policy.worker_group.workers) == num_gpus, (
+        f"Should have {num_gpus} worker(s), one per GPU"
+    )
 
     # Check workers are alive
     worker_alive = ray.get([w.is_alive.remote() for w in policy.worker_group.workers])
@@ -132,42 +195,51 @@ def test_hf_policy_init(policy_setup):
 
     # Check 1: Verify workers have different ranks
     gpu_ranks = [info["rank"] for info in gpu_infos]
-    assert len(set(gpu_ranks)) == 2, f"Expected 2 different ranks, got {gpu_ranks}"
-    assert set(gpu_ranks) == {0, 1}, f"Expected ranks 0 and 1, got {gpu_ranks}"
+    assert len(set(gpu_ranks)) == num_gpus, (
+        f"Expected {num_gpus} different ranks, got {gpu_ranks}"
+    )
+    assert set(gpu_ranks) == set(range(num_gpus)), (
+        f"Expected ranks {set(range(num_gpus))}, got {gpu_ranks}"
+    )
 
     # Check 2: Verify workers have different local_ranks
     local_ranks = [info["local_rank"] for info in gpu_infos]
-    assert len(set(local_ranks)) == 2, (
-        f"Expected 2 different local_ranks, got {local_ranks}"
+    assert len(set(local_ranks)) == num_gpus, (
+        f"Expected {num_gpus} different local_ranks, got {local_ranks}"
     )
-    assert set(local_ranks) == {0, 1}, (
-        f"Expected local_ranks 0 and 1, got {local_ranks}"
+    assert set(local_ranks) == set(range(num_gpus)), (
+        f"Expected local_ranks {set(range(num_gpus))}, got {local_ranks}"
     )
 
     # Check 3: Verify workers have different CUDA_VISIBLE_DEVICES
     cuda_visible_devices = [
         info["env_vars"].get("CUDA_VISIBLE_DEVICES") for info in gpu_infos
     ]
-    assert len(set(cuda_visible_devices)) == 2, (
-        f"Expected different CUDA_VISIBLE_DEVICES, got {cuda_visible_devices}"
-    )
+    if num_gpus > 1:
+        assert len(set(cuda_visible_devices)) == num_gpus, (
+            f"Expected different CUDA_VISIBLE_DEVICES, got {cuda_visible_devices}"
+        )
+    else:
+        assert len(set(cuda_visible_devices)) == 1, (
+            f"Expected one CUDA_VISIBLE_DEVICES for 1 GPU, got {cuda_visible_devices}"
+        )
 
     # Check 4: Verify all workers report correct world_size
     for info in gpu_infos:
-        assert info["world_size"] == 2, (
-            f"Expected world_size=2, got {info['world_size']}"
+        assert info["world_size"] == num_gpus, (
+            f"Expected world_size={num_gpus}, got {info['world_size']}"
         )
-        assert info["env_vars"]["WORLD_SIZE"] == "2", (
-            f"Expected WORLD_SIZE=2, got {info['env_vars']['WORLD_SIZE']}"
+        assert info["env_vars"]["WORLD_SIZE"] == str(num_gpus), (
+            f"Expected WORLD_SIZE={num_gpus}, got {info['env_vars']['WORLD_SIZE']}"
         )
 
-    # Check 5: Verify significant GPU memory is allocated (at least 1GB) on both GPUs
+    # Check 5: Verify significant GPU memory is allocated (at least 1GB) on all GPUs
     for info in gpu_infos:
         assert info["memory_allocated_mb"] > 1000, (
             f"Not enough memory allocated on GPU for rank {info['rank']}: {info['memory_allocated_mb']:.2f} MB"
         )
 
-    # Check 6: Verify model parameters are on CUDA devices for both workers
+    # Check 6: Verify model parameters are on CUDA devices for all workers
     for info in gpu_infos:
         param_sample = list(info["parameter_sample"].values())[0]
         assert "cuda" in param_sample["device"], (
@@ -189,30 +261,54 @@ def test_hf_policy_init(policy_setup):
 
 
 @pytest.fixture
-def training_setup():
-    """Setup and teardown specifically for training tests."""
+def training_setup(tokenizer, request, num_gpus):
+    """
+    Setup and teardown specifically for training tests.
+
+    When used without parameterization, uses the default config.
+    When parameterized, takes any config updates as a dictionary in request.param
+    and applies them to the basic config.
+    """
     policy = None
     cluster = None
     data = None
     loss_fn = None
 
+    # Get config updates from request.param if available
+    config_updates = {}
+    config_suffix = ""
+    if hasattr(request, "param") and request.param is not None:
+        config_updates = request.param
+        config_suffix = "-" + "-".join([f"{k}={v}" for k, v in config_updates.items()])
+
     try:
         # Create resources with unique name
-        cluster_name = "test-train"
-        print(f"Creating training virtual cluster '{cluster_name}'...")
+        cluster_name = f"test-train-{num_gpus}gpu{config_suffix}"
+        print(
+            f"Creating training virtual cluster '{cluster_name}' for {num_gpus} GPUs"
+            f"{' with config updates: ' + str(config_updates) if config_updates else ''}"
+        )
 
         cluster = RayVirtualCluster(
             name=cluster_name,
-            bundle_ct_per_node_list=[2],  # Single node, 2 gpus
+            bundle_ct_per_node_list=[num_gpus],
             use_gpus=True,
-            num_gpus_per_node=2,  # Using both GPUs
-            max_colocated_worker_groups=1,  # Only one worker group
+            num_gpus_per_node=num_gpus,
+            max_colocated_worker_groups=1,
         )
 
-        config = basic_llama_test_config
+        # Create a config with optional modifications
+        config = deepcopy(basic_llama_test_config)
+        if config_updates:
+            config.update(config_updates)
 
         print("Creating training HfPolicy...")
-        policy = HfPolicy(cluster=cluster, config=config, init_reference_model=False)
+        policy = HfPolicy(
+            cluster=cluster,
+            config=config,
+            init_reference_model=False,
+            tokenizer=tokenizer,
+        )
 
         # Create a test batch
         print("Creating test batch...")
@@ -251,8 +347,34 @@ def training_setup():
         policy.worker_group.shutdown()
 
 
+def get_max_gpu_utilization(policy):
+    max_memory_allocated = 0
+    max_memory_reserved = 0
+    gpu_infos = ray.get([w.get_gpu_info.remote() for w in policy.worker_group.workers])
+    for info in gpu_infos:
+        max_memory_allocated = max(max_memory_allocated, info["memory_allocated_mb"])
+        max_memory_reserved = max(max_memory_reserved, info["memory_reserved_mb"])
+    return max_memory_allocated, max_memory_reserved
+
+
 @pytest.mark.timeout(180)
-def test_hf_policy_training(training_setup):
+@pytest.mark.parametrize(
+    "num_gpus, training_setup, config_name",
+    [
+        (1, None, "default"),
+        (2, None, "default"),
+        (2, {"fsdp_offload_enabled": True}, "fsdp_offload"),
+        (2, {"activation_checkpointing_enabled": True}, "activation_checkpointing"),
+    ],
+    indirect=["training_setup"],
+    ids=[
+        "1gpu_default",
+        "2gpu_default",
+        "2gpu_fsdp_offload",
+        "2gpu_activation_checkpointing",
+    ],
+)
+def test_hf_policy_training(training_setup, tracker, num_gpus, config_name):
     def verify_loss_tensor(loss_tensor):
         assert not torch.isnan(loss_tensor).any(), "Loss should not be NaN"
         assert not torch.isinf(loss_tensor).any(), "Loss should not be Inf"
@@ -267,7 +389,9 @@ def test_hf_policy_training(training_setup):
     assert loss_fn is not None, "Loss function was not created properly"
 
     # Call prepare_for_training if available
-    print("\nPreparing for training...")
+    print(
+        f"\nPreparing for training with {num_gpus} GPU(s) and {config_name} config..."
+    )
     policy.prepare_for_training()
 
     losses = []
@@ -280,32 +404,84 @@ def test_hf_policy_training(training_setup):
         verify_loss_tensor(loss_tensor)
         losses.append(loss_tensor[-1].item())
 
-        print(f"Training loss: {results['loss']}")
+        print(
+            f"Training loss with {num_gpus} GPU(s) and {config_name} config: {results['loss']}"
+        )
 
     policy.finish_training()
-
-    # Verify loss changed between iterations (model parameters were updated)
     assert losses[0] > losses[-1], "Loss should decrease over training iterations"
+
+    after_training_mem_allocated, after_training_mem_reserved = get_max_gpu_utilization(
+        policy
+    )
+    print(
+        f"Max GPU Utilization after training with {num_gpus} GPU(s) and {config_name} config: {after_training_mem_allocated:,.1f} MB allocated, "
+        f"{after_training_mem_reserved:,.1f} MB reserved"
+    )
+    tracker.track(
+        f"{num_gpus}gpu_{config_name}_after_training_mem_allocated",
+        after_training_mem_allocated,
+    )
+    tracker.track(
+        f"{num_gpus}gpu_{config_name}_after_training_mem_reserved",
+        after_training_mem_reserved,
+    )
+
+    policy.offload_after_refit()
+    after_offload_mem_allocated, after_offload_mem_reserved = get_max_gpu_utilization(
+        policy
+    )
+    print(
+        f"Max GPU Utilization after offload with {num_gpus} GPU(s) and {config_name} config: {after_offload_mem_allocated:,.1f} MB allocated, "
+        f"{after_offload_mem_reserved:,.1f} MB reserved"
+    )
+    tracker.track(
+        f"{num_gpus}gpu_{config_name}_after_offload_mem_allocated",
+        after_offload_mem_allocated,
+    )
+    tracker.track(
+        f"{num_gpus}gpu_{config_name}_after_offload_mem_reserved",
+        after_offload_mem_reserved,
+    )
+
+    # Compare memory after offload to memory after training
+    if config_name == "fsdp_offload":
+        # With FSDP offload, memory usage after training should already be low
+        assert after_training_mem_allocated < 1_200, (
+            "FSDP offload after training should be less than 1.2GB)"
+        )
+    else:
+        assert after_training_mem_allocated > 10_000, (
+            f"Memory after training with {config_name} config should be more than 10GB"
+        )
+
+    assert after_offload_mem_allocated < 1_200, (
+        "Memory after offload should be less than 1.2GB"
+    )
 
 
 @pytest.fixture
-def generation_setup(request, tokenizer):
+def generation_setup(request, test_input_data, tokenizer, num_gpus):
     """Setup and teardown specifically for generation tests."""
     policy = None
     cluster = None
     data = None
+    init_reference_model = request.param
 
     try:
         # Create resources with unique name
-        cluster_name = "test-generate"
-        print(f"Creating generation virtual cluster '{cluster_name}'...")
+        cluster_name = f"test-gen-{num_gpus}gpu-ref{init_reference_model}"
+        print(
+            f"Creating generation virtual cluster '{cluster_name}' for {num_gpus} GPUs "
+            f"(ref_model={init_reference_model})..."
+        )
 
         cluster = RayVirtualCluster(
             name=cluster_name,
-            bundle_ct_per_node_list=[2],  # Single node, 2 gpus
+            bundle_ct_per_node_list=[num_gpus],
             use_gpus=True,
-            num_gpus_per_node=2,  # Using both GPUs
-            max_colocated_worker_groups=1,  # Only one worker group
+            num_gpus_per_node=num_gpus,
+            max_colocated_worker_groups=1,
         )
 
         config = basic_llama_test_config
@@ -315,54 +491,18 @@ def generation_setup(request, tokenizer):
 
         print("Creating generation HfPolicy...")
         policy = HfPolicy(
-            cluster=cluster, config=config, init_reference_model=request.param
+            cluster=cluster,
+            config=config,
+            tokenizer=tokenizer,
+            init_reference_model=request.param,
         )
 
         # Create a test batch
         print("Creating test batch...")
         torch.manual_seed(42)  # For reproducibility
 
-        prompts = [
-            "Write a story about a magical forest",
-            "Explain how photosynthesis works",
-            "What are the benefits of exercise?",
-            "Describe the water cycle",
-            "What is the capital of France?",
-            "Who is the president of the USA?",
-            "What is the capital of the moon?",
-            "Where is the sun?",
-        ]
-
-        expected_generations = [
-            "Write a story about a magical forest. The forest is magical because it is full of magical creatures. The creatures are",
-            "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis is the process by which plants",
-            "What are the benefits of exercise? The benefits of exercise are many and varied. It is a great way to improve",
-            "Describe the water cycle in your own words.\nDescribe the water cycle in your own words.\nDescribe the",
-            "What is the capital of France? A. Paris B. New York C. Washington D. Baton Rouge\nA",
-            "Who is the president of the USA? Who is the president of the USA? Who is the president of the USA?",
-            "What is the capital of the moon? A. Houston B. New York C. Washington D. Denver\nA.",
-            "Where is the sun? Where is the moon? Where is the earth? Where is the sky? Where",
-        ]
-
-        # Tokenize the prompts
-        tokenized = tokenizer(
-            prompts,
-            padding=True,
-            truncation=True,
-            max_length=64,
-            return_tensors="pt",
-            padding_side="right",
-        )
-
-        # Calculate input lengths from attention mask
-        input_lengths = tokenized["attention_mask"].sum(dim=1).to(torch.int32)
-
-        data = BatchedDataDict(
-            {
-                "input_ids": tokenized["input_ids"],
-                "input_lengths": input_lengths,
-            }
-        )
+        # Prepare test data
+        data, prompts, expected_generations = test_input_data
 
         # Provide the resources to the test
         yield policy, cluster, data, prompts, expected_generations
@@ -378,8 +518,9 @@ def generation_setup(request, tokenizer):
 
 
 @pytest.mark.timeout(180)
+@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
 @pytest.mark.parametrize("generation_setup", [False], indirect=True)
-def test_hf_policy_generation(generation_setup, tokenizer, tracker):
+def test_hf_policy_generation(generation_setup, tokenizer, num_gpus, tracker):
     policy, cluster, data, prompts, expected_generations = generation_setup
 
     # Verify resources were created properly
@@ -434,7 +575,7 @@ def test_hf_policy_generation(generation_setup, tokenizer, tracker):
         torch.exp(torch.abs(results["logprobs"] - fprop_results["logprobs"]))
     )
     print(f"avg prob mult error: {avg_prob_mult_error}")
-    tracker.track("avg_prob_mult_error", float(avg_prob_mult_error))
+    tracker.track(f"avg_prob_mult_error_{num_gpus}gpu", float(avg_prob_mult_error))
     assert avg_prob_mult_error <= 1.025
 
     # get logprobs for the expected generations
@@ -459,7 +600,7 @@ def test_hf_policy_generation(generation_setup, tokenizer, tracker):
 
     expected_logprobs = policy.get_logprobs(expected_data)["logprobs"]
     mean_lps = torch.mean(expected_logprobs * expected_tokenized["attention_mask"])
-    tracker.track("mean_lps", float(mean_lps))
+    tracker.track(f"mean_lps_{num_gpus}gpu", float(mean_lps))
     assert mean_lps > -1.7, "Expected logprobs should be greater than -1.7"
     assert mean_lps < -1.4, "Expected logprobs should be less than -1.4"
 
@@ -469,6 +610,7 @@ def test_hf_policy_generation(generation_setup, tokenizer, tracker):
 
 
 @pytest.mark.timeout(180)
+@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
 @pytest.mark.parametrize("generation_setup", [True], indirect=True)
 def test_all_hf_policy_generation_lps_ref_training(generation_setup):
     policy, cluster, data, prompts, expected_generations = generation_setup
@@ -544,3 +686,64 @@ def test_all_hf_policy_generation_lps_ref_training(generation_setup):
 
     # Verify loss decreased during training
     assert losses[0] > losses[-1], "Loss should decrease over training iterations"
+
+
+def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
+    # Create resources with unique name
+    cluster_name = "test-generate-with-stop"
+    print(f"Creating training virtual cluster '{cluster_name}'...")
+
+    cluster = RayVirtualCluster(
+        name=cluster_name,
+        bundle_ct_per_node_list=[2],  # Single node, 2 gpus
+        use_gpus=True,
+        num_gpus_per_node=2,  # Using both GPUs
+        max_colocated_worker_groups=1,  # Only one worker group
+    )
+
+    # Create separate configs for each policy
+    config = deepcopy(basic_llama_test_config)
+    config["generation"] = configure_generation_config(config["generation"], tokenizer)
+    # Add stop strings for testing
+    config["generation"]["stop_token_ids"] = [1690, 1920]  # [" process", "many"]
+    config["generation"]["stop_strings"] = ["because it is", "A. Houston"]
+
+    # Ensure we can get same output
+    assert config["model_name"] == "meta-llama/Llama-3.2-1B", (
+        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    )
+
+    # Create policy
+    policy = HfPolicy(cluster=cluster, config=config, tokenizer=tokenizer)
+
+    # Call prepare_for_generation if available
+    print("Preparing for generation...")
+    policy.prepare_for_generation()
+
+    # Generate text
+    print("Generating text...")
+    data, _, _ = test_input_data
+    results = policy.generate(data, greedy=True)
+    output_ids = results["output_ids"]
+
+    # Call finish_generation if available
+    print("Finishing generation...")
+    policy.finish_generation()
+
+    # Check result
+    generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    assert generated_texts == [
+        "Write a story about a magical forest. The forest is magical because it is",
+        "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis is the process",
+        "What are the benefits of exercise? The benefits of exercise are many",
+        "Describe the water cycle in your own words.\nDescribe the water cycle in your own words.\nDescribe the",
+        "What is the capital of France? A. Paris B. New York C. Washington D. Baton Rouge\nA",
+        "Who is the president of the USA? Who is the president of the USA? Who is the president of the USA?",
+        "What is the capital of the moon? A. Houston",
+        "Where is the sun? Where is the moon? Where is the earth? Where is the sky? Where",
+    ], "Output should be the same as the expected output"
+
+    # Clean up after the test
+    print("Cleaning up resources for test")
+    cluster.shutdown()
+    policy.worker_group.shutdown()

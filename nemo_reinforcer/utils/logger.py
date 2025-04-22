@@ -19,6 +19,7 @@ import glob
 import time
 import threading
 import requests
+import json
 from abc import ABC, abstractmethod
 import logging
 from typing import List, Any, Dict, Optional, TypedDict, Union
@@ -27,8 +28,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.box import ROUNDED
 from rich.logging import RichHandler
+import torch
 
 from nemo_reinforcer.data.interfaces import LLMMessageLogType
+from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from torch.utils.tensorboard import SummaryWriter
 
 import ray
@@ -568,6 +571,32 @@ class Logger(LoggerInterface):
         for logger in self.loggers:
             logger.log_hyperparams(params)
 
+    def log_batched_dict_as_jsonl(
+        self, to_log: BatchedDataDict | Dict[str, Any], filename: str
+    ) -> None:
+        """Log a list of dictionaries to a JSONL file.
+
+        Args:
+            to_log: BatchedDataDict to log
+            filename: Filename to log to (within the log directory)
+        """
+        if not isinstance(to_log, BatchedDataDict):
+            to_log = BatchedDataDict(to_log)
+
+        # Create full path within log directory
+        filepath = os.path.join(self.base_log_dir, filename)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+        # Write to JSONL file
+        with open(filepath, "w") as f:
+            for i, sample in enumerate(to_log.make_microbatch_iterator(1)):
+                for key, value in sample.items():
+                    if isinstance(value, torch.Tensor):
+                        sample[key] = value.tolist()
+                f.write(json.dumps({**sample, "idx": i}) + "\n")
+
+        print(f"Logged data to {filepath}")
+
     def __del__(self):
         """Clean up resources when the logger is destroyed."""
         if self.gpu_monitor:
@@ -589,6 +618,7 @@ def flatten_dict(d: Dict[str, Any], sep: str = ".") -> Dict[str, Any]:
 
     Examples:
         ```{doctest}
+        >>> from nemo_reinforcer.utils.logger import flatten_dict
         >>> flatten_dict({"a": 1, "b": {"c": 2}})
         {'a': 1, 'b.c': 2}
 

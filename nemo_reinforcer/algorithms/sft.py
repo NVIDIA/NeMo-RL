@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from transformers import AutoTokenizer
 from pathlib import Path
 from typing import Optional, Tuple, TypedDict
 
@@ -81,6 +82,7 @@ class MasterConfig(TypedDict):
 # =======================================================
 def setup(
     master_config: MasterConfig,
+    tokenizer: AutoTokenizer,
     train_dataset: AllTaskProcessedDataset,
     val_dataset: AllTaskProcessedDataset,
 ) -> Tuple[
@@ -181,6 +183,7 @@ def setup(
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
+        tokenizer=tokenizer,
         weights_path=Path(last_checkpoint_path) / "policy" / "weights"
         if last_checkpoint_path
         else None,
@@ -240,6 +243,7 @@ def validate(
 
         val_metrics = {"val_loss": 0.0}
 
+        policy.prepare_for_training()
         for batch_idx, val_batch in enumerate(val_dataloader):
             ## add loss mask based on role to every message
             add_loss_mask_to_message_log(
@@ -250,6 +254,9 @@ def validate(
             cat_and_padded, input_lengths = batched_message_log_to_flat_message(
                 val_batch["message_log"],
                 pad_value_dict={"token_ids": tokenizer.pad_token_id},
+                make_sequence_length_divisible_by=master_config["policy"][
+                    "make_sequence_length_divisible_by"
+                ],
             )
 
             val_data: BatchedDataDict = BatchedDataDict(
@@ -374,6 +381,9 @@ def sft_train(
                     cat_and_padded, input_lengths = batched_message_log_to_flat_message(
                         batch["message_log"],
                         pad_value_dict={"token_ids": tokenizer.pad_token_id},
+                        make_sequence_length_divisible_by=master_config["policy"][
+                            "make_sequence_length_divisible_by"
+                        ],
                     )
 
                     train_data: BatchedDataDict = BatchedDataDict(

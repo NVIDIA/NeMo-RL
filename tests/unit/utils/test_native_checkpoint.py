@@ -17,6 +17,7 @@ import pytest
 import torch
 from tempfile import TemporaryDirectory
 
+from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.models.policy.hf_policy import HfPolicy
@@ -26,17 +27,40 @@ from nemo_reinforcer.utils.native_checkpoint import (
     save_checkpoint,
     ModelState,
     OptimizerState,
+    convert_dcp_to_hf,
 )
+from tests.unit.test_utils import simple_loss
 
 # Define basic test config
 simple_policy_config = {
     "model_name": "meta-llama/Llama-3.2-1B",  # "hf-internal-testing/tiny-random-Gemma3ForCausalLM",
-    "tokenizer_name": "meta-llama/Llama-3.2-1B",  # "hf-internal-testing/tiny-random-Gemma3ForCausalLM",
-    "train_global_batch_size": 32,
+    "tokenizer": {
+        "name": "meta-llama/Llama-3.2-1B",
+    },
+    "train_global_batch_size": 4,
     "train_micro_batch_size": 1,
     "logprob_batch_size": 1,
     "max_total_sequence_length": 1024,
     "precision": "float32",
+    "fsdp_offload_enabled": False,
+    "activation_checkpointing_enabled": False,
+    "optimizer": {
+        "name": "torch.optim.AdamW",
+        "kwargs": {
+            "lr": 5e-6,
+            "weight_decay": 0.01,
+            "betas": [0.9, 0.999],
+            "eps": 1e-8,
+        },
+    },
+    "dtensor_cfg": {
+        "enabled": False,
+        "cpu_offload": False,
+        "sequence_parallel": False,
+        "activation_checkpointing": False,
+        "tensor_parallel_size": 1,
+    },
+    "max_grad_norm": 1.0,
 }
 
 
@@ -57,40 +81,42 @@ def mock_experiment():
     return model, optimizer, scheduler
 
 
-@pytest.fixture(scope="module")
-def cluster():
+@pytest.fixture(scope="function")
+def cluster(num_gpus):
     """Create a virtual cluster for testing."""
-    # Create a cluster with 2 GPU
+    cluster_name = f"test-cluster-{num_gpus}gpu"
+    print(f"Creating virtual cluster '{cluster_name}' for {num_gpus} GPUs...")
+    # Create a cluster with num_gpus GPU
     virtual_cluster = RayVirtualCluster(
-        bundle_ct_per_node_list=[2],  # 1 node with 2 GPU bundle
+        bundle_ct_per_node_list=[num_gpus],  # 1 node with num_gpus GPU bundle
         use_gpus=True,
         max_colocated_worker_groups=1,
-        num_gpus_per_node=2,  # Use available GPUs
-        name="test-cluster",
+        num_gpus_per_node=num_gpus,  # Use available GPUs
+        name=cluster_name,
     )
-    yield virtual_cluster
+    yield virtual_cluster  # Yield only the cluster object
     virtual_cluster.shutdown()
 
 
 @pytest.fixture(scope="function")
 def tokenizer():
     """Initialize tokenizer for the test model."""
-    tokenizer_name = simple_policy_config["tokenizer_name"]
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = get_tokenizer(simple_policy_config["tokenizer"])
     return tokenizer
 
 
 @pytest.fixture(scope="function")
 def policy(cluster, tokenizer):
     """Initialize the policy."""
-    return HfPolicy(
+    policy = HfPolicy(
         cluster=cluster,
+        tokenizer=tokenizer,
         config=simple_policy_config,
-        init_optimizer=False,
+        init_optimizer=True,
         init_reference_model=False,
     )
+    yield policy
+    policy.worker_group.shutdown()
 
 
 def get_dummy_state_dict(state_dict, dummy_dict={}):
@@ -116,6 +142,15 @@ def check_dict_equality(dict1, dict2):
             assert torch.allclose(dict1[k], dict2[k])
         else:
             assert dict1[k] == dict2[k]
+
+
+def assert_recursive_dict_different(dict1, dict2):
+    """Recursively assert that two dictionaries are different"""
+    try:
+        check_dict_equality(dict1, dict2)
+    except AssertionError:
+        return
+    raise AssertionError("Dictionaries are equal")
 
 
 def test_model_state(mock_experiment):
@@ -237,7 +272,8 @@ def test_save_and_load_model_and_optimizer(mock_experiment):
     check_dict_equality(new_optimizer.state_dict(), optimizer.state_dict())
 
 
-def test_save_and_load_hf_checkpoint(policy):
+@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
+def test_save_and_load_hf_checkpoint(policy, num_gpus):
     ## warm up with a forward pass
     ## this is needed before saving a checkpoint because FSDP does some lazy initialization
     input_ids = torch.randint(0, 16000, (4, 128))  # 4 sequences, each of length 128
@@ -258,31 +294,136 @@ def test_save_and_load_hf_checkpoint(policy):
             os.path.join(tmp_dir, "test_hf_and_dcp"),
             save_hf=True,
             save_torch_dist=True,
+            tokenizer_path=os.path.join(tmp_dir, "test_hf_and_dcp_tokenizer"),
         )
 
         ## make sure we save both HF and DCP checkpoints
-        assert set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp"))) == {
-            "__0_0.distcp",
-            "__1_0.distcp",
-            ".metadata",
-        }
-        ## 1B model has two shards
-        assert set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp-hf"))) == {
-            "config.json",
-            "generation_config.json",
-            "model-00001-of-00002.safetensors",
-            "model-00002-of-00002.safetensors",
-            "model.safetensors.index.json",
+        # Dynamically create the expected set of distcp files based on num_gpus
+        expected_distcp_files = {f"__{rank}_0.distcp" for rank in range(num_gpus)}
+        expected_files = expected_distcp_files.union({".metadata"})
+
+        assert (
+            set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp"))) == expected_files
+        )
+        assert set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp_tokenizer"))) == {
+            "tokenizer_config.json",
+            "tokenizer.json",
+            "special_tokens_map.json",
         }
 
-        coverted_model = AutoModelForCausalLM.from_pretrained(
+        converted_model = AutoModelForCausalLM.from_pretrained(
+            os.path.join(tmp_dir, "test_hf_and_dcp-hf")
+        )
+
+        hf_save_dir = os.path.join(tmp_dir, "test_hf_and_dcp-hf")
+        hf_files = set(os.listdir(hf_save_dir))
+
+        # Check the HF saved files structure: could be single or sharded
+        expected_common_hf_files = {"config.json", "generation_config.json"}
+        if "model.safetensors" in hf_files:
+            # Single file format (1 GPU or smaller model)
+            expected_hf_files = expected_common_hf_files.union({"model.safetensors"})
+        else:
+            # Sharded format (>=2 GPUs or larger model)
+            expected_hf_files = expected_common_hf_files.union(
+                {
+                    "model-00001-of-00002.safetensors",
+                    "model-00002-of-00002.safetensors",
+                    "model.safetensors.index.json",
+                }
+            )
+        assert hf_files == expected_hf_files
+
+        coverted_model = AutoModelForCausalLM.from_pretrained(hf_save_dir)
+        original_model = AutoModelForCausalLM.from_pretrained(
+            simple_policy_config["model_name"]
+        )
+
+    ## make sure converted model matches the original
+    check_dict_equality(converted_model.state_dict(), original_model.state_dict())
+
+
+@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
+def test_convert_dcp_to_hf(policy, num_gpus):
+    ## warm up with a forward pass
+    ## this is needed before saving a checkpoint because FSDP does some lazy initialization
+    input_ids = torch.randint(0, 16000, (4, 128))  # 4 sequences, each of length 128
+    attention_mask = torch.ones(4, 128)
+    input_lengths = attention_mask.sum(dim=1).to(torch.int32)
+    dummy_fwd_dict = BatchedDataDict(
+        {
+            "input_ids": input_ids,
+            "input_lengths": input_lengths,
+            "attention_mask": attention_mask,
+            "labels": torch.randint(0, 16000, (4, 128)),
+        }
+    )
+    policy.train(dummy_fwd_dict, simple_loss)
+
+    with TemporaryDirectory() as tmp_dir:
+        policy.save_checkpoint(
+            os.path.join(tmp_dir, "test_hf_and_dcp"),
+            save_hf=True,
+            save_torch_dist=True,
+        )
+
+        # Dynamically create the expected set of distcp files based on num_gpus
+        expected_distcp_files = {f"__{rank}_0.distcp" for rank in range(num_gpus)}
+        expected_files = expected_distcp_files.union({".metadata"})
+
+        ## make sure we save both HF and DCP checkpoints
+        assert (
+            set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp"))) == expected_files
+        )
+
+        # Check the HF saved files structure: could be single or sharded
+        hf_save_dir = os.path.join(tmp_dir, "test_hf_and_dcp-hf")
+        hf_files = set(os.listdir(hf_save_dir))
+        expected_common_hf_files = {"config.json", "generation_config.json"}
+
+        if "model.safetensors" in hf_files:
+            # Single file format (1 GPU or smaller model)
+            expected_hf_files = expected_common_hf_files.union({"model.safetensors"})
+        else:
+            # Sharded format (>=2 GPUs or larger model)
+            expected_hf_files = expected_common_hf_files.union(
+                {
+                    "model-00001-of-00002.safetensors",
+                    "model-00002-of-00002.safetensors",
+                    "model.safetensors.index.json",
+                }
+            )
+        assert hf_files == expected_hf_files
+
+        offline_converted_model_path = convert_dcp_to_hf(
+            os.path.join(tmp_dir, "test_hf_and_dcp"),
+            os.path.join(tmp_dir, "test_hf_and_dcp-hf-offline"),
+            simple_policy_config["model_name"],
+            # TODO: After the following PR gets merged:
+            # https://github.com/NVIDIA/reinforcer/pull/148/files
+            # tokenizer should be copied from policy/tokenizer/* instead of relying on the model name
+            # We can expose a arg at the top level --tokenizer_path to plumb that through.
+            # This is more stable than relying on the current NeMo-RL get_tokenizer() which can
+            # change release to release.
+            simple_policy_config["model_name"],
+        )
+
+        offline_converted_model = AutoModelForCausalLM.from_pretrained(
+            offline_converted_model_path
+        )
+
+        online_converted_model = AutoModelForCausalLM.from_pretrained(
             os.path.join(tmp_dir, "test_hf_and_dcp-hf")
         )
         original_model = AutoModelForCausalLM.from_pretrained(
             simple_policy_config["model_name"]
         )
 
-    ## make sure converted model matches the original
-    check_dict_equality(coverted_model.state_dict(), original_model.state_dict())
-
-    policy.worker_group.shutdown()
+    ## make sure both conversions results in the same state dict
+    check_dict_equality(
+        online_converted_model.state_dict(), offline_converted_model.state_dict()
+    )
+    # Ensure the offline one is different from the original
+    assert_recursive_dict_different(
+        offline_converted_model.state_dict(), original_model.state_dict()
+    )
