@@ -68,7 +68,7 @@ We have a reference GRPO experiment config set up trained for math benchmarks us
 
 #### Single Node
 
-To run GRPO on a single GPU for `Llama-3.2-1B-Instruct`:
+To run GRPO on a single GPU for `Qwen/Qwen2.5-1.5B`:
 
 ```sh
 # Run the GRPO math example using a 1B parameter model
@@ -87,10 +87,10 @@ You can override any of the parameters listed in the yaml configuration file. Fo
 
 ```sh
 uv run python examples/run_grpo_math.py \
-  policy.model_name="Qwen/Qwen2-1.5B" \
-  checkpointing.checkpoint_dir="results/qwen1_5b_math" \
+  policy.model_name="Llama-3.2-1B-Instruct" \
+  checkpointing.checkpoint_dir="results/llama1b_math" \
   logger.wandb_enabled=True \
-  logger.wandb.name="grpo-qwen1_5b_math" \
+  logger.wandb.name="grpo-llama1b_math" \
   logger.num_val_samples_to_print=10 \
 ```
 
