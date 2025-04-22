@@ -13,7 +13,7 @@
 # limitations under the License.
 from copy import deepcopy
 from collections import UserDict
-from typing import List, Dict, Optional, Iterator, TypeVar, Any, Generic
+from typing import List, Dict, Optional, Iterator, TypeVar, Any, Generic, Union
 from typing_extensions import Self
 
 import torch
@@ -137,7 +137,10 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         return chunked_batch
 
     def shard_by_batch_size(
-        self, shards: int, batch_size: Optional[int] = None
+        self,
+        shards: int,
+        batch_size: Optional[int] = None,
+        allow_uneven_shards: bool = False,
     ) -> List["SlicedDataDict"]:
         """Shards a batch by first dividing it into chunks of size batch_size, then further dividing each chunk into shards equal parts. Finally aggregates the sub-shards by their position.
 
@@ -150,10 +153,47 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         Args:
             shards (int): The number of shards to divide each batch_size chunk into.
             batch_size (int): The size of each initial chunk.
+            allow_uneven_shards (bool): Whether to allow shards to be unevenly sized.
+                                        If True, the last shard may be smaller than the others.
 
         Returns:
             List[BatchedDataDict]: A list of BatchedDataDicts, length equal to shards.
+
+        Examples:
+        ```{doctest}
+        >>> from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+        >>> # Create a batch of two message logs with different lengths
+        >>> batch = BatchedDataDict({
+        ...     'problem_id': [0, 0, 1, 1, 2, 2, 3, 3],
+        ...     'arbitrary_data': [1, 2, 3, 4, 5, 6, 7, 8]
+        ... })
+        >>> shards = batch.shard_by_batch_size(shards=2)
+        >>> shards
+        [{'problem_id': [0, 0, 1, 1], 'arbitrary_data': [1, 2, 3, 4]}, {'problem_id': [2, 2, 3, 3], 'arbitrary_data': [5, 6, 7, 8]}]
+        >>> # Now say that I'm training with a GBS of 4 and I want to take gradients steps on problems 0 and 1 before 2 and 3 (problems are repeated because GRPO)
+        >>> # In the current case, problems 0 and 2 will be trained on first since they're the first elements in each DP rank's batch.
+        >>> # So, we'll use the batch_size argument to split the batch into chunks of size 4 first.
+        >>> shards = batch.shard_by_batch_size(shards=2, batch_size=4)
+        >>> shards
+        [{'problem_id': [0, 0, 2, 2], 'arbitrary_data': [1, 2, 5, 6]}, {'problem_id': [1, 1, 3, 3], 'arbitrary_data': [3, 4, 7, 8]}]
+        >>> # Now, the ranks have 0 and 1 first so when they split their batches into microbatches (of size 2 since GBS=4 and DP=2), they'll train on 0 and 1 first.
+        >>> # Another way to use this function is with the 'allow_uneven_shards' flag, which allows the last shard to be smaller than the others when necessary.
+        >>> # This is necessary in multi-turn rollouts when some sequences terminate early, leaving unclean batch sizes.
+        >>> batch = BatchedDataDict({
+        ...     'problem_id': [0, 1, 2, 3, 4],
+        ...     'arbitrary_data': [10, 11, 12, 13, 14]
+        ... })
+        >>> shards = batch.shard_by_batch_size(shards=2, allow_uneven_shards=True)
+        >>> shards
+        [{'problem_id': [0, 1, 2], 'arbitrary_data': [10, 11, 12]}, {'problem_id': [3, 4], 'arbitrary_data': [13, 14]}]
+        >>> # This is incompatible with the batch_size argument
+        ```
         """
+        if allow_uneven_shards:
+            assert batch_size is None, (
+                "batch_size must be None if allow_uneven_shards is True"
+            )
+
         # Get the total batch size
         batch_sizes = set()
         for val in self.data.values():
@@ -173,13 +213,18 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         assert total_batch_size % batch_size == 0, (
             f"Total batch size ({total_batch_size}) is not a multiple of batch_size ({batch_size})"
         )
-        assert batch_size % shards == 0, (
-            f"Batch size ({batch_size}) is not a multiple of shards ({shards})"
-        )
+        if not allow_uneven_shards:
+            assert batch_size % shards == 0, (
+                f"Batch size ({batch_size}) is not a multiple of shards ({shards})"
+            )
 
         num_chunks = total_batch_size // batch_size
-        shard_size = batch_size // shards
-        # Create one BatchedDataDict per shard position
+        # Calculate shard size, rounding up if not evenly divisible
+        shard_size = (
+            (batch_size + shards - 1) // shards
+            if allow_uneven_shards
+            else batch_size // shards
+        )
         aggregated_shards = [SlicedDataDict() for _ in range(shards)]
 
         # Group data by shard position across all chunks
@@ -189,6 +234,11 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 chunk_start = chunk_idx * batch_size
                 shard_start = chunk_start + shard_idx * shard_size
                 shard_end = chunk_start + (shard_idx + 1) * shard_size
+                if allow_uneven_shards:
+                    # Cap the end index at the total batch size for the last shard
+                    # or if shard_end calculation goes beyond total_batch_size
+                    shard_start = min(shard_start, total_batch_size)
+                    shard_end = min(shard_end, total_batch_size)
                 indices = torch.arange(shard_start, shard_end)
 
                 for k in self.data:
@@ -275,12 +325,36 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             return len(self.data[key])
         return self.data[key].shape[0]
 
-    def to(self, device: torch.device) -> "BatchedDataDict":
-        """Move all tensors in the batch to a specific device."""
-        for k in self.data:
-            if torch.is_tensor(self.data[k]):
-                self.data[k] = self.data[k].to(device)
+    def to(self, device: torch.device) -> Self:
+        """Move tensors in batched dict to device."""
+        for k, v in self.data.items():
+            if torch.is_tensor(v):
+                self.data[k] = v.to(device)
         return self
+
+    def select_indices(
+        self, indices: Union[List[int], torch.Tensor]
+    ) -> "BatchedDataDict":
+        """Selects specific rows from the batch based on indices.
+
+        Args:
+            indices: A list or tensor of integer indices to select.
+
+        Returns:
+            BatchedDataDict: A new BatchedDataDict containing only the selected rows.
+        """
+        selected_batch = BatchedDataDict()
+        for k, v in self.data.items():
+            if torch.is_tensor(v):
+                selected_batch[k] = v[indices]
+            elif isinstance(v, list):
+                selected_batch[k] = [v[i] for i in indices]
+            else:
+                # Handle other potential types if necessary, or raise error
+                raise TypeError(
+                    f"Unsupported type {type(v)} for index selection in BatchedDataDict"
+                )
+        return selected_batch
 
     def get_dict(self) -> dict:
         """Get the underlying data dictionary."""

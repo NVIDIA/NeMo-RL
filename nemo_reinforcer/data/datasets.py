@@ -124,6 +124,9 @@ def rl_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
     idx = [datum_spec["idx"] for datum_spec in data_batch]
     batch_max_length = torch.ones_like(length) * length.max()
 
+    # Extract stop_strings if present
+    stop_strings = [datum.get("stop_strings", None) for datum in data_batch]
+
     output = BatchedDataDict(
         message_log=message_log,
         length=length,
@@ -132,6 +135,7 @@ def rl_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
         task_name=task_names,
         idx=idx,
         batch_max_length=batch_max_length,
+        stop_strings=stop_strings,
     )
     return output
 

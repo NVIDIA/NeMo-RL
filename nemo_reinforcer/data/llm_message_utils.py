@@ -289,8 +289,11 @@ def batched_message_log_to_flat_message(
     # Create input_lengths tensor
     input_lengths = []
     for seq in sequenced_lists:
-        seq_len = next(
-            (v.size(0) for v in seq.values() if isinstance(v, torch.Tensor)), 0
+        # Find the maximum length among all tensors in the dictionary, default to 0 if none exist
+        # Use maximum here since there may be keys that aren't populated for all messages yet.
+        # For example, logprobs don't get populated for non-generated tokens until post-processing.
+        seq_len = max(
+            (v.size(0) for v in seq.values() if isinstance(v, torch.Tensor)), default=0
         )
         input_lengths.append(seq_len)
     input_lengths_tensor = torch.tensor(input_lengths, dtype=torch.int32)

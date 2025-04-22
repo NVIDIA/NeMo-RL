@@ -32,6 +32,7 @@ class DatumSpec(TypedDict):
     loss_multiplier: float  # multiplier for the loss for this datum. 0 to mask out (say the sample is invalid)
     idx: int
     task_name: Optional[str] = "default"
+    stop_strings: Optional[List[str]] = None  # Optional stop strings for generation
     __extra__: Any  # This allows additional fields of any type
 
 
