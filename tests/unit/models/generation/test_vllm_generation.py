@@ -17,8 +17,6 @@ from copy import deepcopy
 import pytest
 import torch
 import ray
-from _pytest.monkeypatch import MonkeyPatch
-
 
 from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
