@@ -68,7 +68,10 @@ def mock_components():
             "val_micro_batch_size": 1,
             "val_at_start": False,
         },
-        "policy": {"train_global_batch_size": 1},
+        "policy": {
+            "train_global_batch_size": 1,
+            "make_sequence_length_divisible_by": 8,
+        },
         "checkpointing": {"enabled": False},
     }
 
