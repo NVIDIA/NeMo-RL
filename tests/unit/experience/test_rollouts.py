@@ -34,7 +34,6 @@ from tests.unit.test_envs import (
     MultiStepCalcMetadata,
 )
 
-# Import the game logic for generating initial state from its new location
 from nemo_reinforcer.environments.games.sliding_puzzle import (
     SlidingPuzzleGameLogic,
     SlidingPuzzleEnv,
