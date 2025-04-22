@@ -66,7 +66,7 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
         "precision": "float32",
         "fsdp_offload_enabled": False,
         "activation_checkpointing_enabled": False,
-        "refit_buffer_size": 4,
+        "refit_buffer_size_gb": 4,
         "optimizer": {
             "name": "torch.optim.AdamW",
             "kwargs": {
@@ -272,7 +272,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
     print(f"refitting vllm policy...")
-    refit_policy_generation(hf_policy, policy, hf_config["refit_buffer_size"])
+    refit_policy_generation(hf_policy, policy, hf_config["refit_buffer_size_gb"])
 
     try:
         # Generate with duplicated prompts
@@ -435,7 +435,9 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print(f"refitting vllm policy...")
-        refit_policy_generation(hf_policy, vllm_policy, hf_config["refit_buffer_size"])
+        refit_policy_generation(
+            hf_policy, vllm_policy, hf_config["refit_buffer_size_gb"]
+        )
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
@@ -781,7 +783,7 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     # reset peak memory stats before refit
     workers = hf_policy.worker_group.workers
     ray.get([w.reset_peak_memory_stats.remote() for w in workers])
-    refit_policy_generation(hf_policy, vllm_policy, refit_buffer_size=1)
+    refit_policy_generation(hf_policy, vllm_policy, refit_buffer_size_gb=1)
     gpu_infos = ray.get([w.get_gpu_info.remote() for w in workers])
 
     # Gather memory stats
@@ -851,7 +853,7 @@ def test_vllm_generation_with_stop(
         refit_policy_generation(
             hf_policy,
             vllm_generation,
-            hf_config["refit_buffer_size"],
+            hf_config["refit_buffer_size_gb"],
         )
 
     # test generate

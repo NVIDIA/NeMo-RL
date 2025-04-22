@@ -279,7 +279,7 @@ def setup(
 def refit_policy_generation(
     policy: PolicyInterface,
     policy_generation: GenerationInterface,
-    refit_buffer_size: int,  # GB
+    refit_buffer_size_gb: int,  # GB
 ):
     """Refit the policy generation interface with the latest policy weights."""
     policy.offload_before_refit()
@@ -287,15 +287,18 @@ def refit_policy_generation(
     # Streaming update weights to save memory
     state_dict_info = policy.prepare_weights_for_ipc()
     # group keys to save time
-    available_bytes = refit_buffer_size * (1024**3)
+    available_bytes = refit_buffer_size_gb * (1024**3)
     split_keys, keys = [], []
     for key, size_in_bytes in state_dict_info:
+        if size_in_bytes > available_bytes:
+            if keys:
+                split_keys.append(keys)
+                keys = []
+            available_bytes = refit_buffer_size_gb * (1024**3)
+
         keys.append(key)
         available_bytes -= size_in_bytes
-        if available_bytes <= 0:
-            split_keys.append(keys)
-            keys = []
-            available_bytes = refit_buffer_size * (1024**3)
+
     if len(keys) > 0:
         split_keys.append(keys)
     # do update
@@ -339,13 +342,13 @@ def grpo_train(
     consumed_samples = grpo_save_state["consumed_samples"]
     val_period = master_config["grpo"]["val_period"]
     val_at_start = master_config["grpo"]["val_at_start"]
-    refit_buffer_size = master_config["policy"]["refit_buffer_size"]
+    refit_buffer_size_gb = master_config["policy"]["refit_buffer_size_gb"]
 
     # Run validation at the start if configured
     if val_at_start and step == 0:
         print("\n🔍 Running initial validation...")
         if NEED_REFIT and POLICY_GENERATION_STALE:
-            refit_policy_generation(policy, policy_generation, refit_buffer_size)
+            refit_policy_generation(policy, policy_generation, refit_buffer_size_gb)
             POLICY_GENERATION_STALE = False
         else:
             policy_generation.prepare_for_generation()
@@ -390,7 +393,7 @@ def grpo_train(
                     refit_policy_generation(
                         policy,
                         policy_generation,
-                        refit_buffer_size,
+                        refit_buffer_size_gb,
                     )
                     POLICY_GENERATION_STALE = False
                 else:
@@ -502,7 +505,7 @@ def grpo_train(
                     refit_policy_generation(
                         policy,
                         policy_generation,
-                        refit_buffer_size,
+                        refit_buffer_size_gb,
                     )
                     POLICY_GENERATION_STALE = False
                 else:

@@ -456,6 +456,8 @@ class VllmGenerationWorker:
 
     def wake_up(self, **kwargs):
         # tags like ["weights", "kv_cache"]
+        # We can call this function with just tags=["weights"] while doing refit to
+        # avoid spiking memory with the kv_cache while the training fwk is awake.
         if "tags" in kwargs:
             self.llm.wake_up(tags=kwargs["tags"])
         else:
