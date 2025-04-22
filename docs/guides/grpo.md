@@ -120,7 +120,7 @@ $$
 where:
 
 - $\pi_\theta$ is the policy model we are currently optimizing
-- $\pi_{\theta_{\text{old}}}$ is the previous policy model
+- $\pi_{\theta_{\text{old}}}$ is the previous policy model (from the beginning of this step)
 - $A_t$ is the advantage estimate
 - $\varepsilon$ is a clipping hyperparameter
 - $\beta$ is the KL penalty coefficient
