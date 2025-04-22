@@ -151,7 +151,6 @@ NUM_ACTOR_NODES=2
 # Add a timestamp to make each job name unique
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# SFT experiment uses Llama-3.1-8B model
 COMMAND="uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'" \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
