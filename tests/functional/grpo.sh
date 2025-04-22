@@ -19,7 +19,7 @@ mkdir -p $LOG_DIR
 cd $PROJECT_ROOT
 python -u $PROJECT_ROOT/examples/run_grpo_math.py \
     cluster.gpus_per_node=2 \
-    grpo.max_num_steps=10 \
+    grpo.max_num_steps=3 \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \

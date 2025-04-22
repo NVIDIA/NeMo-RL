@@ -22,6 +22,7 @@ import ray
 import torch
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import (
+    CPUOffload,
     FullyShardedDataParallel,
     MixedPrecision,
 )

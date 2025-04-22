@@ -17,9 +17,8 @@ try:
     import vllm
 except ImportError:
     raise ImportError(
-        "vLLM is not installed. Please install it with `pip install nemo-reinforcer[vllm]` "
-        "or `pip install vllm` separately. This issue may also occur if worker is using incorrect "
-        "py_executable."
+        f"vLLM is not installed. Please check that VllmGenerationWorker.DEFAULT_PY_EXECUTABLE covers the vllm dependency. "
+        "If you are working interactively, you can install by running  `uv sync --extra vllm` anywhere in the repo."
     )
 
 

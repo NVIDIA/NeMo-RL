@@ -239,6 +239,7 @@ def validate(
         val_metrics = {"val_loss": 0.0}
         num_valid_batches = 0
 
+        policy.prepare_for_training()
         for batch_idx, val_batch in enumerate(val_dataloader):
             ## add loss mask based on role to every message
             add_loss_mask_to_message_log(
@@ -249,6 +250,9 @@ def validate(
             cat_and_padded, input_lengths = batched_message_log_to_flat_message(
                 val_batch["message_log"],
                 pad_value_dict={"token_ids": tokenizer.pad_token_id},
+                make_sequence_length_divisible_by=master_config["policy"][
+                    "make_sequence_length_divisible_by"
+                ],
             )
 
             val_data: BatchedDataDict = BatchedDataDict(
@@ -375,6 +379,9 @@ def sft_train(
                 cat_and_padded, input_lengths = batched_message_log_to_flat_message(
                     batch["message_log"],
                     pad_value_dict={"token_ids": tokenizer.pad_token_id},
+                    make_sequence_length_divisible_by=master_config["policy"][
+                        "make_sequence_length_divisible_by"
+                    ],
                 )
 
                 train_data: BatchedDataDict = BatchedDataDict(

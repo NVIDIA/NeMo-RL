@@ -335,8 +335,21 @@ class DTensorPolicyWorker:
                         all_mb_metrics.append(loss_metrics)
 
                 if not eval_mode:
-                    with torch.no_grad():
-                        grad_norm = get_grad_norm(
+                    loss.backward()
+                mb_losses.append(loss.item())
+                all_mb_metrics.append(loss_metrics)
+
+            grad_norm = None
+            if not eval_mode:
+                with torch.no_grad():
+                    grad_norm = get_grad_norm(
+                        self.model.parameters(),
+                        dp_group=self.dp_mesh.get_group(),
+                        tp_group=self.tp_mesh.get_group(),
+                        dtype=torch.float32,
+                    )
+                    if self.max_grad_norm is not None:
+                        clip_grad_by_total_norm_(
                             self.model.parameters(),
                             dp_group=self.dp_mesh.get_group(),
                             tp_group=self.tp_mesh.get_group(),
@@ -356,34 +369,30 @@ class DTensorPolicyWorker:
 
                 losses.append(torch.tensor(mb_losses).sum().item())
 
-            # Compute global loss across all ranks
-            with torch.no_grad():
-                local_loss = torch.tensor(losses, device="cuda")
-                global_loss = torch.zeros_like(local_loss)
-                torch.distributed.all_reduce(local_loss)
-                global_loss = local_loss / self.dp_size
+        # Compute global loss across all ranks
+        with torch.no_grad():
+            local_loss = torch.tensor(losses, device="cuda")
+            global_loss = torch.zeros_like(local_loss)
+            torch.distributed.all_reduce(local_loss, group=self.dp_mesh.get_group())
+            global_loss = local_loss / self.dp_size
 
-            # Aggregate metrics across all microbatches
-            mb_metrics = defaultdict(list)
-            for m in all_mb_metrics:
-                for k, v in m.items():
-                    mb_metrics[k].append(v)
+        # Aggregate metrics across all microbatches
+        mb_metrics = defaultdict(list)
+        for m in all_mb_metrics:
+            for k, v in m.items():
+                mb_metrics[k].append(v)
 
-            metrics = {
-                "global_loss": global_loss.cpu(),
-                "local_loss": local_loss.cpu(),
-                "rank": torch.distributed.get_rank(),
-                "all_mb_metrics": dict(mb_metrics),
-            }
+        metrics = {
+            "global_loss": global_loss.cpu(),
+            "local_loss": local_loss.cpu(),
+            "grad_norm": grad_norm,
+            "rank": torch.distributed.get_rank(),
+            "all_mb_metrics": dict(mb_metrics),
+        }
 
-            if not eval_mode:
-                metrics["grad_norm"] = grad_norm
+        return metrics
 
-            return metrics
-
-    def get_logprobs(
-        self, data: BatchedDataDict, micro_batch_size: int = None
-    ) -> BatchedDataDict:
+    def get_logprobs(self, data: BatchedDataDict) -> BatchedDataDict:
         """Get the logprobs of the model for a batch of data.
 
         Uses the configured logprob_batch_size to do microbatching.
