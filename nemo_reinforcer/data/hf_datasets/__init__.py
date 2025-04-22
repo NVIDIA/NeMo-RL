@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nemo_reinforcer.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
+from nemo_reinforcer.data.hf_datasets.dpo import DPODataset
+from nemo_reinforcer.data.hf_datasets.helpsteer3 import HelpSteer3Dataset
+from nemo_reinforcer.data.hf_datasets.oasst import OasstDataset
 from nemo_reinforcer.data.hf_datasets.prompt_response_dataset import (
     PromptResponseDataset,
 )
-from nemo_reinforcer.data.hf_datasets.oasst import OasstDataset
 from nemo_reinforcer.data.hf_datasets.squad import SquadDataset
-from nemo_reinforcer.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
 
 __all__ = [
+    "DPODataset",
+    "HelpSteer3Dataset",
     "OasstDataset",
     "PromptResponseDataset",
     "SquadDataset",

@@ -1,0 +1,105 @@
+# DPO Algorithm Configuration
+dpo:
+  max_num_epochs: 1
+  max_num_steps: 150
+  val_period: 25
+  val_batches: 8
+  val_global_batch_size: 8
+  val_micro_batch_size: 1
+  val_at_start: true
+  seed: 42
+
+  reference_policy_kl_penalty: 0.05
+  preference_average_log_probs: False # whether normalizing log probs according to the sequence length in preference_loss
+  sft_average_log_probs: ${.preference_average_log_probs} # whether normalizing log probs according to the sequence length in sft_loss
+
+  ## TODO(@ashors) support other loss functions
+  #preference_loss: dpo # the preference loss, we support dpo, ipo, rpo_sq, rpo_bwd_kl, rpo_fwd_kl
+  #gt_reward_scale: 1. # the scale of the rewards in RPO
+  preference_loss_weight: 1 # the coefficient of the preference loss
+  sft_loss_weight: 0 # the coefficient of the SFT loss
+
+checkpointing:
+  enabled: true
+  checkpoint_dir: "results/dpo"
+  metric_name: "val_loss"
+  higher_is_better: false
+  keep_top_k: 3
+  save_period: 50
+
+policy:
+  model_name: "meta-llama/Llama-3.2-1B-Instruct"
+  tokenizer:
+    name: "meta-llama/Llama-3.2-1B-Instruct"
+
+  # number of preference samples per batch
+  # each preference sample corresponds to a pair of chosen and rejected responses
+  # so the actual batch size processed by the model is train_global_batch_size * 2
+  train_global_batch_size: 128
+  train_micro_batch_size: 2
+
+  ## TODO(@ashors) support
+  #logprob_batch_size: ${policy.train_micro_batch_size}
+  max_total_sequence_length: 1024
+  precision: "float32"
+  fsdp_offload_enabled: false
+  activation_checkpointing_enabled: false
+
+  dtensor_cfg:
+    enabled: false
+    cpu_offload: False
+    sequence_parallel: false
+    activation_checkpointing: false
+    tensor_parallel_size: 1
+
+  # makes the training sequence length divisible by the tensor parallel size
+  # this is useful for sequence parallel training
+  make_sequence_length_divisible_by: ${policy.dtensor_cfg.tensor_parallel_size}
+  ## NOTE: there is a known issue with gradient clipping when using Dtensor
+  ## if using dtensor, set max_grad_norm to NULL
+  max_grad_norm: 1.0
+
+  optimizer:
+    name: "torch.optim.AdamW"
+    kwargs:
+      lr: 5.0e-6
+      weight_decay: 0.1
+      betas: [0.9, 0.98]
+      eps: 1e-5
+      # when using Dtensor, we need to set foreach
+      # and fused to False
+      foreach: False
+      fused: False
+    
+  scheduler:
+    - name: "torch.optim.lr_scheduler.LinearLR"
+      kwargs:
+        start_factor: 0.1
+        end_factor: 1.0
+        total_iters: 20
+    - name: "torch.optim.lr_scheduler.ConstantLR"
+      kwargs:
+        factor: 1.0
+        total_iters: 10000000000
+    - milestones: [20]
+    
+data:
+  dataset_name: "HelpSteer3"
+  max_input_seq_length: ${policy.max_total_sequence_length}
+logger:
+  log_dir: "logs"  # Base directory for all logs
+  wandb_enabled: false # Make sure you do a ``wandb login [Your API key]'' before running
+  tensorboard_enabled: false
+  monitor_gpus: false  # If true, will monitor GPU usage and log to wandb and/or tensorboard
+  wandb:
+    project: "dpo-dev"
+    name: "dpo"
+  tensorboard:
+    log_dir: "tb_logs-dpo-dev"
+  gpu_monitoring:
+    collection_interval: 10  # How often to collect GPU usage metrics (in seconds)
+    flush_interval: 10  # How often to flush GPU usage metrics to the loggers (in seconds)
+
+cluster:
+  gpus_per_node: 1
+  num_nodes: 1

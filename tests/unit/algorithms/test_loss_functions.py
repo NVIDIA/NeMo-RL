@@ -15,12 +15,32 @@ import pytest
 import torch
 import numpy as np
 
-from nemo_reinforcer.algorithms.loss_functions import NLLLoss, ClippedPGLossFn
+from nemo_reinforcer.algorithms.loss_functions import (
+    NLLLoss,
+    ClippedPGLossFn,
+    DPOLossFn,
+)
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 from nemo_reinforcer.algorithms.utils import (
     calculate_kl_penalty_joschu2020,
     masked_mean,
 )
+
+
+def setup_dpo_loss_test_data(vocab_size=16, batch_size=1):
+    seq_len = 4
+    data = {
+        "input_ids": torch.arange(vocab_size / 2)
+        .reshape(2 * batch_size, 4)
+        .to(torch.int64)
+        .to("cuda"),
+        "token_mask": torch.tensor([[0, 0, 1, 1], [0, 0, 1, 1]]).to("cuda"),
+        "sample_mask": torch.tensor([1, 1]).to("cuda"),
+        "reference_policy_logprobs": torch.zeros((2 * batch_size, seq_len)).to("cuda"),
+    }
+
+    next_token_logits = torch.zeros((2 * batch_size, seq_len, vocab_size)).to("cuda")
+    return data, next_token_logits
 
 
 def test_nll_loss():
@@ -77,6 +97,200 @@ def test_nll_loss():
     torch.testing.assert_close(loss.cpu(), torch.tensor(999.0))
     assert metrics_dict["num_unmasked_tokens"] == 2
     assert metrics_dict["total_tokens"] == 3
+
+
+def test_dpo_loss():
+    if not torch.cuda.is_available():
+        pytest.skip("No GPU available")
+
+    vocab_size = 16
+    batch_size = 1
+    num_unmasked_tokens = 2
+    data, next_token_logits = setup_dpo_loss_test_data(
+        vocab_size=vocab_size,
+        batch_size=batch_size,
+    )
+    loss_fn = DPOLossFn(
+        cfg={
+            "reference_policy_kl_penalty": 0.0,
+            "preference_loss_weight": 1.0,
+            "sft_loss_weight": 0.0,
+            "preference_average_log_probs": False,
+            "sft_average_log_probs": False,
+        }
+    )
+
+    loss, metrics_dict = loss_fn(
+        next_token_logits,
+        data,
+    )
+
+    ## chosen and rejected errors are the same, so difference between them is 0
+    assert torch.isclose(loss.cpu(), -torch.nn.functional.logsigmoid(torch.tensor(0.0)))
+
+    loss_fn_with_sft = DPOLossFn(
+        cfg={
+            "reference_policy_kl_penalty": 0.0,
+            "preference_loss_weight": 1.0,
+            "sft_loss_weight": 0.5,
+            "preference_average_log_probs": False,
+            "sft_average_log_probs": False,
+        }
+    )
+
+    expected_sft_loss = (
+        -(
+            torch.nn.functional.log_softmax(torch.tensor([[0.0] * vocab_size]), dim=-1)[
+                :, 0
+            ].sum()
+        )
+        * num_unmasked_tokens
+        * batch_size
+    )
+    expected_preference_loss = -torch.nn.functional.logsigmoid(torch.tensor(0.0))
+    assert torch.isclose(
+        loss_fn_with_sft(next_token_logits, data)[0].cpu(),
+        0.5 * expected_sft_loss + expected_preference_loss,
+    )
+
+
+def test_dpo_loss_varying_sequence_lengths():
+    """Test DPO loss with varying sequence lengths and preference_average_log_probs=True."""
+    if not torch.cuda.is_available():
+        pytest.skip("No GPU available")
+
+    # Create DPO loss function with preference_average_log_probs=True
+    dpo_loss_fn_no_avg = DPOLossFn(
+        {
+            "reference_policy_kl_penalty": 0.1,
+            "preference_loss_weight": 1.0,
+            "sft_loss_weight": 0.5,
+            "preference_average_log_probs": False,
+            "sft_average_log_probs": False,
+        }
+    )
+    dpo_loss_fn_avg = DPOLossFn(
+        {
+            "reference_policy_kl_penalty": 0.1,
+            "preference_loss_weight": 1.0,
+            "sft_loss_weight": 0.5,
+            "preference_average_log_probs": True,
+            "sft_average_log_probs": True,
+        }
+    )
+
+    # Create test data with varying sequence lengths
+    # Batch size 4 (2 pairs of chosen/rejected)
+    # Sequence lengths: [3, 5, 4, 6]
+    batch_size = 4
+    max_seq_len = 6
+    vocab_size = 10
+
+    # Create input_ids with varying lengths
+    input_ids = torch.zeros((batch_size, max_seq_len), dtype=torch.long).to("cuda")
+    input_ids[0, :3] = torch.arange(3)  # length 3
+    input_ids[1, :5] = torch.arange(5)  # length 5
+    input_ids[2, :4] = torch.arange(4)  # length 4
+    input_ids[3, :6] = torch.arange(6)  # length 6
+
+    # Create token masks based on sequence lengths
+    token_mask = torch.zeros((batch_size, max_seq_len)).to("cuda")
+    token_mask[0, :3] = 1.0
+    token_mask[1, :5] = 1.0
+    token_mask[2, :4] = 1.0
+    token_mask[3, :6] = 1.0
+
+    # Create sample mask (all valid)
+    sample_mask = torch.ones(batch_size).to("cuda")
+
+    # Create reference policy logprobs
+    # Make chosen responses have slightly higher logprobs than rejected
+    reference_policy_logprobs = torch.zeros((batch_size, max_seq_len)).to("cuda")
+    # Create next token logits
+    next_token_logits = torch.zeros((batch_size, max_seq_len, vocab_size)).to("cuda")
+
+    # Create batched data dictionary
+    data = BatchedDataDict(
+        {
+            "input_ids": input_ids,
+            "reference_policy_logprobs": reference_policy_logprobs,
+            "token_mask": token_mask,
+            "sample_mask": sample_mask,
+        }
+    )
+
+    # Compute loss
+    loss, metrics = dpo_loss_fn_no_avg(next_token_logits, data)
+    loss_avg, metrics_avg = dpo_loss_fn_avg(next_token_logits, data)
+
+    num_unmasked_tokens = token_mask[:, 1:][::2].sum().item()
+    logprobs = torch.nn.functional.log_softmax(next_token_logits[:, 1:], dim=-1)
+    token_logprobs = logprobs.gather(
+        dim=-1, index=input_ids[:, 1:].unsqueeze(-1)
+    ).squeeze(-1)
+    expected_per_token_sft_loss = -(token_logprobs[::2] * token_mask[:, 1:][::2])
+    ## sum across tokens in an example, average across examples
+    expected_sft_loss_no_avg = expected_per_token_sft_loss.sum(-1).mean()
+    ## average across tokens in an example, then average across examples
+    expected_sft_loss_avg = expected_per_token_sft_loss.sum() / num_unmasked_tokens
+
+    assert torch.isclose(torch.tensor(metrics["sft_loss"]), expected_sft_loss_no_avg)
+    assert torch.isclose(torch.tensor(metrics_avg["sft_loss"]), expected_sft_loss_avg)
+
+
+def test_dpo_sft_matches_nll_loss():
+    """Test that DPO SFT loss matches NLL loss when preference_loss_weight=0."""
+    if not torch.cuda.is_available():
+        pytest.skip("No GPU available")
+
+    # Setup test data
+    vocab_size = 8
+    batch_size = 2
+    dpo_data = {
+        "input_ids": torch.randint(0, vocab_size, (batch_size * 2, 5))
+        .to(torch.int64)
+        .to("cuda"),
+        "token_mask": torch.tensor(
+            [[0, 0, 1, 1, 0], [0, 0, 1, 1, 1], [0, 1, 1, 1, 1], [0, 1, 1, 1, 0]]
+        ).to("cuda"),
+        "sample_mask": torch.tensor([1, 1, 1, 1]).to("cuda"),
+        "reference_policy_logprobs": torch.randn((4, 5)).to("cuda"),
+    }
+
+    ## when computing the sft loss in DPO, we only use the chosen samples
+    sft_data = {
+        "input_ids": dpo_data["input_ids"][::2],
+        "token_mask": dpo_data["token_mask"][::2],
+        "sample_mask": dpo_data["sample_mask"][::2],
+    }
+
+    # Create next token logits that will give non-zero loss
+    ## * 2 for chosen/rejected
+    next_token_logits = torch.randn((batch_size * 2, 5, vocab_size)).to("cuda")
+
+    # Compute NLL loss
+    nll_loss_fn = NLLLoss()
+    nll_loss, nll_metrics = nll_loss_fn(next_token_logits[::2], sft_data)
+
+    # Compute DPO loss with preference_loss_weight=0
+    dpo_loss_fn = DPOLossFn(
+        cfg={
+            "reference_policy_kl_penalty": 0.0,
+            "preference_loss_weight": 0.0,  # Disable preference loss
+            "sft_loss_weight": 1.0,  # Only use SFT loss
+            "preference_average_log_probs": False,
+            "sft_average_log_probs": False,
+        }
+    )
+    dpo_loss, dpo_metrics = dpo_loss_fn(next_token_logits, dpo_data)
+
+    # Verify losses match
+    ## since DPO SFT loss just sums across tokens in a batch and then averages over the batch,
+    ## we need to re-normalize by multiplying by the batch size and dividing by the total number
+    ## of unmasked chosen tokens
+    torch.testing.assert_close(
+        dpo_loss / torch.sum(dpo_data["token_mask"][::2]) * batch_size, nll_loss
+    )
 
 
 def _setup_clipped_pg_test_data(batch_size=1, seq_len=4, vocab_size=8, device="cuda"):
