@@ -16,8 +16,6 @@ import pytest
 import pprint
 import torch
 import os
-import unittest.mock
-import torch.distributed as dist
 
 # Define a custom marker for model configuration tests
 pytestmark = pytest.mark.modelconfig
@@ -86,6 +84,17 @@ def create_test_config(
         },
         "max_grad_norm": 1.0,
     }
+
+
+@pytest.fixture(scope="module", autouse=True)
+def skip_tied_weight_check_for_all():
+    """Automatically skip tied weight check for all tests in this module."""
+    os.environ["NRL_SKIP_TIED_WEIGHT_CHECK"] = "1"
+
+    yield
+
+    # Restore the original value
+    os.environ.pop("NRL_SKIP_TIED_WEIGHT_CHECK", None)
 
 
 @pytest.fixture(scope="module")

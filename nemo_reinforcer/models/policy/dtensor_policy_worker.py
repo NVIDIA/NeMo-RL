@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import gc
 
 from collections import defaultdict
@@ -154,13 +155,6 @@ class DTensorPolicyWorker:
             f"World size({world_size}) must be divisible by TP size({tp_size}) to use DTensor"
         )
 
-        num_tied_weights = len(_get_tied_weight_keys(self.model))
-        skip_tie_check = self.cfg.get("skip_tie_check", False)
-        if num_tied_weights != 0 and tp_size > 1 and not skip_tie_check:
-            raise ValueError(
-                f"Using dtensor policy with tp size {tp_size} for model ({model_name}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/reinforcer/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
-            )
-
         mesh_2d = torch.distributed.device_mesh.init_device_mesh(
             "cuda", (dp_size, tp_size), mesh_dim_names=("dp", "tp")
         )
@@ -257,6 +251,17 @@ class DTensorPolicyWorker:
         mbs: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
+        num_tied_weights = len(_get_tied_weight_keys(self.model))
+        skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
+        if (
+            num_tied_weights != 0
+            and self.cfg["dtensor_cfg"]["tensor_parallel_size"] > 1
+            and not skip_tie_check
+        ):
+            raise ValueError(
+                f"Using dtensor policy with tp size {self.cfg['dtensor_cfg']['tensor_parallel_size']} for model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/reinforcer/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+            )
+
         if gbs is None:
             gbs = self.cfg["train_global_batch_size"]
         if mbs is None:
