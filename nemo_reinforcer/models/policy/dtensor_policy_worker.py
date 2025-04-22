@@ -351,11 +351,11 @@ class DTensorPolicyWorker:
                                 dtype=torch.float32,
                             )
 
-                        # Update parameters
-                        self.optimizer.step()
-                        self.scheduler.step()
+                    # Update parameters
+                    self.optimizer.step()
+                    self.scheduler.step()
 
-                    losses.append(torch.tensor(mb_losses).sum().item())
+                losses.append(torch.tensor(mb_losses).sum().item())
 
             # Compute global loss across all ranks
             with torch.no_grad():
