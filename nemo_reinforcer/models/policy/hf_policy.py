@@ -129,7 +129,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         return logprobs
 
     def get_reference_policy_logprobs(
-        self, data: BatchedDataDict[GenerationDatumSpec]
+        self, data: BatchedDataDict[GenerationDatumSpec], micro_batch_size: int = None
     ) -> BatchedDataDict:
         """Get the logprobs of the reference policy for a data dict.
 
@@ -137,7 +137,10 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         """
         sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None)
         futures = self.worker_group.run_all_workers_multiple_data(
-            "get_reference_policy_logprobs", sharded_data, only_on="all_tied_workers"
+            "get_reference_policy_logprobs",
+            sharded_data,
+            common_kwargs={"micro_batch_size": micro_batch_size},
+            only_on="all_tied_workers",
         )
         logprobs = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures)

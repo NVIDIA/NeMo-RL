@@ -21,6 +21,10 @@ from nemo_reinforcer.data.interfaces import (
     TaskDataProcessFnCallable,
     DatumSpec,
 )
+from nemo_reinforcer.data.llm_message_utils import (
+    add_loss_mask_to_message_log,
+    batched_message_log_to_flat_message,
+)
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
 
 
@@ -181,3 +185,64 @@ def eval_collate_fn(data_batch: List[DatumSpec]) -> BatchedDataDict:
         idx=idx,
     )
     return output
+
+
+def dpo_collate_fn(
+    data_batch: List[DatumSpec], tokenizer, make_sequence_length_divisible_by: int
+) -> BatchedDataDict:
+    """Collate function for DPO training.
+
+    This function separates the chosen and rejected responses to create
+    two examples per prompt. The chosen and rejected examples are interleaved
+    along the batch dimension, resulting in a batch size of 2 * len(data_batch).
+    """
+    message_log = []
+    length = []
+    loss_multiplier = []
+    idx = []
+    task_names = []
+    for datum_spec in data_batch:
+        ## interleave chosen and rejected examples
+        message_log.append(datum_spec["message_log_chosen"])
+        message_log.append(datum_spec["message_log_rejected"])
+        length.append(datum_spec["length_chosen"])
+        length.append(datum_spec["length_rejected"])
+        loss_multiplier.extend([datum_spec["loss_multiplier"]] * 2)
+        idx.extend([datum_spec["idx"]] * 2)
+        task_names.extend([datum_spec.get("task_name", None)] * 2)
+    length = torch.tensor(length)
+    loss_multiplier = torch.tensor(loss_multiplier)
+
+    batch_max_length = torch.ones_like(length) * length.max()
+
+    batch = BatchedDataDict(
+        message_log=message_log,
+        length=length,
+        loss_multiplier=loss_multiplier,
+        task_name=task_names,
+        idx=idx,
+        batch_max_length=batch_max_length,
+    )
+
+    ## add loss mask based on role to every message
+    add_loss_mask_to_message_log(
+        batch["message_log"],
+        only_unmask_final=True,
+    )
+
+    cat_and_padded, input_lengths = batched_message_log_to_flat_message(
+        batch["message_log"],
+        pad_value_dict={"token_ids": tokenizer.pad_token_id},
+        make_sequence_length_divisible_by=make_sequence_length_divisible_by,
+    )
+
+    train_data: BatchedDataDict = BatchedDataDict(
+        {
+            "input_ids": cat_and_padded["token_ids"],
+            "input_lengths": input_lengths,
+            "token_mask": cat_and_padded["token_loss_mask"],
+            "sample_mask": loss_multiplier,
+        }
+    )
+
+    return train_data

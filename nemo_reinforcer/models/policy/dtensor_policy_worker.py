@@ -15,7 +15,7 @@
 import gc
 
 from collections import defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, Optional
 
 import ray
@@ -255,119 +255,134 @@ class DTensorPolicyWorker:
         local_gbs = gbs // self.dp_size
         dataset_size = data.get("input_ids").shape[0]
 
-        # Ensure model is in training mode
-        self.model.train()
+        if eval_mode:
+            ctx = torch.no_grad()
+            self.model.eval()
+        else:
+            ctx = nullcontext()
+            # Ensure model is in training mode
+            self.model.train()
 
-        # Get data from batch and move to device
-        data.to("cuda")
+        with ctx:
+            # Get data from batch and move to device
+            data.to("cuda")
 
-        losses = []
-        all_mb_metrics = []
-        for gb_start in range(0, dataset_size, local_gbs):
-            self.optimizer.zero_grad()
-            mb_losses = []
+            losses = []
+            all_mb_metrics = []
+            for gb_start in range(0, dataset_size, local_gbs):
+                self.optimizer.zero_grad()
+                mb_losses = []
 
-            # Calculate number of microbatches to process
-            # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
-            # so its safe to not check for the case where the last data slice is smaller than mbs
-            num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
+                # Calculate number of microbatches to process
+                # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
+                # so its safe to not check for the case where the last data slice is smaller than mbs
+                num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
 
-            for mb in data.slice(
-                gb_start, gb_start + local_gbs
-            ).make_microbatch_iterator(mbs):
-                input_ids = mb.get("input_ids").cuda()
+                for mb in data.slice(
+                    gb_start, gb_start + local_gbs
+                ).make_microbatch_iterator(mbs):
+                    input_ids = mb.get("input_ids").cuda()
 
-                input_lengths = mb.get("input_lengths")
-                batch_size, seq_len = input_ids.shape
-
-                attention_mask = torch.zeros(
-                    (batch_size, seq_len), dtype=torch.long, device=input_ids.device
-                )
-                for i, length in enumerate(input_lengths):
-                    # For right-padded sequence, set 1s at the beginning of the sequence
-                    attention_mask[i, :length] = 1
-
-                with torch.autocast(device_type="cuda", dtype=self.dtype):
+                    input_lengths = mb.get("input_lengths")
                     batch_size, seq_len = input_ids.shape
 
-                    attention_mask_input_all_ones = torch.ones(
+                    attention_mask = torch.zeros(
                         (batch_size, seq_len), dtype=torch.long, device=input_ids.device
                     )
-                    position_ids = torch.arange(
-                        seq_len, device=input_ids.device
-                    ).repeat(batch_size, 1)
+                    for i, length in enumerate(input_lengths):
+                        # For right-padded sequence, set 1s at the beginning of the sequence
+                        attention_mask[i, :length] = 1
 
-                    outputs = self.model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask_input_all_ones,
-                        position_ids=position_ids,
-                        use_cache=False,
-                    )
+                    with torch.autocast(device_type="cuda", dtype=self.dtype):
+                        batch_size, seq_len = input_ids.shape
 
-                # Get logprobs
-                if not hasattr(outputs, "logits"):
-                    logits = self.model.lm_head(outputs.last_hidden_state)
-                else:
-                    logits = outputs.logits
+                        attention_mask_input_all_ones = torch.ones(
+                            (batch_size, seq_len),
+                            dtype=torch.long,
+                            device=input_ids.device,
+                        )
+                        position_ids = torch.arange(
+                            seq_len, device=input_ids.device
+                        ).repeat(batch_size, 1)
 
-                loss, loss_metrics = loss_fn(logits, mb)
-                loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
-                # Backward pass
-
-                # Loss is accumulated across microbatches so we need to scale by the number of microbatches
-                loss = loss / num_microbatches
-                if not eval_mode:
-                    loss.backward()
-                mb_losses.append(loss.item())
-                all_mb_metrics.append(loss_metrics)
-
-            grad_norm = None
-            if not eval_mode:
-                with torch.no_grad():
-                    grad_norm = get_grad_norm(
-                        self.model.parameters(),
-                        dp_group=self.dp_mesh.get_group(),
-                        tp_group=self.tp_mesh.get_group(),
-                        dtype=torch.float32,
-                    )
-                    if self.max_grad_norm is not None:
-                        clip_grad_by_total_norm_(
-                            self.model.parameters(),
-                            max_grad_norm=self.max_grad_norm,
-                            total_norm=grad_norm,
-                            dtype=torch.float32,
+                        outputs = self.model(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask_input_all_ones,
+                            position_ids=position_ids,
+                            use_cache=False,
                         )
 
-                # Update parameters
-                self.optimizer.step()
-                self.scheduler.step()
+                    # Get logprobs
+                    if not hasattr(outputs, "logits"):
+                        logits = self.model.lm_head(outputs.last_hidden_state)
+                    else:
+                        logits = outputs.logits
 
-            losses.append(torch.tensor(mb_losses).sum().item())
+                    loss, loss_metrics = loss_fn(logits, mb)
+                    num_valid_samples = loss_metrics["num_valid_samples"]
+                    loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
+                    # Backward pass
 
-        # Compute global loss across all ranks
-        with torch.no_grad():
-            local_loss = torch.tensor(losses, device="cuda")
-            global_loss = torch.zeros_like(local_loss)
-            torch.distributed.all_reduce(local_loss, group=self.dp_mesh.get_group())
-            global_loss = local_loss / self.dp_size
+                    # Loss is accumulated across microbatches so we need to scale by the number of microbatches
+                    loss = loss / num_microbatches
+                    if not eval_mode:
+                        ## NOTE: invalid samples should be multiplied
+                        ## by zero in the loss function to prevent them
+                        ## from affecting the gradien
+                        loss.backward()
+                    if num_valid_samples > 0:
+                        mb_losses.append(loss.item())
+                        all_mb_metrics.append(loss_metrics)
 
-        # Aggregate metrics across all microbatches
-        mb_metrics = defaultdict(list)
-        for m in all_mb_metrics:
-            for k, v in m.items():
-                mb_metrics[k].append(v)
+                grad_norm = None
+                if not eval_mode:
+                    with torch.no_grad():
+                        grad_norm = get_grad_norm(
+                            self.model.parameters(),
+                            dp_group=self.dp_mesh.get_group(),
+                            tp_group=self.tp_mesh.get_group(),
+                            dtype=torch.float32,
+                        )
+                        if self.max_grad_norm is not None:
+                            clip_grad_by_total_norm_(
+                                self.model.parameters(),
+                                max_grad_norm=self.max_grad_norm,
+                                total_norm=grad_norm,
+                                dtype=torch.float32,
+                            )
 
-        metrics = {
-            "global_loss": global_loss.cpu(),
-            "local_loss": local_loss.cpu(),
-            "grad_norm": grad_norm,
-            "rank": torch.distributed.get_rank(),
-            "all_mb_metrics": dict(mb_metrics),
-        }
+                        # Update parameters
+                        self.optimizer.step()
+                        self.scheduler.step()
 
-        return metrics
+                    losses.append(torch.tensor(mb_losses).sum().item())
 
-    def get_logprobs(self, data: BatchedDataDict) -> BatchedDataDict:
+            # Compute global loss across all ranks
+            with torch.no_grad():
+                local_loss = torch.tensor(losses, device="cuda")
+                global_loss = torch.zeros_like(local_loss)
+                torch.distributed.all_reduce(local_loss, group=self.dp_mesh.get_group())
+                global_loss = local_loss / self.dp_size
+
+            # Aggregate metrics across all microbatches
+            mb_metrics = defaultdict(list)
+            for m in all_mb_metrics:
+                for k, v in m.items():
+                    mb_metrics[k].append(v)
+
+            metrics = {
+                "global_loss": global_loss.cpu(),
+                "local_loss": local_loss.cpu(),
+                "grad_norm": grad_norm,
+                "rank": torch.distributed.get_rank(),
+                "all_mb_metrics": dict(mb_metrics),
+            }
+
+            return metrics
+
+    def get_logprobs(
+        self, data: BatchedDataDict, micro_batch_size: int = None
+    ) -> BatchedDataDict:
         """Get the logprobs of the model for a batch of data.
 
         Uses the configured logprob_batch_size to do microbatching.
@@ -380,7 +395,11 @@ class DTensorPolicyWorker:
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
-        logprob_batch_size = self.cfg["logprob_batch_size"]
+        logprob_batch_size = (
+            micro_batch_size
+            if micro_batch_size is not None
+            else self.cfg["logprob_batch_size"]
+        )
         all_log_probs = []
         self.model.eval()
 
@@ -495,7 +514,9 @@ class DTensorPolicyWorker:
                     val = to_local_if_dtensor(v)
                     val.copy_(curr_buffers[k])
 
-    def get_reference_policy_logprobs(self, data: BatchedDataDict) -> BatchedDataDict:
+    def get_reference_policy_logprobs(
+        self, data: BatchedDataDict, micro_batch_size: int = None
+    ) -> BatchedDataDict:
         """Get the logprobs from the reference policy for a batch of data.
 
         Returns:
@@ -504,7 +525,7 @@ class DTensorPolicyWorker:
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
         with self.use_reference_model():
-            reference_logprobs = self.get_logprobs(data)
+            reference_logprobs = self.get_logprobs(data, micro_batch_size)
 
         return_data = BatchedDataDict()
         return_data["reference_logprobs"] = reference_logprobs["logprobs"].cpu()
