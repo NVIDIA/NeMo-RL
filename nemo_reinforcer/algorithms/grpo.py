@@ -271,20 +271,14 @@ def setup(
 # ===============================================================================
 
 
-import time
 def refit_policy_generation(
     policy: PolicyInterface,
     policy_generation: GenerationInterface,
     refit_buffer_size: int,  # GB
 ):
     """Refit the policy generation interface with the latest policy weights."""
-    s = time.time()
     policy.offload_before_refit()
-    print(f"[offload_before_refit] {time.time() - s}s")
-    s = time.time()
     policy_generation.prepare_for_generation(tags=["weights"])
-    print(f"[prepare_for_generation - weights] {time.time() - s}s")
-    s = time.time()
     # Streaming update weights to save memory
     state_dict_info = policy.prepare_weights_for_ipc()
     # group keys to save time
@@ -299,20 +293,12 @@ def refit_policy_generation(
             available_bytes = refit_buffer_size * (1024 ** 3)
     if len(keys) > 0:
         split_keys.append(keys)
-    print(f"[prepare_weights_for_ipc] {time.time() - s}s")
-    s = time.time()
     # do update
     for keys in split_keys:
         ipc_handles = policy.get_weights_ipc_handles(keys)
         policy_generation.update_weights(ipc_handles)
-    print(f"[update_weights] {time.time() - s}s")
-    s = time.time()
     policy.offload_after_refit()
-    print(f"[offload_after_refit] {time.time() - s}s")
-    s = time.time()
     policy_generation.prepare_for_generation(tags=["kv_cache"])
-    print(f"[prepare_for_generation - kv_cache] {time.time() - s}s")
-    s = time.time()
 
 
 def generate_responses(
