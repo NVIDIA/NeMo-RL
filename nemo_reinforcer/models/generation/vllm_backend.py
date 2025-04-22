@@ -40,12 +40,12 @@ class VllmInternalWorkerExtension:
         try:
             # Get handles for this device
             device_uuid = self.report_device_id()
-            named_handles = ipc_handles[device_uuid]
+            handles = ipc_handles[device_uuid]
             device_id = self.device.index
-
             weights = []
-            for name, handle in named_handles:
-                # Process each handle to get the tensor
+
+            # Process each handle to get the tensor
+            for name, handle in handles:
                 func, args = handle
                 list_args = list(args)
                 # Update device ID to match the current device

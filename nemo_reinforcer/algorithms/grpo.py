@@ -282,7 +282,7 @@ def refit_policy_generation(
     # Streaming update weights to save memory
     state_dict_info = policy.prepare_weights_for_ipc()
     # group keys to save time
-    available_bytes = refit_buffer_size * (1024 ** 3)
+    available_bytes = refit_buffer_size * (1024**3)
     split_keys, keys = [], []
     for key, size_in_bytes in state_dict_info:
         keys.append(key)
@@ -290,7 +290,7 @@ def refit_policy_generation(
         if available_bytes <= 0:
             split_keys.append(keys)
             keys = []
-            available_bytes = refit_buffer_size * (1024 ** 3)
+            available_bytes = refit_buffer_size * (1024**3)
     if len(keys) > 0:
         split_keys.append(keys)
     # do update
@@ -503,7 +503,11 @@ def grpo_train(
             print(f"▶ Generating responses for batch of size {len(input_ids)}...")
             with timer.time("prepare_for_generation"):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(policy, policy_generation, refit_buffer_size)
+                    refit_policy_generation(
+                        policy,
+                        policy_generation,
+                        refit_buffer_size,
+                    )
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
@@ -607,7 +611,11 @@ def grpo_train(
             # Run validation if it's a validation step
             if val_period > 0 and (step + 1) % val_period == 0:
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(policy, policy_generation, refit_buffer_size)
+                    refit_policy_generation(
+                        policy,
+                        policy_generation,
+                        refit_buffer_size,
+                    )
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()

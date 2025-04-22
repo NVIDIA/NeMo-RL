@@ -848,7 +848,11 @@ def test_vllm_generation_with_stop(
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print(f"refitting vllm policy...")
-        refit_policy_generation(hf_policy, vllm_generation, hf_config["refit_buffer_size"])
+        refit_policy_generation(
+            hf_policy,
+            vllm_generation,
+            hf_config["refit_buffer_size"],
+        )
 
     # test generate
     outputs = vllm_generation.generate(test_input_data, greedy=True)
