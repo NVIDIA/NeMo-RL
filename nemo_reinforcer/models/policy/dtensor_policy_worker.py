@@ -155,7 +155,8 @@ class DTensorPolicyWorker:
         )
 
         num_tied_weights = len(_get_tied_weight_keys(self.model))
-        if num_tied_weights != 0 and tp_size > 1:
+        skip_tie_check = self.cfg.get("skip_tie_check", False)
+        if num_tied_weights != 0 and tp_size > 1 and not skip_tie_check:
             raise ValueError(
                 f"Using dtensor policy with tp size {tp_size} for model ({model_name}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/reinforcer/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )

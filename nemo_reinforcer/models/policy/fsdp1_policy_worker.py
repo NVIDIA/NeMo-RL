@@ -94,8 +94,10 @@ class FSDP1PolicyWorker:
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
 
+        # Check if the model has tied weights
         num_tied_weights = len(_get_tied_weight_keys(self.model))
-        if num_tied_weights != 0:
+        skip_tie_check = self.cfg.get("skip_tie_check", False)
+        if num_tied_weights != 0 and not skip_tie_check:
             raise ValueError(
                 f"Using FSP1 with a model ({model_name}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/reinforcer/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )

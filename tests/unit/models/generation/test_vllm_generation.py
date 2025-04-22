@@ -27,30 +27,6 @@ from nemo_reinforcer.models.generation.interfaces import configure_generation_co
 from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
 from nemo_reinforcer.models.policy import PolicyConfig
 
-
-# Remove this once https://github.com/NVIDIA/reinforcer/issues/227 is fixed
-@pytest.fixture(scope="module", autouse=True)
-def patch_tied_weights_for_module():
-    """
-    Module-scoped fixture to automatically monkeypatch
-    _get_tied_weight_keys from transformers for all tests in this file.
-    """
-    # Create a module-scoped MonkeyPatch object
-    mpatch = MonkeyPatch()
-    print(
-        f"\nApplying module-level patch to transformers.modeling_utils._get_tied_weight_keys for {__name__}"
-    )
-    mpatch.setattr(
-        "transformers.modeling_utils._get_tied_weight_keys",
-        lambda model, **kwargs: [],  # Always return empty list
-        raising=True,
-    )
-    # Yield control to the tests in the module
-    yield
-    # MonkeyPatch object handles cleanup automatically when the fixture scope ends
-    mpatch.undo()
-
-
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
@@ -80,6 +56,7 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
         "tokenizer": {
             "name": basic_vllm_test_config["tokenizer"]["name"],
         },
+        "skip_tie_check": True,
         # Required training parameters
         "train_global_batch_size": 1,
         "train_micro_batch_size": 1,
