@@ -346,17 +346,10 @@ class DTensorPolicyWorker:
                         if self.max_grad_norm is not None:
                             clip_grad_by_total_norm_(
                                 self.model.parameters(),
-                                dp_group=self.dp_mesh.get_group(),
-                                tp_group=self.tp_mesh.get_group(),
+                                max_grad_norm=self.max_grad_norm,
+                                total_norm=grad_norm,
                                 dtype=torch.float32,
                             )
-                            if self.max_grad_norm is not None:
-                                clip_grad_by_total_norm_(
-                                    self.model.parameters(),
-                                    max_grad_norm=self.max_grad_norm,
-                                    total_norm=grad_norm,
-                                    dtype=torch.float32,
-                                )
 
                         # Update parameters
                         self.optimizer.step()
@@ -387,7 +380,9 @@ class DTensorPolicyWorker:
 
             return metrics
 
-    def get_logprobs(self, data: BatchedDataDict) -> BatchedDataDict:
+    def get_logprobs(
+        self, data: BatchedDataDict, micro_batch_size: int = None
+    ) -> BatchedDataDict:
         """Get the logprobs of the model for a batch of data.
 
         Uses the configured logprob_batch_size to do microbatching.
