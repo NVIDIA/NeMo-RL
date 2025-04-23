@@ -177,7 +177,9 @@ class DTensorPolicyWorker:
         if self.cpu_offload:
             self.model = self.move_buffer_to_device(self.model, "cpu")
 
-        self._held_model_params = None
+        # used for streaming update inference engine weights
+        self._held_sharded_state_dict_reference = None
+        self._held_streamed_param_reference = None
 
         if init_reference_model:
             self.reference_model_state_dict = get_cpu_state_dict(
@@ -237,6 +239,9 @@ class DTensorPolicyWorker:
 
     def is_alive(self):
         return True
+
+    def reset_peak_memory_stats(self):
+        torch.cuda.reset_peak_memory_stats()
 
     def get_gpu_info(self):
         """Return information about the GPU being used by this worker."""
@@ -365,11 +370,11 @@ class DTensorPolicyWorker:
                                 dtype=torch.float32,
                             )
 
-                        # Update parameters
-                        self.optimizer.step()
-                        self.scheduler.step()
+                    # Update parameters
+                    self.optimizer.step()
+                    self.scheduler.step()
 
-                    losses.append(torch.tensor(mb_losses).sum().item())
+                losses.append(torch.tensor(mb_losses).sum().item())
 
             # Compute global loss across all ranks
             with torch.no_grad():
@@ -568,50 +573,45 @@ class DTensorPolicyWorker:
         return get_device_uuid(device_idx)
 
     @torch.no_grad()
-    def get_weight_ipc_handles(self, offload_model=True):
+    def prepare_weights_for_ipc(self):
+        self.model = self.move_to_cuda(self.model)
+        self._held_sharded_state_dict_reference = self.model.state_dict()
+        # Collect info for streaming multiple tensors
+        state_dict_info = []
+        for name, tensor in self._held_sharded_state_dict_reference.items():
+            # dtensor's numel will return complete tensor instead of only local tensor
+            size_in_bytes = tensor.element_size() * tensor.numel()
+            state_dict_info.append((name, size_in_bytes))
+        return state_dict_info
+
+    @torch.no_grad()
+    def get_weights_ipc_handles(self, keys):
         from torch.multiprocessing.reductions import reduce_tensor
 
-        self.model = self.move_to_cuda(self.model)
-        params = self.model.state_dict()
-
-        # Create a copy of parameters in the desired dtype (bfloat16 or float32)
-        dtype_params = {}
-        for name, param in params.items():
-            if isinstance(param, DTensor):
-                param = param.full_tensor()
-
+        converted_params = {}
+        for key in keys:
+            # Get full_tensor for dtensor (GPU > 1)
+            tensor = self._held_sharded_state_dict_reference[key]
+            if isinstance(tensor, DTensor):
+                full_tensor = tensor.full_tensor()
+            else:
+                full_tensor = tensor
             # Convert parameters to the configured dtype
-            dtype_params[name] = param.to(
-                device="cuda", dtype=self.dtype, non_blocking=True
-            )
+            converted_params[key] = full_tensor.to(self.dtype, non_blocking=True)
 
-        for name, buffer in self.model.named_buffers():
-            if isinstance(buffer, DTensor):
-                buffer = buffer.full_tensor()
+        # Temporary record the full tensor for cleanup
+        # It is needed for cleanup the last full_tensor in the refit process
+        self._held_streamed_param_reference = converted_params
 
-            dtype_params[name] = buffer.to(
-                device="cuda", dtype=self.dtype, non_blocking=True
-            )
-
-        torch.cuda.synchronize()
-
-        # Replace the original params with the converted ones
-        params = dtype_params
-
-        # hold on to the params so we can explicitly delete them after refit
-        self._held_model_params = params
-
-        data = {}
+        # Get device UUID for IPC
         device_uuid = self.report_device_id()
-        for name, p in params.items():
-            data[name] = reduce_tensor(p.detach())
+        # Create handles for the tensors
+        all_handles = []
+        for key, p in converted_params.items():
+            handle = reduce_tensor(p.detach())
+            all_handles.append((key, handle))
 
-        if offload_model or self.cpu_offload:
-            self.model = self.move_to_cpu(self.model)
-            gc.collect()
-            torch.cuda.empty_cache()
-
-        return {device_uuid: data}
+        return {device_uuid: all_handles}
 
     def prepare_for_lp_inference(self):
         if not self.cpu_offload:
@@ -669,9 +669,13 @@ class DTensorPolicyWorker:
         torch.randn(1).cuda()  # wake up torch allocator
         self.offload_before_refit()  # rerun the old offload function
 
-        if self._held_model_params is not None:
-            del self._held_model_params
-            self._held_model_params = None
+        # Clean up the held tensors
+        if self._held_sharded_state_dict_reference is not None:
+            del self._held_sharded_state_dict_reference
+            self._held_sharded_state_dict_reference = None
+        if self._held_streamed_param_reference is not None:
+            del self._held_streamed_param_reference
+            self._held_streamed_param_reference = None
 
         gc.collect()
         torch.cuda.empty_cache()
