@@ -162,16 +162,12 @@ def test_input_data(tokenizer):
 @pytest.fixture(scope="module", autouse=True)
 def skip_tied_weight_check_for_all():
     """Automatically skip tied weight check for all tests in this module."""
-    original_env_value = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK", None)
     os.environ["NRL_SKIP_TIED_WEIGHT_CHECK"] = "1"
 
     yield
 
     # Restore the original value
-    if original_env_value is not None:
-        os.environ["NRL_SKIP_TIED_WEIGHT_CHECK"] = original_env_value
-    else:
-        os.environ.pop("NRL_SKIP_TIED_WEIGHT_CHECK", None)
+    os.environ.pop("NRL_SKIP_TIED_WEIGHT_CHECK", None)
 
 
 def test_vllm_missing_required_config_key(cluster):
