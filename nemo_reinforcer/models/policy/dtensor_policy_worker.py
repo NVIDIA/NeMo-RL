@@ -25,7 +25,7 @@ from torch.distributed.fsdp import (
     FSDPModule,
 )
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers.modeling_utils import _get_tied_weight_keys
+from transformers.integrations.accelerate import find_tied_parameters
 from nemo_reinforcer.models.dtensor.parallelize import _parallelize_model
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
@@ -256,7 +256,7 @@ class DTensorPolicyWorker:
         mbs: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
-        num_tied_weights = len(_get_tied_weight_keys(self.model))
+        num_tied_weights = len(find_tied_parameters(self.model))
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
         if (
             num_tied_weights != 0
