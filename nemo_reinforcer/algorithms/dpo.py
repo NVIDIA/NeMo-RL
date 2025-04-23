@@ -482,6 +482,7 @@ def dpo_train(
             losses = train_results["loss"]
             metrics = {
                 "loss": train_results["loss"].numpy(),
+                "grad_norm": train_results["grad_norm"],
             }
             metrics.update(train_results["all_mb_metrics"])
             for k, v in metrics.items():
