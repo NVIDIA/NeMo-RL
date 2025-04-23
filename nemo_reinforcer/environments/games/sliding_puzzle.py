@@ -82,11 +82,11 @@ class SlidingPuzzleGameLogic:
             "solution": solution,
             "empty_pos": empty_pos,
             "commands": {
-                "slide r c": "Slide tile at row r, column c into the empty space",
                 "up": "Slide tile below empty space up",
                 "down": "Slide tile above empty space down",
                 "left": "Slide tile to the right of empty space left",
                 "right": "Slide tile to the left of empty space right",
+                "view": "View the current state of the board",
             },
         }
 
@@ -99,8 +99,8 @@ class SlidingPuzzleGameLogic:
             f"\n===== SLIDING PUZZLE =====\n"
             f"Arrange the {size}x{size} grid by sliding tiles into the empty space.\n"
             f"- The goal is to arrange numbers from 1 to {size * size - 1} in order\n"
-            f"- Use 'slide r c' to slide a specific tile\n"
-            f"- Or use 'up', 'down', 'left', 'right' to slide in that direction"
+            f"- Use 'up', 'down', 'left', 'right' to slide in that direction\n"
+            f"- Use 'view' to see the current state of the board"
         )
 
     @staticmethod
@@ -307,8 +307,6 @@ class SlidingPuzzleRunner:
         parsed_action = self._parse_action(last_assistant_msg_content)
 
         if parsed_action is None:
-            # Handle cases where parsing failed or it wasn't assistant's turn properly
-            # is_terminated = True  # Penalize for bad format
             rendered_board = SlidingPuzzleGameLogic.render(game_state)
             next_observation_content = f"<environment>\n{rendered_board}\n\nInvalid response format no move made. Try <action></action> like this: <action>your_action</action></environment>"
             next_metadata = None
@@ -326,8 +324,6 @@ class SlidingPuzzleRunner:
             next_metadata["game_state"] = next_game_state
             next_metadata["num_moves"] = current_moves + 1
 
-            # Combine rendered board and step response for the next observation
-            rendered_board = SlidingPuzzleGameLogic.render(next_game_state)
             next_observation_content = f"<environment>\n{step_response}\n</environment>"
 
             if is_terminated:
