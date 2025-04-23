@@ -165,10 +165,10 @@ def run_env_eval(vllm_generation, dataloader, env, master_config):
             get_keys_from_message_log(batch["message_log"][i], ["role", "content"])
             for i in range(len(batch["message_log"]))
         ]
-        _, _, rewards, _ = ray.get(env.step.remote(to_env, batch["extra_env_info"]))
+        env_return = ray.get(env.step.remote(to_env, batch["extra_env_info"]))
 
-        score += rewards.sum().item()
-        count += len(rewards)
+        score += env_return.rewards.sum().item()
+        count += len(env_return.rewards)
 
     # Cleanup before printing results
     ray.get(env.shutdown.remote())
