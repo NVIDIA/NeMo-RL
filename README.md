@@ -34,9 +34,9 @@ What you can expect:
 - ✅ **HuggingFace Integration** - Works with 1-8B models (Qwen1.5, Llama)
 - ✅ **Distributed Training** - FSDP support and Ray-based infrastructure
 - ✅ **Environment Support** - Support for multi-environment training.
-- ✅ **Learning Algorithms** - GRPO (Group Relative Policy Optimization) and SFT (Supervised Fine-Tuning)
+- ✅ **Learning Algorithms** - GRPO (Group Relative Policy Optimization), SFT (Supervised Fine-Tuning), and DPO (Direct Preference Optimization)
+- ✅ **Multi-Turn RL** - multi-turn generation and training for RL with tool use, games, etc. 
 - ✅ **Worker Isolation** - Process isolation between RL Actors (no worries about global state)
-- ✅ **DPO Algorithm** - Direct Preference Optimization for alignment
 - 🔜 **Larger Model Support** - Native PyTorch support for models up to 70B parameters
 - 🔜 **Advanced Parallelism** - FSDP2, TP, SP, and sequence packing for efficient training
 - 🔜 **Environment Isolation** - Dependency isolation between components
@@ -115,6 +115,12 @@ sbatch \
     --time=4:0:0 \
     --gres=gpu:8 \
     ray.sub
+```
+
+We also support multi-turn generation and training (tool use, games, etc.).
+Reference example for training to play a Sliding Puzzle Game:
+```sh
+uv run python examples/run_grpo_sliding_puzzle.py 
 ```
 
 ### SFT
