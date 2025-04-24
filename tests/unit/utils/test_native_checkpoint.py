@@ -17,12 +17,12 @@ import pytest
 import torch
 from tempfile import TemporaryDirectory
 
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
-from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.models.policy.hf_policy import HfPolicy
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from nemo_reinforcer.utils.native_checkpoint import (
+from nemo_rl.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
     ModelState,

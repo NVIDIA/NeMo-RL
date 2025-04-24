@@ -18,7 +18,7 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-from nemo_reinforcer.data.hf_datasets.dpo import DPODataset
+from nemo_rl.data.hf_datasets.dpo import DPODataset
 
 
 @pytest.fixture

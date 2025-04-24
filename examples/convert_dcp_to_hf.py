@@ -16,7 +16,7 @@ import argparse
 import json
 import os
 import torch
-from nemo_reinforcer.utils.native_checkpoint import convert_dcp_to_hf
+from nemo_rl.utils.native_checkpoint import convert_dcp_to_hf
 
 
 def parse_args():

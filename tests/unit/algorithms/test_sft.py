@@ -16,8 +16,8 @@ import pytest
 from unittest.mock import MagicMock
 import torch
 from torchdata.stateful_dataloader import StatefulDataLoader
-from nemo_reinforcer.algorithms.sft import sft_train, _default_sft_save_state
-from nemo_reinforcer.algorithms.loss_functions import NLLLoss
+from nemo_rl.algorithms.sft import sft_train, _default_sft_save_state
+from nemo_rl.algorithms.loss_functions import NLLLoss
 
 
 @pytest.fixture

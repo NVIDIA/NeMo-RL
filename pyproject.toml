@@ -3,12 +3,12 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nemo-reinforcer"
+name = "nemo-rl"
 dynamic = [
     "version",
     "readme",
 ]
-description = "Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
+description = "Nemo-RL: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
 requires-python = ">=3.10"
 license = {text = "Apache 2.0"}
 dependencies = [
@@ -30,10 +30,10 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["nemo_reinforcer"]
+packages = ["nemo_rl"]
 
 [tool.setuptools.dynamic]
-version = {attr = "nemo_reinforcer.__version__"}  # any module attribute compatible with ast.literal_eval
+version = {attr = "nemo_rl.__version__"}  # any module attribute compatible with ast.literal_eval
 readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.optional-dependencies]
@@ -79,7 +79,7 @@ exclude = '''
 '''
 
 [tool.pytest.ini_options]
-addopts = "--cov=nemo_reinforcer --cov-report=term --cov-report=json -s -rA -x"
+addopts = "--cov=nemo_rl --cov-report=term --cov-report=json -s -rA -x"
 testpaths = ["tests"]
 python_files = "test_*.py"
 

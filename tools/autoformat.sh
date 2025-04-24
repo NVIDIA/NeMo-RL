@@ -24,7 +24,7 @@ if [[ $GIT_MAJOR -eq 2 && $GIT_MINOR -lt 31 ]]; then
 fi
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-PACKAGE_ROOT=$(realpath $SCRIPT_DIR/../nemo_reinforcer)
+PACKAGE_ROOT=$(realpath $SCRIPT_DIR/../nemo_rl)
 
 ruff check $PACKAGE_ROOT --fix
 ruff format $PACKAGE_ROOT

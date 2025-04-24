@@ -14,7 +14,7 @@
 from io import StringIO
 import time
 import pytest
-from nemo_reinforcer.utils.logger import GPUMonitoringConfig
+from nemo_rl.utils.logger import GPUMonitoringConfig
 from tests import unit
 import torch
 import torch.distributed as dist
@@ -33,7 +33,7 @@ import random
 from typing import Callable
 import ray
 import json
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
+from nemo_rl.distributed.virtual_cluster import init_ray
 from typing import TypedDict
 from datetime import datetime
 import unittest.mock
@@ -103,7 +103,7 @@ def pytest_sessionstart(session):
         start_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         metrics={},
         gpu_types=[],
-        coverage="[n/a] run with --cov=nemo_reinforcer",
+        coverage="[n/a] run with --cov=nemo_rl",
     )
 
 
@@ -128,7 +128,7 @@ def session_data(request, init_ray_cluster):
     ############################################################
     # 2. Gather the ray metadata #
     ############################################################
-    from nemo_reinforcer.utils.logger import RayGpuMonitorLogger
+    from nemo_rl.utils.logger import RayGpuMonitorLogger
 
     logger = RayGpuMonitorLogger(
         collection_interval=float("inf"),
@@ -231,7 +231,7 @@ def ray_gpu_monitor(init_ray_cluster):
 
     This fixture doesn't need to be called directly.
     """
-    from nemo_reinforcer.utils.logger import RayGpuMonitorLogger
+    from nemo_rl.utils.logger import RayGpuMonitorLogger
 
     gpu_monitor = RayGpuMonitorLogger(
         collection_interval=1,

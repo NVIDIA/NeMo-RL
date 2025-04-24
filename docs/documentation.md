@@ -9,7 +9,7 @@
 
 ## Building
 
-The following sections describe how to set up and build the NeMo-Reinforcer documentation.
+The following sections describe how to set up and build the NeMo-RL documentation.
 
 Switch to the documentation source folder and generate HTML output.
 
@@ -62,7 +62,7 @@ def add(x: int, y: int) -> int:
 
     Examples:
     ```{doctest}
-    >>> from nemo_reinforcer.made_up_package import add
+    >>> from nemo_rl.made_up_package import add
     >>> add(1, 2)
     3
     ```

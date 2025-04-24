@@ -16,13 +16,13 @@ import ray
 import torch
 from typing import Dict, List, Tuple, Optional, TypedDict, Literal, Any
 
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.data.interfaces import LLMMessageLogType
-from nemo_reinforcer.environments.interfaces import (
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.data.interfaces import LLMMessageLogType
+from nemo_rl.environments.interfaces import (
     EnvironmentInterface,
     EnvironmentReturn,
 )
-from nemo_reinforcer.distributed.virtual_cluster import PY_EXECUTABLES
+from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 
 
 class MultiStepCalcMetadata(TypedDict):

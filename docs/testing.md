@@ -1,4 +1,4 @@
-# Testing Reinforcer
+# Testing NeMo-RL
 
 ## Unit Tests
 

@@ -1,4 +1,4 @@
-# Supervised Fine-tuning in Reinforcer
+# Supervised Fine-tuning in NeMo-RL
 
 ## Launch an SFT Run
 
@@ -12,7 +12,7 @@ If not specified, `config` will default to [examples/configs/sft.yaml](../../exa
 
 ## Configuration
 
-Reinforcer allows users to configure experiments using `yaml` config files. An example SFT configuration file can be found [here](../../examples/configs/sft.yaml).
+NeMo-RL allows users to configure experiments using `yaml` config files. An example SFT configuration file can be found [here](../../examples/configs/sft.yaml).
 
 To override a value in the config, either update the value in the `yaml` file directly, or pass the override via the command line. For example:
 
@@ -25,11 +25,11 @@ uv run examples/run_sft.py \
 
 ## Datasets
 
-SFT datasets in Reinforcer are encapsulated using classes. Each SFT data class is expected to have the following attributes:
+SFT datasets in NeMo-RL are encapsulated using classes. Each SFT data class is expected to have the following attributes:
   1. `formatted_ds`: The dictionary of formatted datasets. This dictionary should contain `train` and `validation` splits, and each split should conform to the format described below.
   2. `task_spec`: The `TaskDataSpec` for this dataset. This should specify the name you choose for this dataset.
 
-SFT datasets are expected to follow the HuggingFace chat format. Refer to the [chat dataset document](../design-docs/chat-datasets.md) for details. If your data is not in the correct format, simply write a preprocessing script to convert the data into this format. [data/hf_datasets/squad.py](../../nemo_reinforcer/data/hf_datasets/squad.py) has an example:
+SFT datasets are expected to follow the HuggingFace chat format. Refer to the [chat dataset document](../design-docs/chat-datasets.md) for details. If your data is not in the correct format, simply write a preprocessing script to convert the data into this format. [data/hf_datasets/squad.py](../../nemo_rl/data/hf_datasets/squad.py) has an example:
 
 ```python
 def format_squad(data):
@@ -51,7 +51,7 @@ def format_squad(data):
     }
 ```
 
-Reinforcer SFT uses HuggingFace chat templates to format the individual examples. Three types of chat templates are supported, which can be configured via `tokenizer.chat_template` in your yaml config (see [sft.yaml](../../examples/configs/sft.yaml) for an example):
+NeMo-RL SFT uses HuggingFace chat templates to format the individual examples. Three types of chat templates are supported, which can be configured via `tokenizer.chat_template` in your yaml config (see [sft.yaml](../../examples/configs/sft.yaml) for an example):
 
 1. Apply the tokenizer's default chat template. To use the tokenizer's default, either omit `tokenizer.chat_template` from the config altogether, or set `tokenizer.chat_template="default"`.
 2. Use a "passthrough" template which simply concatenates all messages. This is desirable if the chat template has been applied to your dataset as an offline preprocessing step. In this case, you should set `tokenizer.chat_template` to None as follows:
@@ -67,7 +67,7 @@ Reinforcer SFT uses HuggingFace chat templates to format the individual examples
     ```
 
 
-By default, NeMo-Reinforcer has support for `Squad` and `OpenAssistant` datasets. Both of these datasets are downloaded from HuggingFace and preprocessed on-the-fly, so there's no need to provide a path to any datasets on disk.
+By default, NeMo-RL has support for `Squad` and `OpenAssistant` datasets. Both of these datasets are downloaded from HuggingFace and preprocessed on-the-fly, so there's no need to provide a path to any datasets on disk.
 
 Adding a new dataset is a straightforward process.
 As long as your custom dataset has the `formatted_ds` and `task_spec` attributes described above, it can serve as a drop-in replacement for Squad and OpenAssistant.

@@ -1807,7 +1807,7 @@ wheels = [
 ]
 
 [[package]]
-name = "nemo-reinforcer"
+name = "nemo-rl"
 source = { editable = "." }
 dependencies = [
     { name = "accelerate" },

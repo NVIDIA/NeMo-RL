@@ -1,7 +1,7 @@
-# Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to >100B Parameters, scaling from 1 GPU to 100s
+# Nemo-RL: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to >100B Parameters, scaling from 1 GPU to 100s
 
 <!-- markdown all in one -->
-- [Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to \>100B Parameters, scaling from 1 GPU to 100s](#nemo-reinforcer-a-scalable-and-efficient-post-training-library-for-models-ranging-from-tiny-to-100b-parameters-scaling-from-1-gpu-to-100s)
+- [Nemo-RL: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to \>100B Parameters, scaling from 1 GPU to 100s](#nemo-rl-a-scalable-and-efficient-post-training-library-for-models-ranging-from-tiny-to-100b-parameters-scaling-from-1-gpu-to-100s)
   - [Features](#features)
   - [Prerequisuites](#prerequisuites)
   - [Quick start](#quick-start)
@@ -17,7 +17,7 @@
       - [Multi-node](#multi-node-2)
   - [Cluster Start](#cluster-start)
 
-**Nemo-Reinforcer** is a scalable and efficient post-training library designed for models ranging from 1 GPU to thousands, and from tiny to over 100 billion parameters.
+**Nemo-RL** is a scalable and efficient post-training library designed for models ranging from 1 GPU to thousands, and from tiny to over 100 billion parameters.
 
 What you can expect:
 
@@ -111,7 +111,7 @@ uv run python examples/run_grpo_math.py \
 #### Multi-node
 
 ```sh
-# Run from the root of NeMo-Reinforcer repo
+# Run from the root of NeMo-RL repo
 NUM_ACTOR_NODES=2
 
 # grpo_math_8b uses Llama-3.1-8B-Instruct model
@@ -131,7 +131,7 @@ sbatch \
 ##### GRPO Qwen2.5-32B
 
 ```sh
-# Run from the root of NeMo-Reinforcer repo
+# Run from the root of NeMo-RL repo
 NUM_ACTOR_NODES=16
 
 # Download Qwen before the job starts to avoid spending time downloading during the training loop
@@ -187,7 +187,7 @@ Refer to `examples/configs/sft.yaml` for a full list of parameters that can be o
 #### Multi-node
 
 ```sh
-# Run from the root of NeMo-Reinforcer repo
+# Run from the root of NeMo-RL repo
 NUM_ACTOR_NODES=2
 
 COMMAND="uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'" \
@@ -244,7 +244,7 @@ Refer to [dpo.yaml](examples/configs/dpo.yaml) for a full list of parameters tha
 For distributed DPO training across multiple nodes, modify the following script for your use case:
 
 ```sh
-# Run from the root of NeMo-Reinforcer repo
+# Run from the root of NeMo-RL repo
 ## number of nodes to use for your job
 NUM_ACTOR_NODES=2
 

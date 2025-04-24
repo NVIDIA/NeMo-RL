@@ -1,6 +1,6 @@
 # Adding New Models
 
-This guide outlines how to integrate and validate a new model within **NeMo-Reinforcer**. Each new model must pass a standard set of compatibility tests before being considered ready to be used in RL pipelines.
+This guide outlines how to integrate and validate a new model within **NeMo-RL**. Each new model must pass a standard set of compatibility tests before being considered ready to be used in RL pipelines.
 
 ## Importance of Log Probability Consistency in Training and Inference
 
@@ -120,4 +120,4 @@ When validating your model, you should analyze the results across different conf
 
 ---
 
-By following these validation steps and ensuring your model's outputs remain consistent across backends, you can confirm that your new model meets **NeMo-Reinforcer**'s requirements.
+By following these validation steps and ensuring your model's outputs remain consistent across backends, you can confirm that your new model meets **NeMo-RL**'s requirements.

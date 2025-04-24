@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from nemo_reinforcer.data.hf_datasets.helpsteer3 import (
+from nemo_rl.data.hf_datasets.helpsteer3 import (
     HelpSteer3Dataset,
     format_helpsteer3,
 )

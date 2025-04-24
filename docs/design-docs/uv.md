@@ -1,10 +1,10 @@
-# uv in NeMo-Reinforcer
+# uv in NeMo-RL
 
-Using `uv` for Dependency Management in NeMo-Reinforcer
+Using `uv` for Dependency Management in NeMo-RL
 
 ## Overview
 
-`uv` is an incredible tool that simplifies our workflow and is blazingly fast because it's written in Rust. This document outlines why we've adopted `uv` for package management in our repository, particularly for NeMo Reinforcer, and how it helps us manage dependencies across Ray clusters.
+`uv` is an incredible tool that simplifies our workflow and is blazingly fast because it's written in Rust. This document outlines why we've adopted `uv` for package management in our repository, particularly for NeMo RL, and how it helps us manage dependencies across Ray clusters.
 
 ## Why `uv`?
 
@@ -32,7 +32,7 @@ Using `uv` for Dependency Management in NeMo-Reinforcer
 - Allows us to define different [dependency groups](https://docs.astral.sh/uv/concepts/projects/dependencies/#dependency-groups) and [extras](https://docs.astral.sh/uv/concepts/projects/dependencies/#optional-dependencies) and select which ones we need dynamically
 - Reduces infrastructure complexity and maintenance overhead
 
-## Implementation in NeMo Reinforcer
+## Implementation in NeMo RL
 
 ### Worker Configuration
 
@@ -40,16 +40,16 @@ In our codebase, workers (classes decorated with `@ray.remote`, e.g., `HFPolicyW
 
 ### Supported Python Executables
 
-We provide several predefined Python executable configurations in {py:class}`PY_EXECUTABLES <nemo_reinforcer.distributed.virtual_cluster.PY_EXECUTABLES>`:
+We provide several predefined Python executable configurations in {py:class}`PY_EXECUTABLES <nemo_rl.distributed.virtual_cluster.PY_EXECUTABLES>`:
 
 ```python
 class PY_EXECUTABLES:
     SYSTEM = sys.executable
 
-    # Use NeMo-Reinforcer direct dependencies.
+    # Use NeMo-RL direct dependencies.
     BASE = "uv run --locked"
 
-    # Use NeMo-Reinforcer direct dependencies and vllm.
+    # Use NeMo-RL direct dependencies and vllm.
     VLLM = "uv run --locked --extra vllm"
 ```
 
@@ -57,18 +57,18 @@ To ensure consistent dependencies between actors, we run with `--locked` to make
 
 ### Customization
 
-If you need a different Python executable configuration, you can override the default one by passing your own in {py:class}`RayWorkerBuilder.__call__ <nemo_reinforcer.distributed.worker_groups.RayWorkerBuilder.__call__>`. This provides flexibility for special use cases without modifying the core configurations.
+If you need a different Python executable configuration, you can override the default one by passing your own in {py:class}`RayWorkerBuilder.__call__ <nemo_rl.distributed.worker_groups.RayWorkerBuilder.__call__>`. This provides flexibility for special use cases without modifying the core configurations.
 
 ## How It Works
 
-When a Reinforcer job is started:
+When a NeMo-RL job is started:
 
-1. The driver script creates several {py:class}`RayWorkerGroup <nemo_reinforcer.distributed.worker_groups.RayWorkerGroup>`s.
-2. Each worker group will create their workers which are wrapped in a {py:class}`RayWorkerBuilder <nemo_reinforcer.distributed.worker_groups.RayWorkerBuilder>`
+1. The driver script creates several {py:class}`RayWorkerGroup <nemo_rl.distributed.worker_groups.RayWorkerGroup>`s.
+2. Each worker group will create their workers which are wrapped in a {py:class}`RayWorkerBuilder <nemo_rl.distributed.worker_groups.RayWorkerBuilder>`
 3. Before the worker class is instantiated by the `RayWorkerBuilder`, if (1) `DEFAULT_PY_EXECUTABLE` is defined on the worker class (decorated with `@ray.remote`) and (2) it starts with `uv`; a `venv` is created with all the dependencies it needs and the `runtime_env["py_executable"]` is replaced with the `venv`'s python interpreter.
 
 This approach allows a fast start-up and maintains dependency isolation. It also has the added benefit of having all the virtual environments local under `./venvs`.
 
 ## Conclusion
 
-Using `uv` for dependency management in NeMo Reinforcer provides us with a fast, flexible, and reliable way to handle Python dependencies across distributed Ray clusters. It eliminates many of the traditional pain points of dependency management in distributed systems while enabling heterogeneous environments that can be tailored to specific workloads.
+Using `uv` for dependency management in NeMo RL provides us with a fast, flexible, and reliable way to handle Python dependencies across distributed Ray clusters. It eliminates many of the traditional pain points of dependency management in distributed systems while enabling heterogeneous environments that can be tailored to specific workloads.

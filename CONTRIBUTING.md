@@ -1,6 +1,6 @@
-# Contributing To Nemo-Reinforcer
+# Contributing To Nemo-RL
 
-Thanks for your interest in contributing to Nemo-Reinforcer!
+Thanks for your interest in contributing to Nemo-RL!
 
 ## Setting Up
 
@@ -8,9 +8,9 @@ Thanks for your interest in contributing to Nemo-Reinforcer!
 
 1. **Build and run the Docker container**:
 ```bash
-docker buildx build -t nemo-reinforcer -f Dockerfile .
-# Run the container with your local nemo-reinforcer directory mounted
-docker run -it --gpus all -v /path/to/nemo-reinforcer:/workspace/nemo-reinforcer nemo-reinforcer
+docker buildx build -t nemo-rl -f Dockerfile .
+# Run the container with your local nemo-rl directory mounted
+docker run -it --gpus all -v /path/to/nemo-rl:/workspace/nemo-rl nemo-rl
 ```
 
 ## Making Changes
@@ -19,7 +19,7 @@ docker run -it --gpus all -v /path/to/nemo-reinforcer:/workspace/nemo-reinforcer
 
 #### Before You Start: Install pre-commit
 
-From the [`nemo-reinforcer` root directory](.), run:
+From the [`nemo-rl` root directory](.), run:
 ```bash
 python3 -m pip install pre-commit
 pre-commit install
@@ -69,7 +69,7 @@ This ensures that all significant changes are well-thought-out and properly docu
 1. **User Adoption**: Helps users understand how to effectively use the library's features in their projects
 2. **Developer Extensibility**: Enables developers to understand the internal architecture and implementation details, making it easier to modify, extend, or adapt the code for their specific use cases
 
-Quality documentation is essential for both the usability of Nemo-Reinforcer and its ability to be customized by the community.
+Quality documentation is essential for both the usability of Nemo-RL and its ability to be customized by the community.
 
 ## Code Quality
 

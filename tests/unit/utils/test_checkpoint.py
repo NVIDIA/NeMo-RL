@@ -16,7 +16,7 @@ import pytest
 import torch
 import numpy as np
 from pathlib import Path
-from nemo_reinforcer.utils.checkpoint import CheckpointManager
+from nemo_rl.utils.checkpoint import CheckpointManager
 
 
 @pytest.fixture

@@ -17,7 +17,7 @@ import torch
 from typing import Dict, List
 from transformers import AutoTokenizer
 
-from nemo_reinforcer.data.llm_message_utils import (
+from nemo_rl.data.llm_message_utils import (
     message_log_to_flat_messages,
     get_keys_from_message_log,
     batched_message_log_to_flat_message,
@@ -25,7 +25,7 @@ from nemo_reinforcer.data.llm_message_utils import (
     add_loss_mask_to_message_log,
     get_first_index_that_differs,
 )
-from nemo_reinforcer.data.interfaces import LLMMessageLogType, TaskDataSpec
+from nemo_rl.data.interfaces import LLMMessageLogType, TaskDataSpec
 
 
 @pytest.fixture

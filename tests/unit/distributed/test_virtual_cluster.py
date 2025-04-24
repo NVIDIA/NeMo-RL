@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nemo_reinforcer.distributed.virtual_cluster import (
+from nemo_rl.distributed.virtual_cluster import (
     _get_node_ip_and_free_port,
     PY_EXECUTABLES,
     RayVirtualCluster,
@@ -67,7 +67,7 @@ def test_env_max_retries_default_value():
     with (
         patch.dict(os.environ, {}, clear=True),
         patch(
-            "nemo_reinforcer.distributed.virtual_cluster.RayVirtualCluster._init_placement_groups"
+            "nemo_rl.distributed.virtual_cluster.RayVirtualCluster._init_placement_groups"
         ) as mock_init,
     ):
         # Mock successful initialization
@@ -91,7 +91,7 @@ def test_env_max_retries_exhausted():
     with (
         patch.dict(os.environ, env_vars, clear=True),
         patch(
-            "nemo_reinforcer.distributed.virtual_cluster.RayVirtualCluster._init_placement_groups"
+            "nemo_rl.distributed.virtual_cluster.RayVirtualCluster._init_placement_groups"
         ) as mock_init,
         patch("time.sleep") as mock_sleep,
     ):

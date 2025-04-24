@@ -20,12 +20,12 @@ import gc
 
 from transformers import AutoTokenizer
 
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
-from nemo_reinforcer.models.policy import PolicyConfig
-from nemo_reinforcer.models.policy.hf_policy import HfPolicy
-from nemo_reinforcer.models.generation.interfaces import configure_generation_config
-from nemo_reinforcer.experience.rollouts import run_multi_turn_rollout
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.models.policy import PolicyConfig
+from nemo_rl.models.policy.hf_policy import HfPolicy
+from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.experience.rollouts import run_multi_turn_rollout
 
 # Import the test environment definitions
 from tests.unit.test_envs import (
@@ -41,7 +41,8 @@ from nemo_reinforcer.environments.games.sliding_puzzle import (
     SlidingPuzzleMetadata,
 )
 
-from nemo_reinforcer.models.generation.vllm import VllmConfig, VllmGeneration
+from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
+
 
 MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 

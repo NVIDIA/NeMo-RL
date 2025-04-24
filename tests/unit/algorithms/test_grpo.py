@@ -16,10 +16,10 @@ import torch
 import ray
 from typing import Dict, List, Tuple
 
-from nemo_reinforcer.experience.rollouts import calculate_rewards
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.data.interfaces import DatumSpec, LLMMessageLogType
-from nemo_reinforcer.environments.interfaces import (
+from nemo_rl.experience.rollouts import calculate_rewards
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.data.interfaces import DatumSpec, LLMMessageLogType
+from nemo_rl.environments.interfaces import (
     EnvironmentInterface,
     EnvironmentReturn,
 )
