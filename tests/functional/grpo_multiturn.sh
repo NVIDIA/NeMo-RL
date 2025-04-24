@@ -23,6 +23,8 @@ python -u $PROJECT_ROOT/examples/run_grpo_sliding_puzzle.py \
     grpo.max_num_steps=3 \
     policy.max_total_sequence_length=1024 \
     policy.train_micro_batch_size=1 \
+    policy.generation.top_p=0.99 \
+    policy.generation.top_k=8000 \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \
