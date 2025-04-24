@@ -46,7 +46,7 @@ policy:
   activation_checkpointing_enabled: false
 
   dtensor_cfg:
-    enabled: false
+    enabled: true
     cpu_offload: False
     sequence_parallel: false
     activation_checkpointing: false
