@@ -44,3 +44,4 @@ class PolicyConfig(TypedDict):
     max_grad_norm: Optional[Union[float, int]]
     fsdp_offload_enabled: bool
     activation_checkpointing_enabled: bool
+    refit_buffer_size_gb: int

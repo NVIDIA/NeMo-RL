@@ -45,6 +45,8 @@ def get_gpu_info(model):
     device_count = torch.cuda.device_count()
     memory_allocated = torch.cuda.memory_allocated(device) / (1024**2)  # in MB
     memory_reserved = torch.cuda.memory_reserved(device) / (1024**2)  # in MB
+    peak_memory = torch.cuda.max_memory_allocated() / (1024**2)  # in MB
+    peak_reserved = torch.cuda.max_memory_reserved() / (1024**2)  # in MB
 
     # Try to get the real global device ID (not the local one)
     # In distributed training, each process only sees its assigned GPU as device 0
@@ -83,6 +85,8 @@ def get_gpu_info(model):
         "device_name": device_name,
         "memory_allocated_mb": memory_allocated,
         "memory_reserved_mb": memory_reserved,
+        "peak_memory_allocated_mb": peak_memory,
+        "peak_memory_reserved_mb": peak_reserved,
         "parameter_sample": param_info,
         "env_vars": {
             k: v

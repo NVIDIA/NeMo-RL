@@ -31,6 +31,8 @@ class ClippedPGLossConfig(TypedDict):
     reference_policy_kl_penalty: float
     ratio_eps_min: float
     ratio_eps_max: float
+    use_on_policy_kl_approximation: bool
+    use_importance_sampling_correction: bool
 
 
 class ClippedPGLossDataDict(TypedDict):
@@ -80,6 +82,10 @@ class ClippedPGLossFn(LossFunction):
         self.ratio_eps_max = cfg["ratio_eps_max"]
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.disable_ppo_ratio = cfg.get("disable_ppo_ratio", False)
+        self.use_on_policy_kl_approximation = cfg["use_on_policy_kl_approximation"]
+        self.use_importance_sampling_correction = cfg[
+            "use_importance_sampling_correction"
+        ]
 
     def __call__(
         self,
@@ -122,9 +128,23 @@ class ClippedPGLossFn(LossFunction):
 
         # Calculate KL regularization.
         if self.reference_policy_kl_penalty != 0:
-            kl = self.reference_policy_kl_penalty * calculate_kl_penalty_joschu2020(
-                logprobs_policy=curr_logprobs,
-                logprobs_reference=reference_policy_logprobs,
+            if self.use_on_policy_kl_approximation:
+                # See: docs/guides/grpo.md#on-policy-kl-approximation
+                kl_importance_weights = torch.exp(
+                    curr_logprobs - generation_logprobs
+                ).detach()
+                kl_importance_weights = torch.nan_to_num(
+                    kl_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
+                )
+            else:
+                kl_importance_weights = torch.ones_like(curr_logprobs)
+            kl = (
+                kl_importance_weights
+                * self.reference_policy_kl_penalty
+                * calculate_kl_penalty_joschu2020(
+                    logprobs_policy=curr_logprobs,
+                    logprobs_reference=reference_policy_logprobs,
+                )
             )
             kl = masked_mean(kl, mask)
         else:
@@ -143,7 +163,17 @@ class ClippedPGLossFn(LossFunction):
         loss1 = -advantages * ratios
         loss2 = -advantages * ratios_clamped
 
-        actor_loss = masked_mean(torch.max(loss1, loss2), mask)
+        if self.use_importance_sampling_correction:
+            # See: docs/guides/grpo.md#importance-sampling-correction
+            actor_importance_weights = torch.exp(prev_logprobs - generation_logprobs)
+            actor_importance_weights = torch.nan_to_num(
+                actor_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
+            )
+        else:
+            actor_importance_weights = torch.ones_like(prev_logprobs)
+        actor_loss = masked_mean(
+            actor_importance_weights * torch.max(loss1, loss2), mask
+        )
         loss = actor_loss + kl
         with torch.no_grad():
             probs_ratio = masked_mean(ratios.detach(), mask).item()

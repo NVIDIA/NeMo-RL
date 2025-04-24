@@ -454,8 +454,14 @@ class VllmGenerationWorker:
         gc.collect()
         torch.cuda.empty_cache()
 
-    def wake_up(self):
-        self.llm.wake_up()
+    def wake_up(self, **kwargs):
+        # tags like ["weights", "kv_cache"]
+        # We can call this function with just tags=["weights"] while doing refit to
+        # avoid spiking memory with the kv_cache while the training fwk is awake.
+        if "tags" in kwargs:
+            self.llm.wake_up(tags=kwargs["tags"])
+        else:
+            self.llm.wake_up()
 
 
 class VllmGeneration(GenerationInterface):
@@ -622,7 +628,7 @@ class VllmGeneration(GenerationInterface):
         try:
             # Use run_all_workers_single_data for methods that don't need data
             futures = self.worker_group.run_all_workers_single_data(
-                "wake_up", only_on="tied_leader"
+                "wake_up", only_on="tied_leader", **kwargs
             )
             # Wait for all futures to complete
             results = ray.get(futures)
