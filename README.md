@@ -8,6 +8,7 @@
     - [GRPO](#grpo)
       - [Single Node](#single-node)
       - [Multi-node](#multi-node)
+        - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
     - [SFT](#sft)
       - [Single Node](#single-node-1)
       - [Multi-node](#multi-node-1)
@@ -28,18 +29,23 @@ What you can expect:
 
 ## Features
 
-✅ _Available now_ | 🔜 _Coming in v0.2_
+✅ _Available now_ | 🔜 _Coming in v0.3_
 
 - ✅ **Fast Generation** - vLLM backend for optimized inference
-- ✅ **HuggingFace Integration** - Works with 1-8B models (Qwen1.5, Llama)
+- ✅ **HuggingFace Integration** - Works with 1-32B models (Qwen2.5, Llama)
 - ✅ **Distributed Training** - FSDP support and Ray-based infrastructure
 - ✅ **Environment Support** - Support for multi-environment training.
 - ✅ **Learning Algorithms** - GRPO (Group Relative Policy Optimization), SFT (Supervised Fine-Tuning), and DPO (Direct Preference Optimization)
 - ✅ **Multi-Turn RL** - multi-turn generation and training for RL with tool use, games, etc. 
 - ✅ **Worker Isolation** - Process isolation between RL Actors (no worries about global state)
-- 🔜 **Larger Model Support** - Native PyTorch support for models up to 70B parameters
-- 🔜 **Advanced Parallelism** - FSDP2, TP, SP, and sequence packing for efficient training
-- 🔜 **Environment Isolation** - Dependency isolation between components
+- ✅ **Large Model Support** - Native PyTorch support for models up to 32B parameters
+- ✅ **Advanced Parallelism** - FSDP2, TP, SP, and sequence packing for efficient training
+
+- 🔜 **(Even) Larger Model Support** - Native PyTorch & Megatron
+- 🔜 **Improved Native Performance** - Improve training time for Native Pytorch Models
+- 🔜 **Megatron Policy** - Support advanced parallelism in training with Megatron Core
+- 🔜 **Megatron Inference** - Support Megatron Inference for day-0 support for new megatron models
+- 🔜 **MoE Models** - Support DeepseekV3 and Llama4
 
 ## Prerequisuites
 
@@ -99,12 +105,33 @@ uv run python examples/run_grpo_math.py \
 ```sh
 # Run from the root of NeMo-Reinforcer repo
 NUM_ACTOR_NODES=2
-# Add a timestamp to make each job name unique
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # grpo_math_8b uses Llama-3.1-8B-Instruct model
 COMMAND="uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml cluster.num_nodes=2 checkpointing.checkpoint_dir='results/llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='grpo-llama8b_math'" \
-UV_CACHE_DIR=YOUR_UV_CACHE_DIR \
+CONTAINER=YOUR_CONTAINER \
+MOUNTS="$PWD:$PWD" \
+sbatch \
+    --nodes=${NUM_ACTOR_NODES} \
+    --account=YOUR_ACCOUNT \
+    --job-name=YOUR_JOBNAME \
+    --partition=YOUR_PARTITION \
+    --time=4:0:0 \
+    --gres=gpu:8 \
+    ray.sub
+```
+
+##### GRPO Qwen2.5-32B
+
+```sh
+# Run from the root of NeMo-Reinforcer repo
+NUM_ACTOR_NODES=16
+
+# Download Qwen before the job starts to avoid spending time downloading during the training loop
+HF_HOME=/path/to/hf_home huggingface-cli download Qwen/Qwen2.5-32B
+
+# Ensure HF_HOME is included in your MOUNTS
+HF_HOME=/path/to/hf_home \
+COMMAND="uv run ./examples/run_grpo_math.py --config examples/configs/grpo_math_8B.yaml policy.model_name='Qwen/Qwen2.5-32B' policy.generation.vllm_cfg.tensor_parallel_size=4 policy.max_total_sequence_length=16384 cluster.num_nodes=${NUM_ACTOR_NODES} policy.dtensor_cfg.enabled=True policy.dtensor_cfg.tensor_parallel_size=8 policy.dtensor_cfg.sequence_parallel=True policy.dtensor_cfg.activation_checkpointing=True checkpointing.checkpoint_dir='results/qwen2.5-32b' logger.wandb_enabled=True logger.wandb.name='qwen2.5-32b'" \
 CONTAINER=YOUR_CONTAINER \
 MOUNTS="$PWD:$PWD" \
 sbatch \
@@ -154,8 +181,6 @@ Refer to `examples/configs/sft.yaml` for a full list of parameters that can be o
 ```sh
 # Run from the root of NeMo-Reinforcer repo
 NUM_ACTOR_NODES=2
-# Add a timestamp to make each job name unique
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 COMMAND="uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'" \
 CONTAINER=YOUR_CONTAINER \
@@ -214,8 +239,6 @@ For distributed DPO training across multiple nodes, modify the following script 
 # Run from the root of NeMo-Reinforcer repo
 ## number of nodes to use for your job
 NUM_ACTOR_NODES=2
-# Add a timestamp to make each job name unique
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 COMMAND="uv run ./examples/run_dpo.py --config examples/configs/dpo.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 dpo.val_global_batch_size=32 checkpointing.checkpoint_dir='results/dpo_llama81_2nodes' logger.wandb_enabled=True logger.wandb.name='dpo-llama1b'" \
 RAY_DEDUP_LOGS=0 \
