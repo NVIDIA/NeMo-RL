@@ -313,6 +313,9 @@ class FSDP1PolicyWorker:
                 grad_norm = None
                 if not eval_mode:
                     if isinstance(self.model, FullyShardedDataParallel):
+                        # when using FSDP1, use FSDP's clip_grad_norm_
+                        # to ensure grad norm is being computed over all parameters
+                        # see https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.FullyShardedDataParallel.clip_grad_norm_
                         grad_norm = self.model.clip_grad_norm_(
                             max_norm=self.cfg["max_grad_norm"]
                         )
@@ -320,6 +323,7 @@ class FSDP1PolicyWorker:
                         grad_norm = torch.nn.utils.clip_grad_norm_(
                             self.model.parameters(), max_norm=self.cfg["max_grad_norm"]
                         )
+                    grad_norm = grad_norm.cpu()
 
                     # Update parameters
                     self.optimizer.step()

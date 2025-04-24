@@ -24,7 +24,11 @@ from nemo_reinforcer.algorithms.loss_functions import NLLLoss
 def mock_components():
     # Create mock components
     policy = MagicMock()
-    policy.train.return_value = {"loss": torch.tensor(0.5), "all_mb_metrics": {}}
+    policy.train.return_value = {
+        "loss": torch.tensor(0.5),
+        "grad_norm": torch.tensor(1.0),
+        "all_mb_metrics": {},
+    }
 
     # Create a proper message log structure with token_ids
     mock_batch = {
