@@ -11,10 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import ray
 import pytest
 import pprint
 import torch
+import os
 from copy import deepcopy
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
@@ -71,6 +73,17 @@ basic_llama_test_config: PolicyConfig = {
     },
     "max_grad_norm": 1.0,
 }
+
+
+@pytest.fixture(scope="module", autouse=True)
+def skip_tied_weight_check_for_all():
+    """Automatically skip tied weight check for all tests in this module."""
+    os.environ["NRL_SKIP_TIED_WEIGHT_CHECK"] = "1"
+
+    yield
+
+    # Restore the original value
+    os.environ.pop("NRL_SKIP_TIED_WEIGHT_CHECK", None)
 
 
 @pytest.fixture(scope="function")

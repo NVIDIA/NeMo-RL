@@ -45,7 +45,7 @@ class VllmInternalWorkerExtension:
             weights = []
 
             # Process each handle to get the tensor
-            for name, handle in handles.items():
+            for name, handle in handles:
                 func, args = handle
                 list_args = list(args)
                 # Update device ID to match the current device

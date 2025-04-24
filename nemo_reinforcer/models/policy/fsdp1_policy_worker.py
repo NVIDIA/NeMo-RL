@@ -17,6 +17,7 @@ import warnings
 from collections import defaultdict
 from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, Optional
+import os
 
 import ray
 import torch
@@ -38,6 +39,7 @@ from nemo_reinforcer.models.generation.interfaces import (
 )
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.integrations.accelerate import find_tied_parameters
 from nemo_reinforcer.models.policy import PolicyConfig
 from nemo_reinforcer.models.policy.utils import import_class_from_path
 from nemo_reinforcer.distributed.virtual_cluster import (
@@ -92,6 +94,7 @@ class FSDP1PolicyWorker:
             device_map="cpu",  # load weights onto CPU initially
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
         )
+
         if init_reference_model:
             self.reference_model = AutoModelForCausalLM.from_pretrained(
                 model_name,
@@ -149,7 +152,11 @@ class FSDP1PolicyWorker:
             self.reference_model = do_fsdp(self.reference_model)
             self.reference_model = self.manual_offload_to_cpu(self.reference_model)
         self.model = self.manual_load_to_gpu(self.model)
-        self._held_reference_model_params = None
+
+        # used for streaming update inference engine weights
+        self._held_sharded_state_dict_reference = None
+        self._held_streamed_param_reference = None
+
         # register_fsdp_forward_method(self.model, "generate")
         if init_optimizer:
             optimizer_cls = import_class_from_path(self.cfg["optimizer"]["name"])
@@ -205,6 +212,9 @@ class FSDP1PolicyWorker:
     def is_alive(self):
         return True
 
+    def reset_peak_memory_stats(self):
+        torch.cuda.reset_peak_memory_stats()
+
     def get_gpu_info(self):
         """Return information about the GPU being used by this worker."""
         return get_gpu_info(self.model)
@@ -218,6 +228,14 @@ class FSDP1PolicyWorker:
         mbs: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
+        # Check if the model has tied weights
+        num_tied_weights = len(find_tied_parameters(self.model))
+        skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
+        if num_tied_weights != 0 and not skip_tie_check:
+            raise ValueError(
+                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/reinforcer/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+            )
+
         if gbs is None:
             gbs = self.cfg["train_global_batch_size"]
         if mbs is None:
@@ -720,38 +738,61 @@ class FSDP1PolicyWorker:
         return get_device_uuid(device_idx)
 
     @torch.no_grad()
-    def get_weight_ipc_handles(self, offload_model=True):
-        from torch.multiprocessing.reductions import reduce_tensor
+    def prepare_weights_for_ipc(self):
+        from torch.distributed.fsdp.api import ShardedStateDictConfig, StateDictType
 
         # If the model is not FSDP, then we need to manually move it to the GPU
         # For an FSDP model, model.state_dict() will move the params to the GPU
-        if not isinstance(self.model, torch.distributed.fsdp.FullyShardedDataParallel):
+        if not isinstance(self.model, FullyShardedDataParallel):
             self.model = self.manual_load_to_gpu(self.model)
+            self._held_sharded_state_dict_reference = self.model.state_dict()
+        else:
+            # Get sharded state dict instead of full state dict for FSDP1
+            with FullyShardedDataParallel.state_dict_type(
+                self.model,
+                state_dict_type=StateDictType.SHARDED_STATE_DICT,
+                state_dict_config=ShardedStateDictConfig(),
+            ):
+                self._held_sharded_state_dict_reference = self.model.state_dict()
 
-        # TODO @sahilj: do this without an allgather (maybe FSDP2)
-        params = self.model.state_dict()
+        # Collect info for streaming multiple tensors
+        state_dict_info = []
+        for name, tensor in self._held_sharded_state_dict_reference.items():
+            # dtensor's numel will return complete tensor instead of only local tensor
+            size_in_bytes = tensor.element_size() * tensor.numel()
+            state_dict_info.append((name, size_in_bytes))
 
-        # Create a copy of parameters in the desired dtype (bfloat16 or float32)
-        dtype_params = {}
-        for name, param in params.items():
+        return state_dict_info
+
+    @torch.no_grad()
+    def get_weights_ipc_handles(self, keys):
+        from torch.distributed.tensor import DTensor
+        from torch.multiprocessing.reductions import reduce_tensor
+
+        converted_params = {}
+        for key in keys:
+            # Get full_tensor for dtensor (GPU > 1)
+            tensor = self._held_sharded_state_dict_reference[key]
+            if isinstance(tensor, DTensor):
+                full_tensor = tensor.full_tensor()
+            else:
+                full_tensor = tensor
             # Convert parameters to the configured dtype
-            dtype_params[name] = param.to(self.dtype, non_blocking=True)
+            converted_params[key] = full_tensor.to(self.dtype, non_blocking=True)
 
-        # Replace the original params with the converted ones
-        params = dtype_params
-        # For FSDP1, params may get GC'ed before sending to vllm,
-        # so we need to hold a reference to them
-        self._held_reference_model_params = params
-        data = {}
+        # Temporary record the full tensor for cleanup
+        # It is needed for cleanup the last full_tensor in the refit process
+        self._held_streamed_param_reference = converted_params
+
+        # Get device UUID for IPC
         device_uuid = self.report_device_id()
-        for name, p in params.items():
-            data[name] = reduce_tensor(p.detach())
+        # Create handles for the tensors
+        all_handles = []
+        for key, p in converted_params.items():
+            handle = reduce_tensor(p.detach())
+            all_handles.append((key, handle))
 
-        if offload_model:
-            self.model = self.manual_offload_to_cpu(self.model)
-            gc.collect()
-            torch.cuda.empty_cache()
-        return {device_uuid: data}
+        return {device_uuid: all_handles}
 
     def prepare_for_lp_inference(self):
         self.model = self.manual_load_to_gpu(self.model)
@@ -802,9 +843,13 @@ class FSDP1PolicyWorker:
         torch.randn(1).cuda()  # wake up torch allocator
         self.offload_before_refit()  # rerun the old offload function
 
-        if self._held_reference_model_params is not None:
-            del self._held_reference_model_params
-            self._held_reference_model_params = None
+        # Clean up the held tensors
+        if self._held_sharded_state_dict_reference is not None:
+            del self._held_sharded_state_dict_reference
+            self._held_sharded_state_dict_reference = None
+        if self._held_streamed_param_reference is not None:
+            del self._held_streamed_param_reference
+            self._held_streamed_param_reference = None
 
         gc.collect()
         torch.cuda.empty_cache()
