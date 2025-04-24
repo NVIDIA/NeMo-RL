@@ -43,6 +43,13 @@ What you can expect:
 
 ## Prerequisuites
 
+Clone **NeMo RL**
+```sh
+git clone git@github.com:NVIDIA/reinforcer.git
+cd reinforcer
+```
+
+Install `uv`
 ```sh
 # For faster setup and environment isolation, we use `uv`
 pip install uv
