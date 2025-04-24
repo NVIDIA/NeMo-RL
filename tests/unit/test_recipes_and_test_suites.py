@@ -134,7 +134,7 @@ def test_all_recipes_accounted_for_in_test_suites(all_test_suites):
 
 
 def test_nightly_compute_stays_below_1024_hours(nightly_test_suite, tracker):
-    command = f"DRYRUN=1 CONTAINER= ACCOUNT= PARTITION= ./tools/launch {' '.join(nightly_test_suite)}"
+    command = f"DRYRUN=1 HF_HOME=... HF_DATASETS_CACHE=... CONTAINER= ACCOUNT= PARTITION= ./tools/launch {' '.join(nightly_test_suite)}"
 
     print(f"Running command: {command}")
 
@@ -170,7 +170,7 @@ def test_nightly_compute_stays_below_1024_hours(nightly_test_suite, tracker):
 
 
 def test_dry_run_does_not_fail_and_prints_total_gpu_hours():
-    command = "DRYRUN=1 CONTAINER= ACCOUNT= PARTITION= ./tools/launch ./recipes/**/*.sh"
+    command = "DRYRUN=1 HF_HOME=... HF_DATASETS_CACHE=... CONTAINER= ACCOUNT= PARTITION= ./tools/launch ./recipes/**/*.sh"
 
     # Run the command from the project root directory
     result = subprocess.run(
