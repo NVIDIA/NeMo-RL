@@ -21,6 +21,8 @@ python -u $PROJECT_ROOT/examples/run_grpo_sliding_puzzle.py \
     cluster.gpus_per_node=2 \
     grpo.max_rollout_turns=10 \
     grpo.max_num_steps=3 \
+    policy.max_total_sequence_length=1024 \
+    policy.train_micro_batch_size=1 \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \
