@@ -286,31 +286,23 @@ def setup(
 def refit_policy_generation(
     policy: ColocatablePolicyInterface,
     policy_generation: GenerationInterface,
-    refit_buffer_size_gb: int = 10,  # GB
+    refit_buffer_size_gb: int = None,
 ) -> None:
-    """Refit the policy generation interface with the latest policy weights."""
+    """Refit the policy generation interface with the latest policy weights.
+
+    Args:
+        policy: The policy to provide weights to the inference engine.
+        policy_generation: The inference engine to refit.
+        refit_buffer_size_gb: The size of the buffer to use for refitting. If None, will compute by the remaining memory.
+    """
     policy.offload_before_refit()
     policy_generation.prepare_for_generation(tags=["weights"])
-    # Streaming update weights to save memory
-    state_dict_info: list[tuple[str, int]] = policy.prepare_weights_for_ipc()
-    # group keys to save time
-    available_bytes = refit_buffer_size_gb * (1024**3)
-    split_keys: list[list[str]] = []
-    keys: list[str] = []
-    for key, size_in_bytes in state_dict_info:
-        if size_in_bytes > available_bytes:
-            if keys:
-                split_keys.append(keys)
-                keys = []
-            available_bytes = refit_buffer_size_gb * (1024**3)
-
-        keys.append(key)
-        available_bytes -= size_in_bytes
-
-    if len(keys) > 0:
-        split_keys.append(keys)
+    # get model param keys, which is grouped by size
+    grouped_param_keys = policy.prepare_weights_for_ipc(
+        refit_buffer_size_gb=refit_buffer_size_gb
+    )
     # do update
-    for keys in split_keys:
+    for keys in grouped_param_keys:
         ipc_handles = policy.get_weights_ipc_handles(keys)
         if not policy_generation.update_weights(ipc_handles):
             error_message = (
