@@ -50,6 +50,7 @@ from nemo_reinforcer.utils.native_checkpoint import (
     load_checkpoint,
 )
 from nemo_reinforcer.models.policy.utils import get_gpu_info
+from nemo_reinforcer.utils.hf_utils import prefetch_hf_model
 
 
 @ray.remote
@@ -89,6 +90,7 @@ class FSDP1PolicyWorker:
             raise ValueError(f"Unknown precision: {self.cfg['precision']}")
 
         print(f"[Rank {rank}] Loading model {model_name} on CPU...")
+        prefetch_hf_model(model_name)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
