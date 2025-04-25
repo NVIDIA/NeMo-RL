@@ -92,14 +92,14 @@ class FSDP1PolicyWorker:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
+            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
         )
 
         if init_reference_model:
             self.reference_model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 device_map="cpu",  # load weights onto CPU initially
-                torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
+                torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
             )
         else:
             self.reference_model = None
@@ -233,7 +233,7 @@ class FSDP1PolicyWorker:
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
         if num_tied_weights != 0 and not skip_tie_check:
             raise ValueError(
-                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/reinforcer/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )
 
         if gbs is None:

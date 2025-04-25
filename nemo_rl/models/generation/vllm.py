@@ -191,7 +191,7 @@ class VllmGenerationWorker:
             enable_prefix_caching=True,
             dtype="auto",
             seed=seed,
-            # Don't use cuda-graph by default as it leads to convergence issue (see https://github.com/NVIDIA/reinforcer/issues/186)
+            # Don't use cuda-graph by default as it leads to convergence issue (see https://github.com/NVIDIA/nemo-rl/issues/186)
             enforce_eager=True,
             max_model_len=self.cfg["vllm_cfg"]["max_model_len"],
             trust_remote_code=True,

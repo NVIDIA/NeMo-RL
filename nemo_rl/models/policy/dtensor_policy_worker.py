@@ -140,7 +140,7 @@ class DTensorPolicyWorker:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/reinforcer/issues/13 is fixed
+            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
         )
 
         self.tokenizer = tokenizer
@@ -264,7 +264,7 @@ class DTensorPolicyWorker:
             and not skip_tie_check
         ):
             raise ValueError(
-                f"Using dtensor policy with tp size {self.cfg['dtensor_cfg']['tensor_parallel_size']} for model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/reinforcer/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+                f"Using dtensor policy with tp size {self.cfg['dtensor_cfg']['tensor_parallel_size']} for model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )
 
         if gbs is None:

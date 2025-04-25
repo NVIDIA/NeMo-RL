@@ -136,12 +136,12 @@ jobs:
     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
     with:
       build-ref: ${{ github.sha }}
-      image-name: nemo_reinforcer_container
+      image-name: nemo_rl_container
       dockerfile: docker/Dockerfile
-      image-label: nemo-reinforcer
+      image-label: nemo-rl
       build-args: |
         MAX_JOBS=32
-        REINFORCER_COMMIT=${{ github.sha }}
+        NEMO_RL_COMMIT=${{ github.sha }}
 
   tests:
     name: Tests
@@ -152,21 +152,21 @@ jobs:
       RUNNER: self-hosted-azure
       TIMEOUT: 60
       UNIT_TEST_SCRIPT: |
-        cd /opt/reinforcer
+        cd /opt/nemo-rl
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
           uv run --no-sync bash -x ./tests/run_unit.sh
         else
           echo Skipping unit tests for docs-only level
         fi
       DOC_TEST_SCRIPT: |
-        cd /opt/reinforcer/docs
+        cd /opt/nemo-rl/docs
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(docs|L0|L1|L2)$ ]]; then
           uv run --no-sync sphinx-build -b doctest . _build/doctest
         else
           echo Skipping doc tests for level ${{ needs.pre-flight.outputs.test_level }}
         fi
       FUNCTIONAL_TEST_SCRIPT: |
-        cd /opt/reinforcer
+        cd /opt/nemo-rl
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L1|L2)$ ]]; then
           uv run --no-sync bash ./tests/functional/sft.sh
           uv run --no-sync bash ./tests/functional/grpo.sh
@@ -177,7 +177,7 @@ jobs:
         fi
       # TODO: enable once we have convergence tests in CI
       #CONVERGENCE_TEST_SCRIPT: |
-      #  cd /opt/reinforcer
+      #  cd /opt/nemo-rl
       #  if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L2)$  ]]; then
       #    echo "Running convergence tests"
       #    # Add your convergence test commands here
@@ -186,7 +186,7 @@ jobs:
       #    echo "Skipping convergence tests for level ${{ needs.pre-flight.outputs.test_level }}"
       #  fi
       AFTER_SCRIPT: |
-        cd /opt/reinforcer
+        cd /opt/nemo-rl
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Test Summary for level: ${{ needs.pre-flight.outputs.test_level }}
 
