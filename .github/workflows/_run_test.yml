@@ -119,7 +119,7 @@ jobs:
           uses: actions/upload-artifact@v4
           with:
             name: unit-test-coverage-report
-            path: coverage.json
+            path: ${{ github.workspace }}/coverage.json
             retention-days: 7
 
         - uses: "NVIDIA/NeMo/.github/actions/cancel-workflow@main"
