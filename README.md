@@ -8,7 +8,7 @@
     - [GRPO](#grpo)
       - [Single Node](#grpo-single-node)
       - [Multi-node](#grpo-multi-node)
-        - [GRPO Qwen2.5-32B](#grpo-qwen2-5-32b)
+        - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
     - [SFT](#sft)
       - [Single Node](#sft-single-node)
       - [Multi-node](#sft-multi-node)
