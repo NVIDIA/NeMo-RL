@@ -142,7 +142,8 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         batch_size: Optional[int] = None,
         allow_uneven_shards: bool = False,
         batch_size: Optional[int] = None, 
-        sort_by_seqlen = False,
+        sequence_lengths_per_datum: Optional[list[int]] = None, 
+        max_tokens_per_microbatch: Optional[int] = None, 
     ) -> List["SlicedDataDict"]:
         """Shards a batch by first dividing it into chunks of size batch_size, then further dividing each chunk into shards equal parts. Finally aggregates the sub-shards by their position.
 
@@ -231,17 +232,29 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 =======
         shard_size = batch_size // shards
 
-        if sort_by_seqlen:
-            seqlens = self['input_lengths']
+        # batch shard is not inplace, create a deepcopy of the data
+        data = {}
+        for k, v in self.data.items():
+            if torch.is_tensor(v):
+                data[k] = torch.clone(v)
+            else:
+                import copy
+                data[k] = copy.deepcopy(v)
+
+        # if sequence lengths are provided, sort the data by the sequence lengths and distribute
+        # evenly to each shard. This ensures each DP rank receives samples of about equal sequence lengths, 
+        # which improves load balancing
+        if sequence_lengths_per_datum is not None:
+            assert len(sequence_lengths_per_datum) == total_batch_size
             batch_sorted_indices = []
-            
             for chunk_idx in range(num_chunks):
                 chunk_start = chunk_idx * batch_size
                 chunk_end = (chunk_idx + 1) * batch_size
-                chunk_seqlens = seqlens[chunk_start:chunk_end]
+                chunk_seqlens = sequence_lengths_per_datum[chunk_start:chunk_end]
 
                 # sort the indices by sequence lengths
-                chunk_idx_indices = sorted(range(len(chunk_seqlens)), key=lambda i: chunk_seqlens[i])
+                chunk_idx_indices = sorted(range(batch_size), key=lambda i: chunk_seqlens[i])
+                chunk_idx_indices = [i + chunk_start for i in chunk_idx_indices]
                 # stride the sorted sequence lengths along the shards
                 chunk_idx_indices = [chunk_idx_indices[i::shards] for i in range(shards)]
                 chunk_idx_indices = sum(chunk_idx_indices, [])
@@ -249,15 +262,14 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 batch_sorted_indices.extend(chunk_idx_indices)
 
             # finally reorder the data along the sorted sequence len indices
-            for k,v  in self.data.items():
+            for k,v  in data.items():
                 if torch.is_tensor(v):
                     sorted_v = v.index_select(
                         dim=0, index=torch.IntTensor(batch_sorted_indices))
                 else:
                     sorted_v = [v[i] for i in batch_sorted_indices]
 
-                self.data[k] = sorted_v
-
+                data[k] = sorted_v
 
         # Create one BatchedDataDict per shard position
 >>>>>>> 4e7eeda (sort inside gbs):nemo_reinforcer/distributed/batched_data_dict.py
@@ -277,31 +289,63 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                     shard_end = min(shard_end, total_batch_size)
                 indices = torch.arange(shard_start, shard_end)
 
-                for k in self.data:
+                for k in data:
                     if k not in aggregated_shards[shard_idx]:
                         # First time seeing this key for this shard, initialize it
-                        if torch.is_tensor(self.data[k]):
-                            aggregated_shards[shard_idx][k] = self.data[k][
+                        if torch.is_tensor(data[k]):
+                            aggregated_shards[shard_idx][k] = data[k][
                                 indices
                             ].clone()
                         else:
                             aggregated_shards[shard_idx][k] = [
-                                self.data[k][i] for i in indices
+                                data[k][i] for i in indices
                             ]
                     else:
                         # Append to existing data - concatenate tensors or extend lists
-                        if torch.is_tensor(self.data[k]):
+                        if torch.is_tensor(data[k]):
                             aggregated_shards[shard_idx][k] = torch.cat(
                                 [
                                     aggregated_shards[shard_idx][k],
-                                    self.data[k][indices].clone(),
+                                    data[k][indices].clone(),
                                 ]
                             )
                         else:
                             aggregated_shards[shard_idx][k].extend(
-                                [self.data[k][i] for i in indices]
+                                [data[k][i] for i in indices]
                             )
+        
+   
+        # group microbatches dynamically by the total tokens per microbatch
+        if max_tokens_per_microbatch is not None:
+            assert sequence_lengths_per_datum is not None
+            for shard in aggregated_shards:
+                shard['microbatch_indices'] = []
 
+            for chunk_idx in range(num_chunks):
+                microbatch_indices = [[0,1]]
+                current_mbs_total_tokens = 0
+
+                #for each indice in the shard, map it to an microbatch
+                for shard_indice in range(shard_size):
+                    # check if the sample at shard_indice may be added to the current mbs for all shards
+                    # because of padding, and that the sequence lengths are sorted, the total tokens of a mbs
+                    # is the number of indices * the max sequence length
+                    seqlens_this_chunk = [
+                        shard['input_lengths'][chunk_idx*shard_size:(chunk_idx+1)*shard_size][shard_indice]
+                        for shard in aggregated_shards]
+                    max_seqlen_this_chunk = max(seqlens_this_chunk).item()
+
+                    curr_mbs_size = microbatch_indices[-1][1] - microbatch_indices[-1][0] + 1
+                    if curr_mbs_size * max_seqlen_this_chunk <= max_tokens_per_microbatch:
+                        microbatch_indices[-1][-1] = shard_indice+1
+                        current_mbs_total_tokens += max_seqlen_this_chunk
+                    else:
+                        microbatch_indices.append([shard_indice, shard_indice+1])
+                        current_mbs_total_tokens = max_seqlen_this_chunk
+
+                for shard in aggregated_shards:
+                    shard['microbatch_indices'].append(microbatch_indices)
+            
         return aggregated_shards
 
     def slice(self, start: int, end: int) -> "SlicedDataDict":
@@ -316,7 +360,10 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         """
         sliced_batch = SlicedDataDict()
         for k in self.data:
-            sliced_batch[k] = self.data[k][start:end]
+            if k == "microbatch_indices":
+                sliced_batch[k] = self.data[k]
+            else:
+                sliced_batch[k] = self.data[k][start:end]
         return sliced_batch
 
     def repeat_interleave(self, num_repeats: int) -> "BatchedDataDict":
@@ -339,15 +386,22 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         return repeated_batch
 
     def make_microbatch_iterator(
-        self, microbatch_size: int
+        self, 
+        microbatch_size: int = None, 
+        microbatch_indices = None,
     ) -> Iterator["SlicedDataDict"]:
         """Make an iterator over the batch that yields microbatches of size microbatch_size."""
-        bsize = self.size
-        assert bsize % microbatch_size == 0, (
-            f"Data dict size ({bsize}) is not a multiple of the provided microbatch size ({microbatch_size})"
-        )
-        for i in range(0, bsize, microbatch_size):
-            yield self.slice(i, i + microbatch_size)
+        if microbatch_indices is not None:
+            for start, end in microbatch_indices:
+                yield self.slice(start, end)    
+        else:
+            bsize = self.size
+            assert microbatch_size is not None
+            assert bsize % microbatch_size == 0, (
+                f"Data dict size ({bsize}) is not a multiple of the provided microbatch size ({microbatch_size})"
+            )
+            for i in range(0, bsize, microbatch_size):
+                yield self.slice(i, i + microbatch_size)
 
     @property
     def size(self) -> int:

@@ -102,7 +102,13 @@ def get_cpu_state_dict(
     return new_state_dict
 
 
-@ray.remote
+@ray.remote(
+    runtime_env={
+        "env_vars": {
+            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
+        }
+    }
+)
 class DTensorPolicyWorker:
     DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.BASE
 
@@ -185,7 +191,6 @@ class DTensorPolicyWorker:
             ],
         )
         self.model = self.model.cuda()
-        self.count = 0
 
         if self.cpu_offload:
             self.model = self.move_buffer_to_device(self.model, "cpu")
@@ -260,6 +265,24 @@ class DTensorPolicyWorker:
         """Return information about the GPU being used by this worker."""
         return get_gpu_info(self.model)
 
+
+    def get_microbatch_iterator(
+        self,
+        local_global_batch, 
+        use_dynamic_batching, 
+        microbatch_size, 
+        microbatch_indices):
+
+        if dynamic_batching:
+            mb_iterator = local_global_batch.make_microbatch_iterator(
+                microbatch_indices=microbatch_indices)
+        else:
+            mb_iterator = local_global_batch.make_microbatch_iterator(
+                microbatch_size=microbatch_size)
+
+        return mb_iterator
+
+
     def train(
         self,
         data: BatchedDataDict,
@@ -268,6 +291,10 @@ class DTensorPolicyWorker:
         gbs: Optional[int] = None,
         mbs: Optional[int] = None,
     ) -> Dict[str, Any]:
+
+        # self.log_memory("DEBUG TRAIN START")
+        # torch.distributed.barrier()
+
         """Train the policy on a batch of data with a given loss function."""
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
         if (
@@ -331,18 +358,36 @@ class DTensorPolicyWorker:
                 else:
                     raise ValueError(f"Unknown loss type: {loss_fn.loss_type}")
 
+                global_seqlen = data.get("input_ids").shape[1]
+            
                 self.optimizer.zero_grad()
                 mb_losses = []
+                local_global_batch = data.slice(gb_start, gb_start + local_gbs)
 
                 # Calculate number of microbatches to process
                 # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
                 # so its safe to not check for the case where the last data slice is smaller than mbs
-                num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
+                dynamic_batching=True
+                if dynamic_batching:
+                    mbs_indices = data['microbatch_indices'][gb_idx]
+                    num_microbatches = len(mbs_indices)
+                    mb_iterator = local_global_batch.make_microbatch_iterator(
+                        microbatch_indices=mbs_indices)
+                else:
+                    num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
+                    mb_iterator = local_global_batch.make_microbatch_iterator(
+                        microbatch_size=mbs)
 
                 for mb in global_batch.make_microbatch_iterator(mbs):
                     input_ids = mb.get("input_ids").cuda()
                     input_lengths = mb.get("input_lengths")
-                    input_ids = input_ids[:, :max(input_lengths)] 
+                    padded_seqlen = ((max(input_lengths) + 64 - 1) // 64) * 64
+                    for k, v in mb.items():
+                        if torch.is_tensor(v) and len(v.shape) > 1:
+                            v = v[:, :padded_seqlen] 
+                            mb[k] = v
+
+                    input_ids = mb["input_ids"]
                     batch_size, seq_len = input_ids.shape
 
                     attention_mask = torch.zeros(
@@ -431,6 +476,9 @@ class DTensorPolicyWorker:
 
             # increment scheduler after all batches in rollout are processed
             self.scheduler.step()
+            # dynamic batch and sequence dims causes alot of fragmentation, so clear
+            # the memory allocator before moving on
+            torch.cuda.empty_cache()
 
             # Compute global loss across all ranks
             with torch.no_grad():
@@ -473,19 +521,30 @@ class DTensorPolicyWorker:
             if micro_batch_size is not None
             else self.cfg["logprob_batch_size"]
         )
+        global_seqlen = data.get("input_ids").shape[1]
+
         all_log_probs = []
         self.model.eval()
 
         with unshard_fsdp2_model(self.model), torch.no_grad():
             data.to("cuda")
-            for lp_batch in data.make_microbatch_iterator(logprob_batch_size):
-                input_ids = lp_batch.get("input_ids")
+
+            dynamic_batching = True
+            if dynamic_batching:
+                mbs_indices = data['microbatch_indices'][0]
+                mb_iterator = data.make_microbatch_iterator(
+                    microbatch_indices=mbs_indices)
+            else:
+                mb_iterator = local_global_batch.make_microbatch_iterator(
+                    microbatch_size=logprob_batch_size)
+
+            for lp_batch in mb_iterator:
+                input_ids = lp_batch.get("input_ids").cuda()
+                input_lengths = lp_batch.get("input_lengths")
+                padded_seqlen = ((max(input_lengths) + 64 - 1) // 64) * 64
+                input_ids = input_ids[:, :padded_seqlen] 
 
                 batch_size, seq_len = input_ids.shape
-
-                # Create attention mask
-                input_lengths = lp_batch.get("input_lengths")
-
                 # Create attention mask for right-padded data
                 attention_mask = torch.zeros(
                     (batch_size, seq_len), dtype=torch.long, device=input_ids.device
@@ -548,7 +607,16 @@ class DTensorPolicyWorker:
 
         # Concatenate all batches
         return_data = BatchedDataDict()
-        return_data["logprobs"] = torch.cat(all_log_probs, dim=0).cpu()
+
+        all_log_probs_padded = []
+        for lp in all_log_probs:
+            batch_size, seq_len = lp.shape
+            padding_needed = global_seqlen - seq_len
+            if padding_needed > 0:
+                lp = torch.nn.functional.pad(lp, (0, padding_needed), mode='constant', value=0.0)
+            all_log_probs_padded.append(lp)
+
+        return_data["logprobs"] = torch.cat(all_log_probs_padded, dim=0).cpu()
 
         return return_data
 
