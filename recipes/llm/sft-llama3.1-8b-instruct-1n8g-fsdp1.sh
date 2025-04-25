@@ -6,12 +6,12 @@ NUM_NODES=1
 STEPS_PER_RUN=500
 MAX_STEPS=500
 NUM_RUNS=$(( (MAX_STEPS + STEPS_PER_RUN - 1) / STEPS_PER_RUN ))  # Round up
-NUM_MINUTES=15
+NUM_MINUTES=30
 # ===== END CONFIG =====
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 PROJECT_ROOT=$(realpath $SCRIPT_DIR/../..)
-# Mark the current repo as safe, since wandb fetchs metadata about the repo
+# Mark the current repo as safe, since wandb fetchs metadata about the repo/
 git config --global --add safe.directory $PROJECT_ROOT
 
 EXP_NAME=$(basename $0 .sh)

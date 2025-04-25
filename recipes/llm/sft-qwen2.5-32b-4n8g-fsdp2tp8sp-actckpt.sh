@@ -1,6 +1,9 @@
 #!/bin/bash
 set -eou pipefail
 
+# TODO: this config can crash on OOM
+# https://github.com/NVIDIA/reinforcer/issues/263
+
 # ===== BEGIN CONFIG =====
 NUM_NODES=4
 STEPS_PER_RUN=20  # step_time ~ 29sec
@@ -62,9 +65,8 @@ python -u tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
 # Only run metrics if the target step is reached
 if [[ $(jq 'to_entries | .[] | select(.key == "train/loss") | .value | keys | map(tonumber) | max' $JSON_METRICS) -ge $MAX_STEPS ]]; then
-    # TODO: FIGURE OUT CORRECT METRICS
     python -u tests/check_metrics.py $JSON_METRICS \
-        'data["train/loss"]["1"] < 2.4' \
-        'data["train/loss"]["60"] < 0.45' \
-        'max(data["ray/node.0.gpu.0.memory"]) < 30000'
+        'data["train/loss"]["1"] < 1.5' \
+        'data["train/loss"]["20"] < 0.3' \
+        'max(data["ray/node.0.gpu.0.memory"]) < 35000'
 fi 

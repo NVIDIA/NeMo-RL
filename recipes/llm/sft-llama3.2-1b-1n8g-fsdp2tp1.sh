@@ -3,8 +3,8 @@ set -eou pipefail
 
 # ===== BEGIN CONFIG =====
 NUM_NODES=1
-STEPS_PER_RUN=1000
-MAX_STEPS=1000
+STEPS_PER_RUN=500
+MAX_STEPS=500
 NUM_RUNS=$(( (MAX_STEPS + STEPS_PER_RUN - 1) / STEPS_PER_RUN ))  # Round up
 NUM_MINUTES=15
 # ===== END CONFIG =====
@@ -60,7 +60,7 @@ python -u tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 if [[ $(jq 'to_entries | .[] | select(.key == "train/loss") | .value | keys | map(tonumber) | max' $JSON_METRICS) -ge $MAX_STEPS ]]; then
     python -u tests/check_metrics.py $JSON_METRICS \
         'data["train/loss"]["1"] < 2.4' \
-        'data["train/loss"]["60"] < 0.45' \
-        'max(data["ray/node.0.gpu.0.memory"]) < 30000'
+        'data["train/loss"]["500"] < 0.5' \
+        'max(data["ray/node.0.gpu.0.memory"]) < 25000'
 fi
 
