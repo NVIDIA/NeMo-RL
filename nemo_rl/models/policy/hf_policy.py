@@ -338,17 +338,18 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
         # Placeholder implementation
         pass
 
-    def prepare_weights_for_ipc(self) -> list[tuple[str, int]]:
+    def prepare_weights_for_ipc(self, refit_buffer_size_gb: int = None) -> list[list[str]]:
         """Prepare the weights for IPC.
 
         Returns:
-            dict: A dictionary containing the state_dict_info of the model.
+            list: A list containing the keys of the parameters, which is grouped by size.
         """
         futures = self.worker_group.run_all_workers_single_data(
-            "prepare_weights_for_ipc"
+            "prepare_weights_for_ipc",
+            refit_buffer_size_gb,
         )
         # only get the first worker's result is enough since all workers will have the same result
-        return cast(list[tuple[str, int]], ray.get(futures)[0])
+        return cast(list[list[str]], ray.get(futures)[0])
 
     def get_weights_ipc_handles(self, keys: list[str]) -> dict[str, Any]:
         """Fetch weight IPC handles from all workers.

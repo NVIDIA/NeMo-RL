@@ -75,3 +75,16 @@ def get_device_uuid(device_idx: int) -> str:
             raise RuntimeError(
                 f"Failed to get device UUID for device {device_idx} (global index: {global_device_idx}): {e}"
             )
+
+
+def get_free_memory_bytes(device_idx: int) -> float:
+    """Get the free memory of a CUDA device in bytes using NVML."""
+    global_device_idx = device_id_to_physical_device_id(device_idx)
+    with nvml_context():
+        try:
+            handle = pynvml.nvmlDeviceGetHandleByIndex(global_device_idx)
+            return pynvml.nvmlDeviceGetMemoryInfo(handle).free
+        except pynvml.NVMLError as e:
+            raise RuntimeError(
+                f"Failed to get free memory for device {device_idx} (global index: {global_device_idx}): {e}"
+            )
