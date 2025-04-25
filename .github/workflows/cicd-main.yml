@@ -201,6 +201,27 @@ jobs:
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
+  coverage:
+    name: Upload coverage to Codecov
+    needs: [tests]
+    if: ${{ needs.pre-flight.outputs.test_level =~ ^(L0|L1|L2)$ }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-coverage-report
+          path: .
+
+      # Disabled until we make the repo public
+      # - name: Upload to Codecov
+      #   uses: codecov/codecov-action@v4
+      #   with:
+      #     token: ${{ secrets.CODECOV_TOKEN }}
+      #     file: ./coverage.json
+      #     flags: unit-tests
+      #     verbose: true
+
   CI_QA_Gate:
     name: CI quality check
     if: always()
