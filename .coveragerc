@@ -1,0 +1,10 @@
+[run]
+concurrency = thread,multiprocessing
+omit =
+    /tmp/*
+
+[paths]
+source =
+    nemo_reinforcer/
+    /opt/reinforcer/nemo_reinforcer/
+
