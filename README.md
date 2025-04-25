@@ -252,3 +252,16 @@ sbatch \
 ## Cluster Start
 
 Please visit [Cluster Start](docs/cluster.md) for how to get started on Slurm or Kubernetes.
+
+## Citation
+
+If you use NeMo-RL in your research, please cite it using the following BibTeX entry:
+
+```bibtex
+@misc{nemo-rl,
+title = {NeMo-RL: A Scalable and Efficient Post-Training Library},
+howpublished = {\url{https://github.com/NVIDIA/NeMo-RL}},
+year = {2025},
+note = {GitHub repository},
+}
+```
