@@ -177,8 +177,10 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         results = self.worker_group.get_all_worker_results(futures)
 
         # Aggregate the results
-        aggregated_results = {}
-        aggregated_results["loss"] = results[0]["global_loss"]
+        aggregated_results = {
+            "loss": results[0]["global_loss"],
+            "grad_norm": results[0]["grad_norm"],
+        }
 
         # Aggregate metrics across all workers
         all_mb_metrics = defaultdict(list)

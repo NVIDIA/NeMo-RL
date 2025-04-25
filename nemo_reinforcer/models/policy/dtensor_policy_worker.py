@@ -369,6 +369,7 @@ class DTensorPolicyWorker:
                                 total_norm=grad_norm,
                                 dtype=torch.float32,
                             )
+                        grad_norm = torch.tensor([grad_norm])
 
                     # Update parameters
                     self.optimizer.step()
