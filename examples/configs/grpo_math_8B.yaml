@@ -17,6 +17,7 @@ policy:
   precision: "bfloat16"
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
+  max_tokens_per_microbatch: 4096
 
   optimizer:
     name: "torch.optim.AdamW"
