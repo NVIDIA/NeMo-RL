@@ -204,7 +204,7 @@ jobs:
   coverage:
     name: Upload coverage to Codecov
     needs: [tests]
-    if: ${{ needs.pre-flight.outputs.test_level =~ ^(L0|L1|L2)$ }}
+    if: ${{ contains('L0 L1 L2', needs.pre-flight.outputs.test_level) }}
     runs-on: ubuntu-latest
     steps:
       - name: Download coverage artifact
