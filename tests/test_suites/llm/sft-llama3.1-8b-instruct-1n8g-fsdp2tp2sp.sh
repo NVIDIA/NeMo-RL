@@ -5,6 +5,7 @@ source $SCRIPT_DIR/common.env
 # ===== BEGIN CONFIG =====
 NUM_NODES=1
 STEPS_PER_RUN=350
+MAX_STEPS=350
 NUM_RUNS=$(( (MAX_STEPS + STEPS_PER_RUN - 1) / STEPS_PER_RUN ))  # Round up
 NUM_MINUTES=45
 # ===== END CONFIG =====
@@ -15,6 +16,7 @@ exit_if_max_steps_reached
 cd $PROJECT_ROOT
 uv run examples/run_sft.py \
     --config $CONFIG_PATH \
+    sft.max_num_steps=$MAX_STEPS \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=True \
     logger.wandb.project=nemo-rl \
@@ -36,6 +38,6 @@ if [[ $(jq 'to_entries | .[] | select(.key == "train/loss") | .value | keys | ma
     # TODO: FIGURE OUT CORRECT METRICS
     uv run tests/check_metrics.py $JSON_METRICS \
         'data["train/loss"]["1"] < 5' \
-        'data["train/loss"]["60"] < 0.5' \
+        'data["train/loss"]["350"] < 0.5' \
         'max(data["ray/node.0.gpu.0.memory"]) < 45000'
 fi 

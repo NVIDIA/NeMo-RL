@@ -5,6 +5,7 @@ source $SCRIPT_DIR/common.env
 # ===== BEGIN CONFIG =====
 NUM_NODES=1
 STEPS_PER_RUN=450
+MAX_STEPS=450
 NUM_RUNS=$(( (MAX_STEPS + STEPS_PER_RUN - 1) / STEPS_PER_RUN ))  # Round up
 NUM_MINUTES=120
 # ===== END CONFIG =====
@@ -15,6 +16,7 @@ exit_if_max_steps_reached
 cd $PROJECT_ROOT
 uv run examples/run_grpo_math.py \
     --config $CONFIG_PATH \
+    grpo.max_num_steps=$MAX_STEPS \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=True \
     logger.wandb.project=nemo-rl \
@@ -33,6 +35,6 @@ uv run tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 if [[ $(jq 'to_entries | .[] | select(.key == "train/loss") | .value | keys | map(tonumber) | max' $JSON_METRICS) -ge $MAX_STEPS ]]; then
     uv run tests/check_metrics.py $JSON_METRICS \
         'mean(data["train/token_mult_prob_error"]) < 1.1' \
-        'data["train/token_mult_prob_error"]["100"] < 1.1'
+        'data["train/token_mult_prob_error"]["450"] < 1.1'
 fi
 

@@ -5,6 +5,7 @@ source $SCRIPT_DIR/common.env
 # ===== BEGIN CONFIG =====
 NUM_NODES=4
 STEPS_PER_RUN=30
+MAX_STEPS=30
 NUM_RUNS=$(( (MAX_STEPS + STEPS_PER_RUN - 1) / STEPS_PER_RUN ))  # Round up
 NUM_MINUTES=90
 # ===== END CONFIG =====
@@ -15,6 +16,7 @@ exit_if_max_steps_reached
 cd $PROJECT_ROOT
 uv run examples/run_grpo_math.py \
     --config $CONFIG_PATH \
+    grpo.max_num_steps=$MAX_STEPS \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=True \
     logger.wandb.project=nemo-rl \
