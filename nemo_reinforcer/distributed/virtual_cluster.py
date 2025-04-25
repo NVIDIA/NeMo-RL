@@ -160,7 +160,8 @@ class RayVirtualCluster:
                 self._init_placement_groups(placement_group_strategy)
                 # Reaching here means we were successful
                 break
-            except ResourceInsufficientError:
+            except ResourceInsufficientError as e:
+                print(e)
                 print(
                     f"Retrying placement group creation... {i + 1}/{max_retries}. Next retry in {2**i} seconds."
                 )
