@@ -574,16 +574,42 @@ class DTensorPolicyWorker:
         return get_device_uuid(device_idx)
 
     @torch.no_grad()
-    def prepare_weights_for_ipc(self):
+    def prepare_weights_for_ipc(self, refit_buffer_size_gb: int = None):
+        """Prepare the weights for IPC.
+
+        Returns:
+            list: A list containing the keys of the parameters, which is grouped by size.
+        """
+        # Get state_dict
         self.model = self.move_to_cuda(self.model)
         self._held_sharded_state_dict_reference = self.model.state_dict()
-        # Collect info for streaming multiple tensors
-        state_dict_info = []
-        for name, tensor in self._held_sharded_state_dict_reference.items():
+
+        # Calculate available memory
+        if refit_buffer_size_gb is None:
+            pass
+        total_available_bytes = refit_buffer_size_gb * (1024**3)
+
+        # Group tensors by size
+        cur_available_bytes = total_available_bytes
+        grouped_param_keys, keys = [], []
+
+        for key, tensor in self._held_sharded_state_dict_reference.items():
             # dtensor's numel will return complete tensor instead of only local tensor
             size_in_bytes = tensor.element_size() * tensor.numel()
-            state_dict_info.append((name, size_in_bytes))
-        return state_dict_info
+
+            if size_in_bytes > cur_available_bytes:
+                if keys:
+                    grouped_param_keys.append(keys)
+                    keys = []
+                cur_available_bytes = total_available_bytes
+
+            keys.append(key)
+            cur_available_bytes -= size_in_bytes
+
+        if keys:
+            grouped_param_keys.append(keys)
+
+        return grouped_param_keys
 
     @torch.no_grad()
     def get_weights_ipc_handles(self, keys):
