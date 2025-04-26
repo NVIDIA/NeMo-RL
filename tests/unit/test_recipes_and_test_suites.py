@@ -202,7 +202,7 @@ def test_dry_run_does_not_fail_and_prints_total_gpu_hours():
 
 def test_all_tests_can_find_config_if_dryrun(all_test_suites):
     for test_suite in all_test_suites:
-        command = f"DRYRUN=1 {test_suite}"
+        command = f"TEST_DRYRUN=1 {test_suite}"
         result = subprocess.run(
             command,
             shell=True,
