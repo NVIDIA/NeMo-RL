@@ -18,8 +18,6 @@ import subprocess
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(dir_path, "..", ".."))
-recipes_dir = os.path.join(project_root, "recipes")
-
 test_suites_dir = os.path.join(project_root, "tests", "test_suites")
 
 nightly_test_suite_path = os.path.join(test_suites_dir, "nightly.txt")
@@ -120,15 +118,15 @@ def test_no_overlap_across_test_suites(all_test_suites):
 def test_all_recipes_accounted_for_in_test_suites(all_test_suites):
     all_recipes_in_test_suites = set(all_test_suites)
 
-    all_recipes_in_recipes_dir = set()
+    all_tests_in_test_suites_dir = set()
     for recipe_path in glob.glob(
-        os.path.join(recipes_dir, "**", "*.sh"), recursive=True
+        os.path.join(test_suites_dir, "**", "*.sh"), recursive=True
     ):
         # Strip off the project root and leading slash
         recipe_name = recipe_path[len(project_root) + 1 :]
-        all_recipes_in_recipes_dir.add(recipe_name)
+        all_tests_in_test_suites_dir.add(recipe_name)
 
-    assert all_recipes_in_test_suites == all_recipes_in_recipes_dir, (
+    assert all_recipes_in_test_suites == all_tests_in_test_suites_dir, (
         "All recipes are not accounted for in the test suites"
     )
 
@@ -172,7 +170,7 @@ def test_nightly_compute_stays_below_1024_hours(nightly_test_suite, tracker):
 
 
 def test_dry_run_does_not_fail_and_prints_total_gpu_hours():
-    command = "DRYRUN=1 HF_HOME=... HF_DATASETS_CACHE=... CONTAINER= ACCOUNT= PARTITION= ./tools/launch ./recipes/**/*.sh"
+    command = "DRYRUN=1 HF_HOME=... HF_DATASETS_CACHE=... CONTAINER= ACCOUNT= PARTITION= ./tools/launch ./tests/test_suites/**/*.sh"
 
     # Run the command from the project root directory
     result = subprocess.run(
@@ -200,3 +198,19 @@ def test_dry_run_does_not_fail_and_prints_total_gpu_hours():
     assert last_line.startswith("[INFO]: Total GPU hours:"), (
         f"Last line of output was not as expected: '{last_line}'"
     )
+
+
+def test_all_tests_can_find_config_if_dryrun(all_test_suites):
+    for test_suite in all_test_suites:
+        command = f"DRYRUN=1 {test_suite}"
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, (
+            f"Command failed with exit code {result.returncode}"
+        )

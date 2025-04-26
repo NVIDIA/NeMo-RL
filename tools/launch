@@ -40,11 +40,11 @@ extract_config() {
         echo "[ERROR]: Please add and update a section in the script with these variables:"
         echo
         echo "# ===== BEGIN CONFIG ====="
-        echo "NUM_NODES=1"       # How many nodes this job uses
-        echo "STEPS_PER_RUN=60"  # Approximately how many steps reached in one job
-        echo "MAX_STEPS=60"      # Max training steps
+        echo "NUM_NODES=1        # How many nodes this job uses"
+        echo "STEPS_PER_RUN=60   # Approximately how many steps reached in one job"
+        echo "MAX_STEPS=60       # Max training steps"
         echo 'NUM_RUNS=$(( (MAX_STEPS + STEPS_PER_RUN - 1) / STEPS_PER_RUN ))  # Round up'
-        echo "NUM_MINUTES=240"   # How many minutes one job is (SLURM specific)
+        echo "NUM_MINUTES=240    # How many minutes one job is (SLURM specific)"
         echo "# ===== END CONFIG ====="
         return 1
     fi 1>&2
