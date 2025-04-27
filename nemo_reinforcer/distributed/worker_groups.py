@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Optional, Union, Dict, Any, Iterable
 import warnings
 from dataclasses import dataclass
 
@@ -25,6 +25,7 @@ from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
 from nemo_reinforcer.distributed.batched_data_dict import SlicedDataDict
 from nemo_reinforcer.utils.venvs import create_local_venv
+from nemo_reinforcer.distributed.named_sharding import NamedSharding
 
 
 @dataclass
@@ -33,6 +34,7 @@ class MultiWorkerFuture:
 
     futures: List[ray.ObjectRef]
     used_workers: List[int]
+    return_from_workers: List[str] = None
     respect_tied_workers: bool = True
 
     def get_results(self, worker_group):
@@ -52,6 +54,12 @@ class MultiWorkerFuture:
         """
         # Basic case: Get all results
         all_results = ray.get(self.futures)
+
+        if self.return_from_workers:
+            return_results = []
+            for worker_idx, result in zip(self.return_from_workers, all_results):
+                return_results.append(result)
+            return return_results
 
         # If we don't need to deduplicate by tied workers, return all results
         if not self.respect_tied_workers:
@@ -191,6 +199,7 @@ class RayWorkerGroup:
         workers_per_node: Optional[Union[int, List[int]]] = None,
         name_prefix: str = "",
         bundle_indices_list: Optional[List[tuple]] = None,
+        sharding_annotations: Optional[NamedSharding] = None,
     ):
         """Initialize a group of distributed Ray workers.
 
@@ -203,12 +212,14 @@ class RayWorkerGroup:
             bundle_indices_list: Explicit list of (node_idx, [local_bundle_indices]) tuples.
                                Each tuple defines a tied group of workers placed on the same node.
                                If provided, workers_per_node is ignored.
+            sharding_annotations: NamedSharding object representing mapping of named axes to ranks (i.e. for TP, PP, etc.)
         """
         self._workers = []
         self._worker_metadata = []
         self.cluster = cluster
         self.name_prefix = name_prefix
         self.tied_workers_groups = []
+        self.sharding_annotations = sharding_annotations
         # Maps worker indices to their corresponding tied group index
         # For example, if worker with index 3 belongs to tied worker group 1,
         # then worker_to_tied_group_index[3] = 1
@@ -501,6 +512,112 @@ class RayWorkerGroup:
             raise ValueError(f"Invalid value for only_on: {only_on}")
 
         return futures
+
+    def run_all_workers_sharded_data(
+        self,
+        method_name: str,
+        data: Iterable[SlicedDataDict],  # arbitrary nested iterables of SlicedDataDicts
+        in_sharded_axes: List[str],
+        replicate_on_axes: List[str],
+        output_is_replicated: List[str],
+        common_kwargs: Optional[Dict[str, Any]] = None,
+    ):
+        """Run a method on all workers in parallel with sharded data.
+
+        All axes provided in in_sharded_axes will be replicated on replicate_on_axes. For axes not provided in either,
+        data will just be sent to index 0 of that axis.
+
+        Args:
+            method_name: Name of the method to call on each worker
+            data: Iterable of SlicedDataDicts to pass to workers/groups
+            in_sharded_axes: List of axes that are sharded
+            replicate_on_axes: List of axes that are replicated
+            output_is_replicated: List of axes along which the output is replicated (and we should just return the first result)
+            common_kwargs: Additional keyword arguments to pass to all workers
+        Returns:
+            MultiWorkerFuture: Object containing futures and their associated worker information
+        """
+        if self.sharding_annotations is None:
+            raise ValueError(
+                "Sharding annotations must be provided to use sharded data distribution"
+            )
+
+        if common_kwargs is None:
+            common_kwargs = {}
+
+        futures = []
+        used_workers = []
+
+        # Validate axes
+        for axis in in_sharded_axes + replicate_on_axes:
+            if axis not in self.sharding_annotations.names:
+                raise ValueError(
+                    f"Axis '{axis}' not found in sharding annotations. Valid axes: {self.sharding_annotations.names}"
+                )
+
+        # Check for overlapping axes
+        overlap = set(in_sharded_axes).intersection(set(replicate_on_axes))
+        if overlap:
+            raise ValueError(f"Axes cannot be both sharded and replicated: {overlap}")
+
+        return_from_workers = []
+        # For each worker, determine what data it should receive
+        for worker_idx, worker in enumerate(self._workers):
+            # Get the worker's coordinates in the sharding space
+            worker_coords = {}
+            for axis in self.sharding_annotations.names:
+                # For this worker, find its position in each axis
+                for i in range(self.sharding_annotations.get_axis_size(axis)):
+                    ranks = self.sharding_annotations.get_ranks(**{axis: i})
+                    if isinstance(ranks, int):
+                        if ranks == worker_idx:
+                            worker_coords[axis] = i
+                            break
+                    elif worker_idx in ranks.layout.flatten():
+                        worker_coords[axis] = i
+                        break
+
+            # Determine if this worker should receive data
+            should_receive_data = True
+            return_from_this_worker = True
+            for axis in self.sharding_annotations.names:
+                if axis not in worker_coords:
+                    continue
+                if (
+                    axis not in in_sharded_axes
+                    and axis not in replicate_on_axes
+                    and worker_coords[axis] != 0
+                ):
+                    # For axes not in either list, only workers at index 0 receive data
+                    should_receive_data = False
+                    break
+                if axis in output_is_replicated:
+                    if worker_coords[axis] != 0:
+                        return_from_this_worker = False
+            if return_from_this_worker:
+                return_from_workers.append(worker_idx)
+
+            if should_receive_data:
+                # Find the appropriate data slice for this worker
+                worker_data = data
+                for axis in in_sharded_axes:
+                    if axis in worker_coords:
+                        # Select the appropriate slice for this axis
+                        worker_data = worker_data[worker_coords[axis]]
+
+                # Call the method on the worker with its data slice
+                future = getattr(worker, method_name).remote(
+                    worker_data, **common_kwargs
+                )
+                futures.append(future)
+            else:
+                # If this worker doesn't need data, just call the method with None
+                future = getattr(worker, method_name).remote(None, **common_kwargs)
+                futures.append(future)
+
+        return MultiWorkerFuture(
+            futures=futures, used_workers=None, return_from_workers=return_from_workers
+        )
 
     def get_all_worker_results(self, future_bundle):
         """Get results from all workers, optionally filtering to get just one result per tied worker group.

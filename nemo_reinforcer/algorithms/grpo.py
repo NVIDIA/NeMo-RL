@@ -36,6 +36,7 @@ from nemo_reinforcer.data.interfaces import (
 )
 from nemo_reinforcer.data.datasets import AllTaskProcessedDataset, rl_collate_fn
 from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+from nemo_reinforcer.models.policy.megatron_policy import MegatronPolicy
 from nemo_reinforcer.models.generation.vllm import VllmGeneration
 from nemo_reinforcer.algorithms.loss_functions import (
     ClippedPGLossConfig,
@@ -226,30 +227,36 @@ def setup(
     backend = generation_config["backend"]
     generation_config["model_name"] = policy_config["model_name"]  # Needed for vLLM
 
-    if backend == "hf":
+    if backend in ["hf", "megatron"]:
         policy_generation = None
-        print(f"  ✓ Using HF backend for generation with {policy_config['model_name']}")
     elif backend == "vllm":
         policy_generation = VllmGeneration(cluster=cluster, config=generation_config)
         # Worker groups are not initialized until the first call to run something on workergroups.
         # vllm 0.8 fails in initialization if its called in the first training step since it has no clean view of the GPU memory (HF is sharing the same memory).
         policy_generation.finish_generation()
-        print(
-            f"  ✓ Using vLLM backend for generation with {policy_config['model_name']}"
-        )
+    else:
+        raise ValueError(f"Unknown generation backend: {backend}")
+    print(f"  ✓ Using {backend} for generation with {policy_config['model_name']}")
 
-    policy = HfPolicy(
-        cluster=cluster,
-        config=policy_config,
-        tokenizer=tokenizer,
-        weights_path=Path(last_checkpoint_path) / "policy" / "weights"
-        if last_checkpoint_path
-        else None,
-        optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
-        if last_checkpoint_path
-        else None,
-        init_optimizer=True,
-    )
+    if "megatron_cfg" in policy_config and policy_config["megatron_cfg"]["enabled"]:
+        policy = MegatronPolicy(
+            cluster=cluster,
+            config=policy_config,
+            tokenizer=tokenizer,
+        )
+    else:
+        policy = HfPolicy(
+            cluster=cluster,
+            config=policy_config,
+            tokenizer=tokenizer,
+            weights_path=Path(last_checkpoint_path) / "policy" / "weights"
+            if last_checkpoint_path
+            else None,
+            optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
+            if last_checkpoint_path
+            else None,
+            init_optimizer=True,
+        )
 
     loss_fn = ClippedPGLossFn(loss_config)
 

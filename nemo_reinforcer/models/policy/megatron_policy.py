@@ -16,7 +16,9 @@ from collections import defaultdict
 from typing import List, Optional, Union
 
 import ray
+from ray.util.queue import Queue
 from transformers import AutoTokenizer
+import numpy as np
 
 from nemo_reinforcer.algorithms.interfaces import LossFunction
 from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
@@ -29,88 +31,63 @@ from nemo_reinforcer.models.generation.interfaces import (
 )
 from nemo_reinforcer.models.interfaces import PolicyInterface
 from nemo_reinforcer.models.policy import PolicyConfig
-from nemo_reinforcer.models.policy.fsdp1_policy_worker import FSDP1PolicyWorker
+from nemo_reinforcer.distributed.named_sharding import NamedSharding
 
 
-class HfPolicy(PolicyInterface, GenerationInterface):
+class MegatronPolicy(PolicyInterface, GenerationInterface):
     def __init__(
         self,
         cluster: RayVirtualCluster,
         config: PolicyConfig,
         tokenizer: AutoTokenizer,
-        name_prefix: str = "hf_policy",
+        name_prefix: str = "megatron_policy",
         workers_per_node: Optional[Union[int, List[int]]] = None,
         init_optimizer: bool = True,
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
         init_reference_model: bool = True,
     ):
+        from nemo_reinforcer.models.policy.megatron_policy_worker import (
+            MegatronPolicyWorker,
+        )
+
         if weights_path:
             weights_path = os.path.abspath(weights_path)
         if optimizer_path:
             optimizer_path = os.path.abspath(optimizer_path)
 
-        node_bundle_indices = None
-        self.tensor_parallel_size = 1
+        self.sharding_annotations = NamedSharding(
+            layout=np.arange(cluster.world_size()).reshape(
+                (
+                    -1,
+                    config["pipeline_model_parallel_size"],
+                    config["tensor_model_parallel_size"],
+                )
+            ),
+            names=["data_parallel", "pipeline_model_parallel", "tensor_model_parallel"],
+        )
 
-        if config["dtensor_cfg"]["enabled"]:
-            from nemo_reinforcer.models.policy.dtensor_policy_worker import (
-                DTensorPolicyWorker,
-            )
-
-            worker_builder_cls = DTensorPolicyWorker
-            self.tensor_parallel_size = config["dtensor_cfg"]["tensor_parallel_size"]
-            node_bundle_indices = self._get_tied_worker_bundle_indices(cluster)
-        else:
-            worker_builder_cls = FSDP1PolicyWorker
-
+        pre_init_queue = (
+            Queue()
+        )  # just for communication before torch distributed is set up
         worker_builder = RayWorkerBuilder(
-            worker_builder_cls,
+            MegatronPolicyWorker,
             config,
             tokenizer=tokenizer,
-            init_optimizer=init_optimizer,
-            weights_path=weights_path,
-            optimizer_path=optimizer_path,
-            init_reference_model=init_reference_model,
+            checkpoint_dir=None,
+            worker_sharding_annotations=self.sharding_annotations,
+            pre_init_communication_queue=pre_init_queue,
         )
 
         self.worker_group = RayWorkerGroup(
             cluster,
             worker_builder,
             name_prefix=name_prefix,
-            bundle_indices_list=node_bundle_indices,
+            workers_per_node=workers_per_node,
+            sharding_annotations=self.sharding_annotations,
         )
-        self.dp_size = self.worker_group.world_size // self.tensor_parallel_size
+        self.dp_size = self.sharding_annotations.get_axis_size("data_parallel")
         self.cfg = config
-
-    def _get_tied_worker_bundle_indices(self, cluster):
-        """Calculate bundle indices for tensor parallel workers."""
-        # Get the placement groups (nodes) from the cluster
-        placement_groups = cluster.get_placement_groups()
-
-        tied_worker_groups = []
-
-        # For each node (placement group), create tied worker groups of size tensor_parallel_size
-        for node_idx, pg in enumerate(placement_groups):
-            # How many bundles (GPUs) are on this node
-            bundles_on_node = pg.bundle_count
-            tied_worker_groups_on_node = bundles_on_node // self.tensor_parallel_size
-
-            if tied_worker_groups_on_node > 0:
-                for group_idx in range(tied_worker_groups_on_node):
-                    # Local bundle indices for this tied worker group (consecutive GPUs on this node)
-                    start_idx = group_idx * self.tensor_parallel_size
-                    end_idx = start_idx + self.tensor_parallel_size
-                    local_bundle_indices = list(range(start_idx, end_idx))
-                    tied_worker_groups.append((node_idx, local_bundle_indices))
-
-        if not tied_worker_groups:
-            raise ValueError(
-                f"Cannot create any tensor parallel tied worker groups with size {self.tensor_parallel_size}. "
-                f"Make sure each node has at least {self.tensor_parallel_size} GPUs."
-            )
-
-        return tied_worker_groups
 
     def get_logprobs(
         self, data: BatchedDataDict[GenerationDatumSpec]
@@ -123,8 +100,12 @@ class HfPolicy(PolicyInterface, GenerationInterface):
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
         sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None)
-        futures = self.worker_group.run_all_workers_multiple_data(
-            "get_logprobs", sharded_data, only_on="all_tied_workers"
+        futures = self.worker_group.run_all_workers_sharded_data(
+            "get_logprobs",
+            sharded_data,
+            in_sharded_axes=["data_parallel"],
+            replicate_on_axes=["pipeline_model_parallel", "tensor_model_parallel"],
+            output_is_replicated=["tensor_model_parallel", "pipeline_model_parallel"],
         )
         logprobs = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures)
@@ -136,14 +117,18 @@ class HfPolicy(PolicyInterface, GenerationInterface):
     ) -> BatchedDataDict:
         """Get the logprobs of the reference policy for a data dict.
 
+        If micro_batch_size is provided, it will be used instead of the configured
+        logprob_batch_size.
+
         Returns: Identical to get_logprobs.
         """
         sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None)
-        futures = self.worker_group.run_all_workers_multiple_data(
+        futures = self.worker_group.run_all_workers_sharded_data(
             "get_reference_policy_logprobs",
             sharded_data,
-            common_kwargs={"micro_batch_size": micro_batch_size},
-            only_on="all_tied_workers",
+            in_sharded_axes=["data_parallel"],
+            replicate_on_axes=["pipeline_model_parallel", "tensor_model_parallel"],
+            output_is_replicated=["tensor_model_parallel", "pipeline_model_parallel"],
         )
         logprobs = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures)
@@ -160,30 +145,29 @@ class HfPolicy(PolicyInterface, GenerationInterface):
     ):
         """Train the policy on a batch of data with a given loss function."""
         batch_size = gbs or self.cfg["train_global_batch_size"]
-        micro_batch_size = mbs or self.cfg["train_micro_batch_size"]
         # Shard and replicate the batch
         shards = self.dp_size
         sharded_data = data.shard_by_batch_size(shards, batch_size=batch_size)
 
         # Train each shard in parallel
-        futures = self.worker_group.run_all_workers_multiple_data(
+        futures = self.worker_group.run_all_workers_sharded_data(
             "train",
             sharded_data,
+            in_sharded_axes=["data_parallel"],
+            replicate_on_axes=["pipeline_model_parallel", "tensor_model_parallel"],
+            output_is_replicated=["tensor_model_parallel", "pipeline_model_parallel"],
             common_kwargs={
                 "loss_fn": loss_fn,
                 "eval_mode": eval_mode,
-                "gbs": batch_size,
-                "mbs": micro_batch_size,
+                "gbs": gbs,
+                "mbs": mbs,
             },
-            only_on="all_tied_workers",
         )
         results = self.worker_group.get_all_worker_results(futures)
 
         # Aggregate the results
-        aggregated_results = {
-            "loss": results[0]["global_loss"],
-            "grad_norm": results[0]["grad_norm"],
-        }
+        aggregated_results = {}
+        aggregated_results["loss"] = results[0]["global_loss"]
 
         # Aggregate metrics across all workers
         all_mb_metrics = defaultdict(list)
@@ -207,11 +191,13 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         )
 
         sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=None)
-        futures = self.worker_group.run_all_workers_multiple_data(
+        futures = self.worker_group.run_all_workers_sharded_data(
             "generate",
             sharded_data,
+            in_sharded_axes=["data_parallel"],
+            replicate_on_axes=["pipeline_model_parallel", "tensor_model_parallel"],
             common_kwargs={"greedy": greedy},
-            only_on="all_tied_workers",
+            output_is_replicated=["tensor_model_parallel", "pipeline_model_parallel"],
         )
         result = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures),
@@ -258,19 +244,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         # Placeholder implementation
         pass
 
-    def prepare_weights_for_ipc(self):
-        """Prepare the weights for IPC.
-
-        Returns:
-            dict: A dictionary containing the state_dict_info of the model.
-        """
-        futures = self.worker_group.run_all_workers_single_data(
-            "prepare_weights_for_ipc", only_on="all_tied_workers"
-        )
-        # only get the first worker's result is enough since all workers will have the same result
-        return ray.get(futures)[0]
-
-    def get_weights_ipc_handles(self, key):
+    def get_weights_ipc_handles(self):
         """Fetch weight IPC handles from all workers.
 
         Returns:
@@ -279,7 +253,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         # Collect IPC handles from all workers
         worker_handles = ray.get(
             [
-                worker.get_weights_ipc_handles.remote(key)
+                worker.get_weight_ipc_handles.remote()
                 for worker in self.worker_group.workers
             ]
         )
@@ -309,18 +283,14 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         self,
         weights_path: str,
         optimizer_path: Optional[str] = None,
-        tokenizer_path: Optional[str] = None,
-        save_torch_dist: bool = True,
-        save_hf: bool = False,
+        offload_to_cpu: bool = True,
     ):
         """Save a checkpoint of the model."""
         futures = self.worker_group.run_all_workers_single_data(
             "save_checkpoint",
             weights_path,
             optimizer_path,
-            tokenizer_path,
-            save_torch_dist,
-            save_hf,
+            offload_to_cpu=offload_to_cpu,
             only_on="all_tied_workers",
         )
         ray.get(futures)
