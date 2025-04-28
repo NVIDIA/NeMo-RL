@@ -99,7 +99,7 @@ def _parallelize_llama(
     model = fully_shard(
         model, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
     )
-    return model
+    return torch.compile(model)
 
 def _parallelize_qwen(
     model: Qwen2ForCausalLM,
