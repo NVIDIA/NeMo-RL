@@ -19,7 +19,7 @@ rm -rf $EXP_DIR $LOG_DIR
 mkdir -p $EXP_DIR $LOG_DIR
 
 cd $PROJECT_ROOT
-python -u $PROJECT_ROOT/examples/run_grpo_math.py \
+uv run $PROJECT_ROOT/examples/run_grpo_math.py \
     cluster.gpus_per_node=2 \
     grpo.max_num_steps=3 \
     logger.tensorboard_enabled=true \
@@ -29,8 +29,8 @@ python -u $PROJECT_ROOT/examples/run_grpo_math.py \
     $@ \
     2>&1 | tee $RUN_LOG
 
-python -u tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
+uv run tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
-python -u tests/check_metrics.py $JSON_METRICS \
+uv run tests/check_metrics.py $JSON_METRICS \
     'max(data["train/token_mult_prob_error"]) < 1.1' \
 

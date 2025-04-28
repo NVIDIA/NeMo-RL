@@ -22,7 +22,7 @@ rm -rf $EXP_DIR $LOG_DIR
 mkdir -p $EXP_DIR $LOG_DIR
 
 cd $PROJECT_ROOT
-python -u $PROJECT_ROOT/examples/run_sft.py \
+uv run $PROJECT_ROOT/examples/run_sft.py \
     policy.model_name=meta-llama/Llama-3.2-1B \
     cluster.gpus_per_node=2 \
     sft.max_num_steps=10 \
@@ -36,9 +36,9 @@ python -u $PROJECT_ROOT/examples/run_sft.py \
     $@ \
     2>&1 | tee $RUN_LOG
 
-python -u tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
+uv run tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
 # TODO: loss is very noisy, this check is mainly for sanity of immediate divergence
-python -u tests/check_metrics.py $JSON_METRICS \
+uv run tests/check_metrics.py $JSON_METRICS \
   'data["train/loss"]["9"] < 1500' \
 

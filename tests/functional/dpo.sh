@@ -19,7 +19,7 @@ rm -rf $EXP_DIR $LOG_DIR
 mkdir -p $EXP_DIR $LOG_DIR
 
 cd $PROJECT_ROOT
-python -u $PROJECT_ROOT/examples/run_dpo.py \
+uv run $PROJECT_ROOT/examples/run_dpo.py \
     cluster.gpus_per_node=2 \
     dpo.max_num_steps=3 \
     dpo.val_batches=1 \
@@ -32,8 +32,8 @@ python -u $PROJECT_ROOT/examples/run_dpo.py \
     $@ \
     2>&1 | tee $RUN_LOG
 
-python -u tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
+uv run tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
-python -u tests/check_metrics.py $JSON_METRICS \
+uv run tests/check_metrics.py $JSON_METRICS \
   'data["train/loss"]["2"] < 0.694' \
 
