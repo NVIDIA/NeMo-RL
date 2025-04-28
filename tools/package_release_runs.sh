@@ -10,10 +10,25 @@ PROJECT_ROOT=$(realpath $SCRIPT_DIR/..)
 cd $PROJECT_ROOT
 
 set -eou pipefail
+# Enable recursive globbing
+shopt -s globstar
 
-# Create a temporary directory
+OUTPUT_TAR="release_runs-$(git rev-parse --short HEAD).tar.gz"
+
+# Check if the glob expanded to any files
+if [ -z "$(ls code_snapshots/*/recipes/**/logs/*/tensorboard/events* 2>/dev/null || true)" ]; then
+    echo "Error: No tensorboard event files found matching the pattern."
+    exit 1
+elif [[ -f $OUTPUT_TAR ]]; then
+    echo "Error: $OUTPUT_TAR already exists. Clean it up before continuing."
+    exit 1
+fi
+
 TMP_DIR=$(mktemp -d)
 echo "Created temporary directory: $TMP_DIR"
+
+# Set up trap to clean up temporary directory on exit
+trap "echo 'Cleaning up temporary directory $TMP_DIR'; rm -rf $TMP_DIR" EXIT
 
 # Loop over all the recipe runs and package them into a tarball
 for tbevent in $(ls code_snapshots/*/recipes/**/logs/*/tensorboard/events*); do
@@ -32,10 +47,5 @@ for tbevent in $(ls code_snapshots/*/recipes/**/logs/*/tensorboard/events*); do
 done
 
 # Create a tarball of all the processed event files
-OUTPUT_TAR="release_runs-$(git rev-parse --short HEAD).tar.gz"
 tar -czf "$OUTPUT_TAR" -C "$TMP_DIR" .
 echo "Created tarball: $OUTPUT_TAR"
-
-# Clean up the temporary directory
-rm -rf "$TMP_DIR"
-echo "Cleaned up temporary directory $TMP_DIR"
