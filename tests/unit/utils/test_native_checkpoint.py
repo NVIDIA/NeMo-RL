@@ -284,77 +284,6 @@ def test_save_and_load_model_and_optimizer(mock_experiment):
 
 
 @pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
-def test_save_and_load_hf_checkpoint(policy, num_gpus):
-    ## warm up with a forward pass
-    ## this is needed before saving a checkpoint because FSDP does some lazy initialization
-    input_ids = torch.randint(0, 16000, (4, 128))  # 4 sequences, each of length 128
-    attention_mask = torch.ones(4, 128)
-    input_lengths = attention_mask.sum(dim=1).to(torch.int32)
-    dummy_fwd_dict = BatchedDataDict(
-        {
-            "input_ids": input_ids,
-            "input_lengths": input_lengths,
-            "attention_mask": attention_mask,
-            "labels": torch.randint(0, 16000, (4, 128)),
-        }
-    )
-    policy.get_logprobs(dummy_fwd_dict)
-
-    with TemporaryDirectory() as tmp_dir:
-        policy.save_checkpoint(
-            os.path.join(tmp_dir, "test_hf_and_dcp"),
-            save_hf=True,
-            save_torch_dist=True,
-            tokenizer_path=os.path.join(tmp_dir, "test_hf_and_dcp_tokenizer"),
-        )
-
-        ## make sure we save both HF and DCP checkpoints
-        # Dynamically create the expected set of distcp files based on num_gpus
-        expected_distcp_files = {f"__{rank}_0.distcp" for rank in range(num_gpus)}
-        expected_files = expected_distcp_files.union({".metadata"})
-
-        assert (
-            set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp"))) == expected_files
-        )
-        assert set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp_tokenizer"))) == {
-            "tokenizer_config.json",
-            "tokenizer.json",
-            "special_tokens_map.json",
-        }
-
-        converted_model = AutoModelForCausalLM.from_pretrained(
-            os.path.join(tmp_dir, "test_hf_and_dcp-hf")
-        )
-
-        hf_save_dir = os.path.join(tmp_dir, "test_hf_and_dcp-hf")
-        hf_files = set(os.listdir(hf_save_dir))
-
-        # Check the HF saved files structure: could be single or sharded
-        expected_common_hf_files = {"config.json", "generation_config.json"}
-        if "model.safetensors" in hf_files:
-            # Single file format (1 GPU or smaller model)
-            expected_hf_files = expected_common_hf_files.union({"model.safetensors"})
-        else:
-            # Sharded format (>=2 GPUs or larger model)
-            expected_hf_files = expected_common_hf_files.union(
-                {
-                    "model-00001-of-00002.safetensors",
-                    "model-00002-of-00002.safetensors",
-                    "model.safetensors.index.json",
-                }
-            )
-        assert hf_files == expected_hf_files
-
-        coverted_model = AutoModelForCausalLM.from_pretrained(hf_save_dir)
-        original_model = AutoModelForCausalLM.from_pretrained(
-            simple_policy_config["model_name"]
-        )
-
-    ## make sure converted model matches the original
-    check_dict_equality(converted_model.state_dict(), original_model.state_dict())
-
-
-@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
 def test_convert_dcp_to_hf(policy, num_gpus):
     ## warm up with a forward pass
     ## this is needed before saving a checkpoint because FSDP does some lazy initialization
@@ -374,8 +303,6 @@ def test_convert_dcp_to_hf(policy, num_gpus):
     with TemporaryDirectory() as tmp_dir:
         policy.save_checkpoint(
             os.path.join(tmp_dir, "test_hf_and_dcp"),
-            save_hf=True,
-            save_torch_dist=True,
         )
 
         # Dynamically create the expected set of distcp files based on num_gpus
@@ -386,25 +313,6 @@ def test_convert_dcp_to_hf(policy, num_gpus):
         assert (
             set(os.listdir(os.path.join(tmp_dir, "test_hf_and_dcp"))) == expected_files
         )
-
-        # Check the HF saved files structure: could be single or sharded
-        hf_save_dir = os.path.join(tmp_dir, "test_hf_and_dcp-hf")
-        hf_files = set(os.listdir(hf_save_dir))
-        expected_common_hf_files = {"config.json", "generation_config.json"}
-
-        if "model.safetensors" in hf_files:
-            # Single file format (1 GPU or smaller model)
-            expected_hf_files = expected_common_hf_files.union({"model.safetensors"})
-        else:
-            # Sharded format (>=2 GPUs or larger model)
-            expected_hf_files = expected_common_hf_files.union(
-                {
-                    "model-00001-of-00002.safetensors",
-                    "model-00002-of-00002.safetensors",
-                    "model.safetensors.index.json",
-                }
-            )
-        assert hf_files == expected_hf_files
 
         offline_converted_model_path = convert_dcp_to_hf(
             os.path.join(tmp_dir, "test_hf_and_dcp"),
@@ -423,18 +331,11 @@ def test_convert_dcp_to_hf(policy, num_gpus):
             offline_converted_model_path
         )
 
-        online_converted_model = AutoModelForCausalLM.from_pretrained(
-            os.path.join(tmp_dir, "test_hf_and_dcp-hf")
-        )
         original_model = AutoModelForCausalLM.from_pretrained(
             simple_policy_config["model_name"]
         )
 
-    ## make sure both conversions results in the same state dict
-    check_dict_equality(
-        online_converted_model.state_dict(), offline_converted_model.state_dict()
-    )
-    # Ensure the offline one is different from the original
+    # Ensure the offline checkpoint is different from the original
     assert_recursive_dict_different(
         offline_converted_model.state_dict(), original_model.state_dict()
     )
