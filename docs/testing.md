@@ -1,4 +1,4 @@
-# Testing Reinforcer
+# Testing NeMo-RL
 
 ## Unit Tests
 
@@ -103,8 +103,6 @@ Functional tests may require multiple GPUs to run. See each script to understand
 Functional tests are located under `tests/functional/`.
 
 ```sh
-# Install the project and the test dependencies
-uv pip install -e '.[test]'
 # Run the functional test for sft
 uv run bash tests/functional/sft.sh
 ```

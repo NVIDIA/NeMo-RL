@@ -17,12 +17,12 @@ import pytest
 import torch
 from tempfile import TemporaryDirectory
 
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
-from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.models.policy.hf_policy import HfPolicy
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from nemo_reinforcer.utils.native_checkpoint import (
+from nemo_rl.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
     ModelState,
@@ -53,6 +53,14 @@ simple_policy_config = {
             "eps": 1e-8,
         },
     },
+    "dtensor_cfg": {
+        "enabled": False,
+        "cpu_offload": False,
+        "sequence_parallel": False,
+        "activation_checkpointing": False,
+        "tensor_parallel_size": 1,
+    },
+    "max_grad_norm": 1.0,
 }
 
 
@@ -109,6 +117,17 @@ def policy(cluster, tokenizer):
     )
     yield policy
     policy.worker_group.shutdown()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def skip_tied_weight_check_for_all():
+    """Automatically skip tied weight check for all tests in this module."""
+    os.environ["NRL_SKIP_TIED_WEIGHT_CHECK"] = "1"
+
+    yield
+
+    # Restore the original value
+    os.environ.pop("NRL_SKIP_TIED_WEIGHT_CHECK", None)
 
 
 def get_dummy_state_dict(state_dict, dummy_dict={}):
@@ -392,7 +411,7 @@ def test_convert_dcp_to_hf(policy, num_gpus):
             os.path.join(tmp_dir, "test_hf_and_dcp-hf-offline"),
             simple_policy_config["model_name"],
             # TODO: After the following PR gets merged:
-            # https://github.com/NVIDIA/reinforcer/pull/148/files
+            # https://github.com/NVIDIA/nemo-rl/pull/148/files
             # tokenizer should be copied from policy/tokenizer/* instead of relying on the model name
             # We can expose a arg at the top level --tokenizer_path to plumb that through.
             # This is more stable than relying on the current NeMo-RL get_tokenizer() which can

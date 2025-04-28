@@ -21,17 +21,17 @@ from typing import Any, Dict
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
-from nemo_reinforcer.algorithms.grpo import MasterConfig, grpo_train, setup
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.data import DataConfig
-from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
-from nemo_reinforcer.data.hf_datasets.openmathinstruct2 import OpenMathInstruct2Dataset
-from nemo_reinforcer.data.interfaces import DatumSpec, LLMMessageLogType, TaskDataSpec
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
-from nemo_reinforcer.environments.math_environment import MathEnvironment
-from nemo_reinforcer.models.generation.interfaces import configure_generation_config
-from nemo_reinforcer.utils.config import load_config, parse_hydra_overrides
-from nemo_reinforcer.utils.logger import get_next_experiment_dir
+from nemo_rl.algorithms.grpo import MasterConfig, grpo_train, setup
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.data import DataConfig
+from nemo_rl.data.datasets import AllTaskProcessedDataset
+from nemo_rl.data.hf_datasets.openmathinstruct2 import OpenMathInstruct2Dataset
+from nemo_rl.data.interfaces import DatumSpec, LLMMessageLogType, TaskDataSpec
+from nemo_rl.distributed.virtual_cluster import init_ray
+from nemo_rl.environments.math_environment import MathEnvironment
+from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.utils.config import load_config, parse_hydra_overrides
+from nemo_rl.utils.logger import get_next_experiment_dir
 
 
 def parse_args():
@@ -114,7 +114,6 @@ def math_data_processor(
     solution = str(datum_dict["expected_answer"])
     extra_env_info = {"ground_truth": solution}
 
-    template = task_data_spec.custom_template
     message_log: LLMMessageLogType = []
 
     # system prompt
@@ -122,7 +121,6 @@ def math_data_processor(
         sys_message = {"role": "system", "content": task_data_spec.system_prompt}
         message = tokenizer.apply_chat_template(
             [sys_message],
-            chat_template=template,
             tokenize=False,
             add_generation_prompt=False,
             add_special_tokens=False,
@@ -138,7 +136,6 @@ def math_data_processor(
     user_message = {"role": "user", "content": problem}
     message = tokenizer.apply_chat_template(
         [user_message],
-        chat_template=template,
         tokenize=False,
         add_generation_prompt=True,
         add_special_tokens=False,
@@ -178,7 +175,7 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig, env_configs):
         system_prompt_file=data_config["system_prompt_file"],
     )
 
-    # Load OpenMathInstruct2Dataset using reinforcer datasets
+    # Load OpenMathInstruct2Dataset using nemo rl datasets
     if data_config["dataset_name"] == "OpenMathInstruct-2":
         print(f"Loading nvidia/OpenMathInstruct2Dataset for training and validation")
         data = OpenMathInstruct2Dataset()

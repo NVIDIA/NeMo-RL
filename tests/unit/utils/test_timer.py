@@ -17,7 +17,7 @@ import pytest
 import numpy as np
 from unittest.mock import patch
 
-from nemo_reinforcer.utils.timer import Timer
+from nemo_rl.utils.timer import Timer
 
 
 class TestTimer:

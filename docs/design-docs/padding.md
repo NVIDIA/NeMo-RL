@@ -1,12 +1,12 @@
-# Padding in NeMo Reinforcer
+# Padding in NeMo RL
 
 ## Overview
 
-This document explains padding in NeMo Reinforcer and why consistent padding is critical for the framework.
+This document explains padding in NeMo RL and why consistent padding is critical for the framework.
 
 ## Padding Approach
 
-NeMo Reinforcer uses **right padding** for all tensor operations, where padding tokens are added to the right/end of sequences:
+NeMo RL uses **right padding** for all tensor operations, where padding tokens are added to the right/end of sequences:
 
 ```
 [101, 2054, 2003,    0,    0]  # Length 3
@@ -37,12 +37,12 @@ Corresponding logprobs:
 
 ## Verifying Right Padding
 
-NeMo Reinforcer provides utilities to verify correct padding:
+NeMo RL provides utilities to verify correct padding:
 
 ```{testcode}
 import torch
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.models.generation.interfaces import verify_right_padding
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.models.generation.interfaces import verify_right_padding
 
 # For input data (BatchedDataDict containing input_ids and input_lengths)
 input_data = BatchedDataDict({
@@ -78,7 +78,7 @@ if not is_right_padded:
 :hide:
 ```
 
-The {py:class}`verify_right_padding() <nemo_reinforcer.models.generation.interfaces.verify_right_padding>` function checks that:
+The {py:class}`verify_right_padding() <nemo_rl.models.generation.interfaces.verify_right_padding>` function checks that:
 1. All padding (zeros or padding token provided by the user) appears after valid tokens
 2. The padding starts at the position specified by the length tensor
 
@@ -93,6 +93,6 @@ The function automatically detects whether you're passing input or output data:
 
 2. **Track Length Tensors**: Include appropriate length tensors with your data
 
-3. **Verify Padding**: Use {py:class}`verify_right_padding() <nemo_reinforcer.models.generation.interfaces.verify_right_padding>` when in doubt
+3. **Verify Padding**: Use {py:class}`verify_right_padding() <nemo_rl.models.generation.interfaces.verify_right_padding>` when in doubt
 
 4. **Mask Padding in Operations**: Use lengths to exclude padding tokens from loss calculations

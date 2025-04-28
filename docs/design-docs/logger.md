@@ -12,7 +12,7 @@
 
 Since there is a single controller, the single process running the main training loop will gather the metrics and do the logging.
 
-To handle multiple logger backends, we will have a {py:class}`LoggerInterface <nemo_reinforcer.utils.logger.LoggerInterface>` interface that the {py:class}`TensorboardLogger <nemo_reinforcer.utils.logger.TensorboardLogger>` and {py:class}`WandbLogger <nemo_reinforcer.utils.logger.WandbLogger>` will implement:
+To handle multiple logger backends, we will have a {py:class}`LoggerInterface <nemo_rl.utils.logger.LoggerInterface>` interface that the {py:class}`TensorboardLogger <nemo_rl.utils.logger.TensorboardLogger>` and {py:class}`WandbLogger <nemo_rl.utils.logger.WandbLogger>` will implement:
 
 ```python
 class LoggerInterface(ABC):
@@ -29,7 +29,7 @@ class LoggerInterface(ABC):
         pass
 ```
 
-A {py:class}`Logger <nemo_reinforcer.utils.logger.Logger>` wrapper class will also implement {py:class}`LoggerInterface <nemo_reinforcer.utils.logger.LoggerInterface>` and will contain a list of loggers it delegates to when writing logs. This will be the main class the user uses in the training loop. Usage example:
+A {py:class}`Logger <nemo_rl.utils.logger.Logger>` wrapper class will also implement {py:class}`LoggerInterface <nemo_rl.utils.logger.LoggerInterface>` and will contain a list of loggers it delegates to when writing logs. This will be the main class the user uses in the training loop. Usage example:
 
 ```python
 # Initialize logger with both wandb and tensorboard enabled
@@ -80,7 +80,7 @@ When enabled, the pretty logging will generate formatted text similar to:
 
 ## GPU Metric Logging
 
-Reinforcer monitors GPU memory and utilization through [system metrics](https://docs.ray.io/en/latest/ray-observability/reference/system-metrics.html#system-metrics) exposed by Ray nodes. While Ray makes these metrics available for tools like Prometheus, Reinforcer directly polls GPU memory and utilization data and logs them to TensorBoard and/or Weights & Biases.
+NeMo-RL monitors GPU memory and utilization through [system metrics](https://docs.ray.io/en/latest/ray-observability/reference/system-metrics.html#system-metrics) exposed by Ray nodes. While Ray makes these metrics available for tools like Prometheus, NeMo-RL directly polls GPU memory and utilization data and logs them to TensorBoard and/or Weights & Biases.
 
 This approach allows us to offer the same GPU metric tracking on all loggers (not just wandb) and simplifies the implementation greatly.
 

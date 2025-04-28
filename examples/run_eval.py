@@ -24,15 +24,15 @@ from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
 from examples.run_grpo_math import math_data_processor
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.data import MathDataConfig
-from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
-from nemo_reinforcer.data.interfaces import TaskDataSpec
-from nemo_reinforcer.data.llm_message_utils import remap_dataset_keys
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
-from nemo_reinforcer.environments.math_environment import MathEnvironment
-from nemo_reinforcer.evals.eval import MasterConfig, run_env_eval, setup
-from nemo_reinforcer.models.generation.interfaces import configure_generation_config
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.data import MathDataConfig
+from nemo_rl.data.datasets import AllTaskProcessedDataset
+from nemo_rl.data.interfaces import TaskDataSpec
+from nemo_rl.data.llm_message_utils import remap_dataset_keys
+from nemo_rl.distributed.virtual_cluster import init_ray
+from nemo_rl.environments.math_environment import MathEnvironment
+from nemo_rl.evals.eval import MasterConfig, run_env_eval, setup
+from nemo_rl.models.generation.interfaces import configure_generation_config
 
 
 def parse_args():
@@ -114,7 +114,7 @@ def main():
     init_ray()
 
     # Setup tokenizer
-    tokenizer = get_tokenizer(config["generation"]["model_name"])
+    tokenizer = get_tokenizer(config["tokenizer"])
     config["generation"] = configure_generation_config(
         config["generation"], tokenizer, is_eval=True
     )

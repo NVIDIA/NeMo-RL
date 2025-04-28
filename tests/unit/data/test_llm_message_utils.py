@@ -17,7 +17,7 @@ import torch
 from typing import Dict, List
 from transformers import AutoTokenizer
 
-from nemo_reinforcer.data.llm_message_utils import (
+from nemo_rl.data.llm_message_utils import (
     message_log_to_flat_messages,
     get_keys_from_message_log,
     batched_message_log_to_flat_message,
@@ -25,7 +25,7 @@ from nemo_reinforcer.data.llm_message_utils import (
     add_loss_mask_to_message_log,
     get_first_index_that_differs,
 )
-from nemo_reinforcer.data.interfaces import LLMMessageLogType, TaskDataSpec
+from nemo_rl.data.interfaces import LLMMessageLogType, TaskDataSpec
 
 
 @pytest.fixture
@@ -273,6 +273,22 @@ def test_get_keys_from_messages() -> None:
     assert result == [{"key1": "val1"}, {"key1": "val4"}]
 
 
+@pytest.mark.parametrize("make_sequence_length_divisible_by", [1, 8])
+def test_batch_pad_message_log_divisible_by(
+    uneven_message_logs: List[LLMMessageLogType], make_sequence_length_divisible_by: int
+) -> None:
+    """Test batch_pad_message_log padding to a multiple."""
+    result, input_lengths = batched_message_log_to_flat_message(
+        uneven_message_logs,
+        make_sequence_length_divisible_by=make_sequence_length_divisible_by,
+    )
+
+    batch_size, sequence_length = result["input_ids"].shape
+    # Check shapes
+    assert input_lengths.shape == (2,) == (batch_size,)
+    assert sequence_length % make_sequence_length_divisible_by == 0
+
+
 def test_batch_pad_message_log_basic(
     uneven_message_logs: List[LLMMessageLogType],
 ) -> None:
@@ -414,6 +430,22 @@ def test_add_loss_mask_to_chat_message_log(
     assert torch.equal(
         tokenized_chat_message_log[0][0]["token_loss_mask"],
         torch.tensor([1, 1, 1, 1, 1, 1]),
+    )
+    assert torch.equal(
+        tokenized_chat_message_log[0][1]["token_loss_mask"], torch.tensor([0, 0, 0])
+    )
+    assert torch.equal(
+        tokenized_chat_message_log[0][2]["token_loss_mask"], torch.tensor([1, 1])
+    )
+
+    ## test only unmasking final message
+    add_loss_mask_to_message_log(
+        tokenized_chat_message_log,
+        only_unmask_final=True,
+    )
+    assert torch.equal(
+        tokenized_chat_message_log[0][0]["token_loss_mask"],
+        torch.tensor([0, 0, 0, 0, 0, 0]),
     )
     assert torch.equal(
         tokenized_chat_message_log[0][1]["token_loss_mask"], torch.tensor([0, 0, 0])

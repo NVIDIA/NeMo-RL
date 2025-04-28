@@ -1,0 +1,40 @@
+#!/bin/bash
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+PROJECT_ROOT=$(realpath $SCRIPT_DIR/../..)
+# Mark the current repo as safe, since wandb fetchs metadata about the repo
+git config --global --add safe.directory $PROJECT_ROOT
+
+set -eou pipefail
+
+LOG_DIR=$SCRIPT_DIR/$(basename $0 .sh)-logs
+JSON_METRICS=$LOG_DIR/$(basename $0 .sh).json
+RUN_LOG=$LOG_DIR/$(basename $0 .sh).log
+export UV_CACHE_DIR=${UV_CACHE_DIR:-$PROJECT_ROOT/uv_cache}
+export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
+
+rm -rf $LOG_DIR
+mkdir -p $LOG_DIR
+
+cd $PROJECT_ROOT
+python -u $PROJECT_ROOT/examples/run_grpo_sliding_puzzle.py \
+    cluster.gpus_per_node=2 \
+    grpo.max_rollout_turns=10 \
+    grpo.max_num_steps=3 \
+    policy.max_total_sequence_length=1024 \
+    policy.train_micro_batch_size=1 \
+    policy.generation.top_p=0.99 \
+    policy.generation.top_k=8000 \
+    logger.tensorboard_enabled=true \
+    logger.log_dir=$LOG_DIR \
+    logger.wandb_enabled=false \
+    checkpointing.enabled=false \
+    $@ \
+    2>&1 | tee $RUN_LOG
+
+cd $SCRIPT_DIR
+python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
+
+python check_metrics.py $JSON_METRICS \
+    'max(data["train/token_mult_prob_error"]) < 1.1' \
+

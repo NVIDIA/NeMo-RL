@@ -1,6 +1,6 @@
 # Generation Module
 
-This doc explains the token generation interface and various backends for the NeMo Reinforcer framework. The generation system is designed with a unified interface that allows different backends (like VLLM, HuggingFace, SGLang, TRT-LLM) to provide token generation capabilities while adhering to the same API.
+This doc explains the token generation interface and various backends for the NeMo-RL framework. The generation system is designed with a unified interface that allows different backends (like VLLM, HuggingFace, SGLang, TRT-LLM) to provide token generation capabilities while adhering to the same API.
 
 ## Generation Interface
 
@@ -62,11 +62,11 @@ A key thing to note about generation backends is that the generation backend tak
 
 ## VLLM Backend
 
-The VLLM backend (`models/generation/vllm.py`) implements the {py:class}`GenerationInterface <nemo_reinforcer.models.generation.interfaces.GenerationInterface>` to provide efficient text generation using the VLLM library, which is optimized for large language models.
+The VLLM backend (`models/generation/vllm.py`) implements the {py:class}`GenerationInterface <nemo_rl.models.generation.interfaces.GenerationInterface>` to provide efficient text generation using the VLLM library, which is optimized for large language models.
 
 ### VllmGeneration Class
 
-The {py:class}`VllmGeneration <nemo_reinforcer.models.generation.vllm.VllmGeneration>` class is the main implementation of the {py:class}`GenerationInterface <nemo_reinforcer.models.generation.interfaces.GenerationInterface>` for VLLM. It:
+The {py:class}`VllmGeneration <nemo_rl.models.generation.vllm.VllmGeneration>` class is the main implementation of the {py:class}`GenerationInterface <nemo_rl.models.generation.interfaces.GenerationInterface>` for VLLM. It:
 
 1. Sets up VLLM workers in a distributed environment using Ray
 2. Manages the lifecycle of these workers (initialization, generation, shutdown)
@@ -75,7 +75,7 @@ The {py:class}`VllmGeneration <nemo_reinforcer.models.generation.vllm.VllmGenera
 
 ### VllmGenerationWorker
 
-The {py:class}`VllmGenerationWorker <nemo_reinforcer.models.generation.vllm.VllmGenerationWorker>` is a Ray actor that:
+The {py:class}`VllmGenerationWorker <nemo_rl.models.generation.vllm.VllmGenerationWorker>` is a Ray actor that:
 
 1. Initializes and manages a VLLM model instance
 2. Performs the actual generation on a GPU
@@ -84,7 +84,7 @@ The {py:class}`VllmGenerationWorker <nemo_reinforcer.models.generation.vllm.Vllm
 
 ### Custom VLLM Extensions
 
-The {py:class}`UpdatableVllmInternalWorker <nemo_reinforcer.models.generation.vllm_backend.UpdatableVllmInternalWorker>` class in `vllm_backend.py` extends the VLLM worker with additional capabilities:
+The {py:class}`UpdatableVllmInternalWorker <nemo_rl.models.generation.vllm_backend.UpdatableVllmInternalWorker>` class in `vllm_backend.py` extends the VLLM worker with additional capabilities:
 
 1. Reporting device IDs to allow mapping of workers to specific GPUs
 2. Updating weights from IPC handles for efficient weight sharing
@@ -95,11 +95,11 @@ The {py:class}`UpdatableVllmInternalWorker <nemo_reinforcer.models.generation.vl
 To use a generation backend:
 
 ```python
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.models.generation.interfaces import configure_generation_config
-from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.models.generation.vllm import VllmGeneration, VllmConfig
 
 # Set up the configuration
 config = VllmConfig(
@@ -137,9 +137,9 @@ generator.finish_generation()
 
 To add a new generation backend:
 
-1. Create a new class that implements {py:class}`GenerationInterface <nemo_reinforcer.models.generation.interfaces.GenerationInterface>`
-2. Implement the required methods: {py:meth}`generate <nemo_reinforcer.models.generation.interfaces.GenerationInterface.generate>`, {py:meth}`prepare_for_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.prepare_for_generation>`, and {py:meth}`finish_generation <nemo_reinforcer.models.generation.interfaces.GenerationInterface.finish_generation>`
-3. Ensure your implementation works with the standard {py:class}`GenerationConfig <nemo_reinforcer.models.generation.interfaces.GenerationConfig>` and {py:class}`GenerationDatumSpec <nemo_reinforcer.models.generation.interfaces.GenerationDatumSpec>` structures
+1. Create a new class that implements {py:class}`GenerationInterface <nemo_rl.models.generation.interfaces.GenerationInterface>`
+2. Implement the required methods: {py:meth}`generate <nemo_rl.models.generation.interfaces.GenerationInterface.generate>`, {py:meth}`prepare_for_generation <nemo_rl.models.generation.interfaces.GenerationInterface.prepare_for_generation>`, and {py:meth}`finish_generation <nemo_rl.models.generation.interfaces.GenerationInterface.finish_generation>`
+3. Ensure your implementation works with the standard {py:class}`GenerationConfig <nemo_rl.models.generation.interfaces.GenerationConfig>` and {py:class}`GenerationDatumSpec <nemo_rl.models.generation.interfaces.GenerationDatumSpec>` structures
 4. Register your backend with the system (if needed) to make it accessible
 
 This modular design allows for easy extension with new backends while maintaining a consistent interface for the rest of the system.

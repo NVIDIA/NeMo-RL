@@ -1,0 +1,60 @@
+# GRPO Algorithm Configuration
+defaults: "grpo_math_1B.yaml"
+
+grpo:
+  num_prompts_per_step: 32
+  num_generations_per_prompt: 16
+  max_rollout_turns: 50 # Maximum turns allowed per rollout
+  max_num_steps: 10000
+
+checkpointing:
+  enabled: true
+  checkpoint_dir: "results/grpo-sliding-puzzle"
+  metric_name: "val_reward"
+  higher_is_better: true
+  keep_top_k: 3
+  save_period: 10
+
+policy:
+  model_name: "Qwen/Qwen2.5-1.5B-Instruct"
+  max_total_sequence_length: 3072
+
+  generation:
+    backend: "vllm"
+    max_new_tokens: ${policy.max_total_sequence_length}
+    temperature: 1.0
+    # Setting top_p/top_k to 0.999/10000 to strip out Qwen's special/illegal tokens
+    # https://github.com/NVIDIA/nemo-rl/issues/237
+    top_p: 0.999
+    top_k: 10000
+    stop_token_ids: null
+    stop_strings: null
+    vllm_cfg:
+      tensor_parallel_size: 1
+      gpu_memory_utilization: 0.6
+      max_model_len: ${policy.max_total_sequence_length}
+
+data:
+  add_system_prompt: false
+ 
+env:
+  sliding_puzzle_game:
+    cfg:
+      game_config:
+        size: 5 # Size of the puzzle (e.g., 2 for 2x2, 3 for 3x3)
+        shuffle_moves: 15 # Number of random moves to shuffle the solved state
+      max_moves: 50 # Maximum moves allowed per episode
+
+logger:
+  log_dir: "logs"  # Base directory for all logs
+  num_val_samples_to_print: 0 # Number of validation samples to pretty print on terminal
+  wandb_enabled: false
+  tensorboard_enabled: false
+  monitor_gpus: false  # If true, will monitor GPU usage and log to wandb and/or tensorboard
+  wandb:
+    project: "grpo-dev"
+    name: "grpo-dev-sliding_puzzle"
+  tensorboard: {}
+  gpu_monitoring:
+    collection_interval: 10  # How often to collect GPU usage metrics (in seconds)
+    flush_interval: 10  # How often to flush GPU usage metrics to the loggers (in seconds)

@@ -23,7 +23,7 @@
 import os
 import sys
 
-project = "NeMo-Reinforcer"
+project = "NeMo-RL"
 copyright = "2025, NVIDIA Corporation"
 author = "NVIDIA Corporation"
 release = "0.0.1"
@@ -59,7 +59,7 @@ myst_heading_anchors = 4  # Generates anchor links for headings up to level 4
 sys.path.insert(0, os.path.abspath(".."))
 
 autodoc2_packages = [
-    "../nemo_reinforcer",  # Path to your package relative to conf.py
+    "../nemo_rl",  # Path to your package relative to conf.py
 ]
 autodoc2_render_plugin = "myst"  # Use MyST for rendering docstrings
 autodoc2_output_dir = "apidocs"  # Output directory for autodoc2 (relative to docs/)
