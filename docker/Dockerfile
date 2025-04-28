@@ -17,7 +17,7 @@ RUN chmod 755 /home/ray/.cache
 
 FROM base AS hermetic
 
-WORKDIR /opt/reinforcer
+WORKDIR /opt/nemo-rl
 
 # First copy only the dependency files
 COPY --chown=ray --chmod=755 pyproject.toml uv.lock ./
