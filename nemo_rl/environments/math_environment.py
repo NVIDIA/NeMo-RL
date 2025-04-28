@@ -56,7 +56,10 @@ class HFVerifyWorker:
             try:
                 verify_func = math_metric(
                     gold_extraction_target=(LatexExtractionConfig(),),
-                    pred_extraction_target=(ExprExtractionConfig(), LatexExtractionConfig()),
+                    pred_extraction_target=(
+                        ExprExtractionConfig(),
+                        LatexExtractionConfig(),
+                    ),
                 )
 
                 ground_truth_parsable = "\\boxed{" + ground_truth + "}"
