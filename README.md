@@ -52,8 +52,8 @@ What you can expect:
 
 Clone **NeMo RL**
 ```sh
-git clone git@github.com:NVIDIA/reinforcer.git
-cd reinforcer
+git clone git@github.com:NVIDIA/nemo-rl.git
+cd nemo-rl
 ```
 
 Install `uv`

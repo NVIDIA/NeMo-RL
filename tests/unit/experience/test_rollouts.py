@@ -34,7 +34,7 @@ from tests.unit.test_envs import (
     MultiStepCalcMetadata,
 )
 
-from nemo_reinforcer.environments.games.sliding_puzzle import (
+from nemo_rl.environments.games.sliding_puzzle import (
     SlidingPuzzleGameLogic,
     SlidingPuzzleEnv,
     SlidingPuzzleConfig,
