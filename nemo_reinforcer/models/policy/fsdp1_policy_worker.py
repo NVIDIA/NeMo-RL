@@ -912,8 +912,6 @@ class FSDP1PolicyWorker:
         weights_path: str,
         optimizer_path: Optional[str] = None,
         tokenizer_path: Optional[str] = None,
-        save_torch_dist: bool = True,
-        save_hf: bool = False,
     ):
         """Save a checkpoint of the model.
 
@@ -923,19 +921,12 @@ class FSDP1PolicyWorker:
             __0_1.distcp
             __1_0.distcp
             ...
-        weights_path-hf/
-            config.json
-            generation_config.json
-            model-00001-of-<TOTAL_SHARDS>.safetensors
-            ...
-            model.safetensors.index.json
         optimizer_path/
             __0_0.distcp
             __1_0.distcp
             ...
 
-        the HuggingFace checkpoint is saved only if `save_hf` is True,
-        and the optimizer states are saved only if `optimizer` and `optimizer_path` are provided.
+        the optimizer states are saved only if `optimizer` and `optimizer_path` are provided.
         """
         save_checkpoint(
             model=self.model,
@@ -945,8 +936,6 @@ class FSDP1PolicyWorker:
             optimizer_path=optimizer_path,
             tokenizer=self.tokenizer if tokenizer_path else None,
             tokenizer_path=tokenizer_path,
-            save_torch_dist=save_torch_dist,
-            save_hf=save_hf,
         )
 
     def load_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):
