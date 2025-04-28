@@ -54,6 +54,8 @@ class HFVerifyWorker:
         results = []
         for response, ground_truth in zip(pred_responses, ground_truths):
             try:
+                # Use Latex and plain math extraction from predictions
+                # https://github.com/huggingface/Math-Verify?tab=readme-ov-file#extraction-targets
                 verify_func = math_metric(
                     gold_extraction_target=(LatexExtractionConfig(),),
                     pred_extraction_target=(
