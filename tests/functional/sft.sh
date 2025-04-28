@@ -29,7 +29,7 @@ python -u $PROJECT_ROOT/examples/run_sft.py \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \
     checkpointing.enabled=true \
-    checkpointing.save_every_n_steps=10 \
+    checkpointing.save_period=10 \
     checkpointing.checkpoint_dir=/tmp/sft_checkpoints \
     $@ \
     2>&1 | tee $RUN_LOG
