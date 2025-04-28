@@ -463,6 +463,9 @@ def dpo_train(
                             optimizer_path=os.path.join(
                                 checkpoint_path, "policy", "optimizer"
                             ),
+                            tokenizer_path=os.path.join(
+                                checkpoint_path, "policy", "tokenizer"
+                            ),
                         )
                         torch.save(
                             train_dataloader.state_dict(),
