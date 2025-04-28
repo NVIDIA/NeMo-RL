@@ -32,7 +32,7 @@ trap "echo 'Cleaning up temporary directory $TMP_DIR'; rm -rf $TMP_DIR" EXIT
 
 # Loop over all the recipe runs and package them into a tarball
 for tbevent in $(ls code_snapshots/*/recipes/**/logs/*/tensorboard/events*); do
-    exp_name=$(basename -- $(cut -d/ -f3 <<<$tbevent) -logs)
+    exp_name=$(basename -- $(cut -d/ -f2 <<<$tbevent) -logs)
     # Obfuscate the hostname
     # events.out.tfevents.1744822578.<host-name>.780899.0
     obfuscated_event_path=$(basename $tbevent | awk -F. '{print $1"."$2"."$3"."$4".HOSTNAME."$(NF-1)"."$NF}')
