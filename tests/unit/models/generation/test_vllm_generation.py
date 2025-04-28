@@ -19,13 +19,13 @@ import torch
 import ray
 import os
 
-from nemo_reinforcer.algorithms.grpo import refit_policy_generation
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.models.generation.interfaces import configure_generation_config
-from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
-from nemo_reinforcer.models.policy import PolicyConfig
+from nemo_rl.algorithms.grpo import refit_policy_generation
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.models.generation.vllm import VllmGeneration, VllmConfig
+from nemo_rl.models.policy import PolicyConfig
 
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
@@ -239,7 +239,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     1. Different workers generate different outputs for identical prompts due to different seeds
     2. When forced to use the same seed, workers generate identical outputs
     """
-    from nemo_reinforcer.models.generation.vllm import VllmGenerationWorker
+    from nemo_rl.models.generation.vllm import VllmGenerationWorker
 
     unique_prompts = [
         "Hello, my name is",
@@ -277,7 +277,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     policy = VllmGeneration(cluster, vllm_config)
     policy.finish_generation()
 
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+    from nemo_rl.models.policy.hf_policy import HfPolicy
 
     hf_config = get_basic_hf_test_config(enable_dtensor=False)
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
@@ -382,7 +382,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
 
     This test validates that the two policies can work together.
     """
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+    from nemo_rl.models.policy.hf_policy import HfPolicy
     from tests.unit.test_utils import nll_loss
 
     # Create separate configs for each policy
@@ -666,7 +666,7 @@ def test_vllm_weight_update_and_prefix_cache_reset(
     cluster, tokenizer, tensor_parallel_size, enable_dtensor
 ):
     """Test that the vLLM prefix cache is correctly reset when weights change."""
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+    from nemo_rl.models.policy.hf_policy import HfPolicy
 
     # Create configs
     vllm_config = deepcopy(basic_vllm_test_config)
@@ -765,7 +765,7 @@ def test_vllm_weight_update_and_prefix_cache_reset(
 @pytest.mark.parametrize("enable_dtensor", [True, False])
 def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     """Test that vLLM streaming weight update and can save memory."""
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+    from nemo_rl.models.policy.hf_policy import HfPolicy
 
     if cluster.num_gpus_per_node < 2:
         pytest.skip("Need at least 2 GPUs per node for this test")
@@ -831,7 +831,7 @@ def test_vllm_generation_with_stop(
     cluster, test_input_data, tokenizer, is_eval, enable_dtensor
 ):
     """Test vLLM generation with stop."""
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+    from nemo_rl.models.policy.hf_policy import HfPolicy
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()

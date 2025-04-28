@@ -14,7 +14,7 @@
 from typing import Any, Dict, Tuple
 import torch
 
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 
 
 def simple_loss(

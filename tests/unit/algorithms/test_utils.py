@@ -15,8 +15,8 @@
 import pytest
 from datetime import datetime
 from transformers import AutoTokenizer
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
 
 
 @pytest.fixture

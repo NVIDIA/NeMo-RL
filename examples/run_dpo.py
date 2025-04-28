@@ -20,17 +20,17 @@ from typing import Dict, Any
 
 from omegaconf import OmegaConf
 
-from nemo_reinforcer.algorithms.dpo import MasterConfig, dpo_train, setup
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
-from nemo_reinforcer.utils.config import load_config, parse_hydra_overrides
-from nemo_reinforcer.utils.logger import get_next_experiment_dir
-from nemo_reinforcer.data import DataConfig, hf_datasets
-from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
-from nemo_reinforcer.data.interfaces import TaskDataSpec, DatumSpec
-from nemo_reinforcer.data.llm_message_utils import get_formatted_message_log
+from nemo_rl.algorithms.dpo import MasterConfig, dpo_train, setup
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.distributed.virtual_cluster import init_ray
+from nemo_rl.utils.config import load_config, parse_hydra_overrides
+from nemo_rl.utils.logger import get_next_experiment_dir
+from nemo_rl.data import DataConfig, hf_datasets
+from nemo_rl.data.datasets import AllTaskProcessedDataset
+from nemo_rl.data.interfaces import TaskDataSpec, DatumSpec
+from nemo_rl.data.llm_message_utils import get_formatted_message_log
 from transformers import AutoTokenizer
-from nemo_reinforcer.models.policy import PolicyConfig
+from nemo_rl.models.policy import PolicyConfig
 
 
 def parse_args():
@@ -61,7 +61,7 @@ def dpo_preprocessor(
     Examples:
         ```{doctest}
         >>> from transformers import AutoTokenizer
-        >>> from nemo_reinforcer.data.interfaces import TaskDataSpec
+        >>> from nemo_rl.data.interfaces import TaskDataSpec
         >>>
         >>> # Initialize tokenizer and task spec
         >>> tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct")

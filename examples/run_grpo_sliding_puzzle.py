@@ -24,21 +24,21 @@ from transformers import AutoTokenizer
 
 from torch.utils.data import IterableDataset
 
-from nemo_reinforcer.algorithms.grpo import MasterConfig, grpo_train, setup
-from nemo_reinforcer.algorithms.utils import get_tokenizer
+from nemo_rl.algorithms.grpo import MasterConfig, grpo_train, setup
+from nemo_rl.algorithms.utils import get_tokenizer
 
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
-from nemo_reinforcer.models.generation.interfaces import configure_generation_config
-from nemo_reinforcer.utils.config import load_config, parse_hydra_overrides
-from nemo_reinforcer.utils.logger import get_next_experiment_dir
+from nemo_rl.distributed.virtual_cluster import init_ray
+from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.utils.config import load_config, parse_hydra_overrides
+from nemo_rl.utils.logger import get_next_experiment_dir
 
-from nemo_reinforcer.environments.games.sliding_puzzle import (
+from nemo_rl.environments.games.sliding_puzzle import (
     SlidingPuzzleGameLogic,
     SlidingPuzzleEnv,
     SlidingPuzzleConfig,
     SlidingPuzzleMetadata,
 )
-from nemo_reinforcer.data.interfaces import LLMMessageLogType, DatumSpec
+from nemo_rl.data.interfaces import LLMMessageLogType, DatumSpec
 
 
 def parse_args():

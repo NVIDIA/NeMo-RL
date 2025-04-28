@@ -16,7 +16,7 @@ import pytest
 import torch
 from unittest.mock import MagicMock, patch
 
-from nemo_reinforcer.algorithms.dpo import add_ref_logprobs_to_data
+from nemo_rl.algorithms.dpo import add_ref_logprobs_to_data
 
 
 class MockPolicy:

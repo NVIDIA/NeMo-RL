@@ -24,7 +24,7 @@ policy:
     max_new_tokens: ${policy.max_total_sequence_length}
     temperature: 1.0
     # Setting top_p/top_k to 0.999/10000 to strip out Qwen's special/illegal tokens
-    # https://github.com/NVIDIA/reinforcer/issues/237
+    # https://github.com/NVIDIA/nemo-rl/issues/237
     top_p: 0.999
     top_k: 10000
     stop_token_ids: null

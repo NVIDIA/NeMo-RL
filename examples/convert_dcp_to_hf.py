@@ -16,7 +16,7 @@ import argparse
 import json
 import os
 import torch
-from nemo_reinforcer.utils.native_checkpoint import convert_dcp_to_hf
+from nemo_rl.utils.native_checkpoint import convert_dcp_to_hf
 
 
 def parse_args():
@@ -51,7 +51,7 @@ def main():
 
     model_name_or_path = config["policy"]["model_name"]
     # TODO: After the following PR gets merged:
-    # https://github.com/NVIDIA/reinforcer/pull/148/files
+    # https://github.com/NVIDIA/nemo-rl/pull/148/files
     # tokenizer should be copied from policy/tokenizer/* instead of relying on the model name
     # We can expose a arg at the top level --tokenizer_path to plumb that through.
     # This is more stable than relying on the current NeMo-RL get_tokenizer() which can

@@ -2,7 +2,7 @@
 
 ## Launching Locally
 
-When launching examples locally with `uv`, {py:class}`init_ray() <nemo_reinforcer.distributed.virtual_cluster.init_ray>` will first attempt to connect to an existing cluster. If none is found, it will start a local one and connect to it using all available GPU and CPU resources on your node.
+When launching examples locally with `uv`, {py:class}`init_ray() <nemo_rl.distributed.virtual_cluster.init_ray>` will first attempt to connect to an existing cluster. If none is found, it will start a local one and connect to it using all available GPU and CPU resources on your node.
 
 To launch a job outside of a container, simply run:
 
@@ -14,7 +14,7 @@ In the logs, you will see that Ray has started a local cluster instance, along w
 ```
 2025-03-17 13:37:45,360 INFO worker.py:1841 -- Started a local Ray instance.
 ...
-INFO:nemo_reinforcer.distributed.virtual_cluster:Started local cluster with: {'node:__internal_head__': 1.0, 'CPU': 24.0, 'object_store_memory': 80448493977.0, 'accelerator_type:RTX': 1.0, 'memory': 177713152615.0, 'GPU': 1.0, 'node:10.0.0.1': 1.0}
+INFO:nemo_rl.distributed.virtual_cluster:Started local cluster with: {'node:__internal_head__': 1.0, 'CPU': 24.0, 'object_store_memory': 80448493977.0, 'accelerator_type:RTX': 1.0, 'memory': 177713152615.0, 'GPU': 1.0, 'node:10.0.0.1': 1.0}
 ```
 
 To control the GPUs ray uses locally more granularly, please use `CUDA_VISIBLE_DEVICES`:

@@ -13,7 +13,7 @@
 # limitations under the License.
 import pytest
 import ray
-from nemo_reinforcer.environments.math_environment import MathEnvironment
+from nemo_rl.environments.math_environment import MathEnvironment
 import time
 import os
 

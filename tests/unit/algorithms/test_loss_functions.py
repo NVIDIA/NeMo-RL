@@ -15,13 +15,13 @@ import pytest
 import torch
 import numpy as np
 
-from nemo_reinforcer.algorithms.loss_functions import (
+from nemo_rl.algorithms.loss_functions import (
     NLLLoss,
     ClippedPGLossFn,
     DPOLossFn,
 )
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.algorithms.utils import (
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.algorithms.utils import (
     calculate_kl_penalty_joschu2020,
     masked_mean,
 )

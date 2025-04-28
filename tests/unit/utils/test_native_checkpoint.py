@@ -17,12 +17,12 @@ import pytest
 import torch
 from tempfile import TemporaryDirectory
 
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
-from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.models.policy.hf_policy import HfPolicy
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from nemo_reinforcer.utils.native_checkpoint import (
+from nemo_rl.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
     ModelState,
@@ -319,7 +319,7 @@ def test_convert_dcp_to_hf(policy, num_gpus):
             os.path.join(tmp_dir, "test_hf_and_dcp-hf-offline"),
             simple_policy_config["model_name"],
             # TODO: After the following PR gets merged:
-            # https://github.com/NVIDIA/reinforcer/pull/148/files
+            # https://github.com/NVIDIA/nemo-rl/pull/148/files
             # tokenizer should be copied from policy/tokenizer/* instead of relying on the model name
             # We can expose a arg at the top level --tokenizer_path to plumb that through.
             # This is more stable than relying on the current NeMo-RL get_tokenizer() which can

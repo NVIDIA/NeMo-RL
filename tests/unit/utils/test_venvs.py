@@ -14,14 +14,14 @@
 import os
 from unittest.mock import patch
 from tempfile import TemporaryDirectory
-from nemo_reinforcer.utils.venvs import create_local_venv
+from nemo_rl.utils.venvs import create_local_venv
 import subprocess
 
 
 def test_create_local_venv():
     with TemporaryDirectory() as tempdir:
-        # Mock os.environ to set REINFORCER_VENV_DIR for this test
-        with patch.dict(os.environ, {"REINFORCER_VENV_DIR": tempdir}):
+        # Mock os.environ to set NEMO_RL_VENV_DIR for this test
+        with patch.dict(os.environ, {"NEMO_RL_VENV_DIR": tempdir}):
             venv_python = create_local_venv(
                 py_executable="uv run --group docs", venv_name="test_venv"
             )
