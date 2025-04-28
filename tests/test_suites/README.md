@@ -4,13 +4,18 @@
 
 Each test is named:
 ```
-<algo>-<model>-#n#g-<parallelism>-<opt:long>.sh
+<algo>-<model>-#n#g-<parallelism>-<opt:long><opt:v$N>.sh
 ```
 
 Examples:
 * sft-llama3.2-1b-1n8g-fsdp2tp1.sh
 * grpo-qwen2-1.5B-instruct-4n8g-fsdp2tp2.sh
 * grpo-qwen2-1.5B-instruct-4n8g-fsdp2tp2-long.sh
+* grpo-qwen2-1.5B-instruct-4n8g-fsdp2tp2-long.v2.sh
+    * The final verison suffix (starts with `.v2`, `.v3`, ...), is reserved for cases contributors believe the recipe's 
+      convergence has changed due to their commit. Versioning signals that this recipe should not be compared to its
+      predecessor due to a change in convergence behavior. Examples of this change include: changing dataset, changing loss,
+      convergence bug fix. Changes affecting performance do not need a version change. 
 
 ## Running manually
 

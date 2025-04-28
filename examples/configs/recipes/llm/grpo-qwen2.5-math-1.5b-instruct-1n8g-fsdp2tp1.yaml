@@ -79,10 +79,6 @@ policy:
       tensor_parallel_size: 1
       gpu_memory_utilization: 0.6
       max_model_len: 512
-      load_format: dummy
-      skip_tokenizer_init: true
-    pad_token_id: 151643
-    model_name: Qwen/Qwen2.5-Math-1.5B-Instruct
 data:
   max_input_seq_length: 512
   prompt_file: examples/prompts/cot.txt
