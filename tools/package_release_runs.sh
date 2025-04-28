@@ -15,8 +15,10 @@ shopt -s globstar
 
 OUTPUT_TAR="release_runs-$(git rev-parse --short HEAD).tar.gz"
 
+TB_EVENTS=$(ls code_snapshots/*/tests/test_suites/**/logs/*/tensorboard/events* || true)
+
 # Check if the glob expanded to any files
-if [ -z "$(ls code_snapshots/*/recipes/**/logs/*/tensorboard/events* 2>/dev/null || true)" ]; then
+if [ -z "$TB_EVENTS" ]; then
     echo "Error: No tensorboard event files found matching the pattern."
     exit 1
 elif [[ -f $OUTPUT_TAR ]]; then
@@ -31,7 +33,7 @@ echo "Created temporary directory: $TMP_DIR"
 trap "echo 'Cleaning up temporary directory $TMP_DIR'; rm -rf $TMP_DIR" EXIT
 
 # Loop over all the recipe runs and package them into a tarball
-for tbevent in $(ls code_snapshots/*/recipes/**/logs/*/tensorboard/events*); do
+for tbevent in $TB_EVENTS; do
     exp_name=$(basename -- $(cut -d/ -f2 <<<$tbevent) -logs)
     # Obfuscate the hostname
     # events.out.tfevents.1744822578.<host-name>.780899.0
