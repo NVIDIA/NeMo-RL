@@ -15,7 +15,8 @@ from typing import Dict, List, Optional, Tuple, TypedDict
 
 import ray
 import torch
-from math_verify import parse, verify
+from math_verify.metric import math_metric
+from math_verify.parser import ExprExtractionConfig, LatexExtractionConfig
 
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
@@ -53,9 +54,18 @@ class HFVerifyWorker:
         results = []
         for response, ground_truth in zip(pred_responses, ground_truths):
             try:
-                gold = parse(ground_truth)
-                pred = parse(response[-100:])  # avoid looking at the whole string
-                results.append(float(verify(gold, pred)))
+                verify_func = math_metric(
+                    gold_extraction_target=(LatexExtractionConfig(),),
+                    pred_extraction_target=(ExprExtractionConfig(), LatexExtractionConfig()),
+                )
+
+                ground_truth_parsable = "\\boxed{" + ground_truth + "}"
+                try:
+                    ret_score, _ = verify_func([ground_truth_parsable], [response])
+                except Exception:
+                    ret_score = 0.0
+
+                results.append(float(ret_score))
             except Exception:
                 results.append(0)
         return results
