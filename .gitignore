@@ -21,7 +21,6 @@ ckpts/
 # Test
 coverage.json
 .coverage*
-!.coveragerc
 test_assets/
 
 # Cache
