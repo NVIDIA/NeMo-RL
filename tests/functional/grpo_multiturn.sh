@@ -7,17 +7,19 @@ git config --global --add safe.directory $PROJECT_ROOT
 
 set -eou pipefail
 
-LOG_DIR=$SCRIPT_DIR/$(basename $0 .sh)-logs
-JSON_METRICS=$LOG_DIR/$(basename $0 .sh).json
-RUN_LOG=$LOG_DIR/$(basename $0 .sh).log
+EXP_NAME=$(basename $0 .sh)
+EXP_DIR=$SCRIPT_DIR/$EXP_NAME
+LOG_DIR=$EXP_DIR/logs
+JSON_METRICS=$EXP_DIR/metrics.json
+RUN_LOG=$EXP_DIR/run.log
 export UV_CACHE_DIR=${UV_CACHE_DIR:-$PROJECT_ROOT/uv_cache}
 export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
 
-rm -rf $LOG_DIR
-mkdir -p $LOG_DIR
+rm -rf $EXP_DIR $LOG_DIR
+mkdir -p $EXP_DIR $LOG_DIR
 
 cd $PROJECT_ROOT
-python -u $PROJECT_ROOT/examples/run_grpo_sliding_puzzle.py \
+uv run $PROJECT_ROOT/examples/run_grpo_sliding_puzzle.py \
     cluster.gpus_per_node=2 \
     grpo.max_rollout_turns=10 \
     grpo.max_num_steps=3 \
@@ -32,9 +34,8 @@ python -u $PROJECT_ROOT/examples/run_grpo_sliding_puzzle.py \
     $@ \
     2>&1 | tee $RUN_LOG
 
-cd $SCRIPT_DIR
-python json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
+uv run tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
-python check_metrics.py $JSON_METRICS \
+uv run tests/check_metrics.py $JSON_METRICS \
     'max(data["train/token_mult_prob_error"]) < 1.1' \
 
