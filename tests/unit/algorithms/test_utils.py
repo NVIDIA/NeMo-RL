@@ -15,7 +15,6 @@
 from datetime import datetime
 
 import pytest
-from transformers import AutoTokenizer
 
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES

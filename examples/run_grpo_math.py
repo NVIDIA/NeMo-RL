@@ -177,7 +177,7 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig, env_configs):
 
     # Load OpenMathInstruct2Dataset using nemo rl datasets
     if data_config["dataset_name"] == "OpenMathInstruct-2":
-        print(f"Loading nvidia/OpenMathInstruct2Dataset for training and validation")
+        print("Loading nvidia/OpenMathInstruct2Dataset for training and validation")
         data = OpenMathInstruct2Dataset()
     else:
         raise ValueError(f"No processor for dataset {data_config['dataset_name']}.")

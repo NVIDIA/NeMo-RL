@@ -28,7 +28,6 @@ from torch.distributed.checkpoint.state_dict import (
     set_optimizer_state_dict,
 )
 from torch.distributed.checkpoint.stateful import Stateful
-from torch.distributed.fsdp import FullyShardedDataParallel
 from transformers import AutoConfig, AutoTokenizer
 
 

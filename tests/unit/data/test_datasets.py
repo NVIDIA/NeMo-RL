@@ -14,7 +14,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest
 import torch
 
 from nemo_rl.data.datasets import dpo_collate_fn

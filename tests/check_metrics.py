@@ -15,7 +15,7 @@ import argparse
 import json
 import statistics
 import sys
-from typing import Any, Dict, List, Tuple, Union
+from typing import Dict, Tuple
 
 from rich.console import Console
 from rich.table import Table

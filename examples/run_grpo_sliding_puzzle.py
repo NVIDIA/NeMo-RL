@@ -130,7 +130,7 @@ class IterablePuzzleDataset(IterableDataset):
         self.length = length
 
     def __iter__(self) -> Iterator[DatumSpec]:
-        print(f"Starting IterablePuzzleDataset (indefinite generation).")
+        print("Starting IterablePuzzleDataset (indefinite generation).")
         # Use itertools.count for an infinite index generator
         for i in itertools.count():
             yield generate_puzzle_datum(
@@ -163,7 +163,7 @@ def setup_puzzle_data(
     task_to_env = {task_name: env}
     print(f"Environment '{task_name}' created.")
 
-    print(f"Creating Sliding Puzzle dataset...")
+    print("Creating Sliding Puzzle dataset...")
     training_dataset = IterablePuzzleDataset(
         tokenizer=tokenizer,
         game_config=dict(env_config["cfg"]["game_config"]),

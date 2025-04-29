@@ -21,7 +21,7 @@ import re
 import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from typing import Any, Dict, List, Optional, TypedDict
 
 import ray
 import requests

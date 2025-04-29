@@ -27,8 +27,6 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from nemo_rl.distributed.virtual_cluster import init_ray
-from nemo_rl.utils.logger import GPUMonitoringConfig
-from tests import unit
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 

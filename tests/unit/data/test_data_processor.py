@@ -15,7 +15,6 @@
 import os
 import sys
 
-import pytest
 from datasets import Dataset
 
 abspath = os.path.abspath(__file__)

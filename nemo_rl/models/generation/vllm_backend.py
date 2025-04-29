@@ -14,10 +14,10 @@
 import torch
 
 try:
-    import vllm
+    import vllm  # noqa: F401
 except ImportError:
     raise ImportError(
-        f"vLLM is not installed. Please check that VllmGenerationWorker.DEFAULT_PY_EXECUTABLE covers the vllm dependency. "
+        "vLLM is not installed. Please check that VllmGenerationWorker.DEFAULT_PY_EXECUTABLE covers the vllm dependency. "
         "If you are working interactively, you can install by running  `uv sync --extra vllm` anywhere in the repo."
     )
 

@@ -17,8 +17,6 @@ import gzip
 import json
 import os
 import random
-from dataclasses import dataclass
-from typing import Optional
 
 import requests
 

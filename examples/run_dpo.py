@@ -19,7 +19,6 @@ import warnings
 from typing import Any, Dict
 
 from omegaconf import OmegaConf
-from transformers import AutoTokenizer
 
 from nemo_rl.algorithms.dpo import MasterConfig, dpo_train, setup
 from nemo_rl.algorithms.utils import get_tokenizer

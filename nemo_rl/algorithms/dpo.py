@@ -21,17 +21,15 @@ from typing import Optional, Tuple, TypedDict
 import numpy as np
 import torch
 from torchdata.stateful_dataloader import StatefulDataLoader
-from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from nemo_rl.algorithms.loss_functions import (
     DPOLossFn,
 )
-from nemo_rl.algorithms.utils import get_tokenizer, set_seed
+from nemo_rl.algorithms.utils import set_seed
 from nemo_rl.data import DataConfig
 from nemo_rl.data.datasets import AllTaskProcessedDataset, dpo_collate_fn
 from nemo_rl.data.interfaces import TaskDataSpec
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import ClusterConfig, RayVirtualCluster
 from nemo_rl.models.interfaces import PolicyInterface
 from nemo_rl.models.policy import PolicyConfig
@@ -218,7 +216,7 @@ def setup(
         init_reference_model=True,
     )
     loss_fn = DPOLossFn(master_config["dpo"])
-    print(f"  ✓ Model initialized")
+    print("  ✓ Model initialized")
 
     print("\n" + "=" * 60)
     print(" " * 18 + "SETUP COMPLETE")

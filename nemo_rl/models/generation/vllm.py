@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import gc
-import warnings
 from typing import List, Optional, TypedDict, Union
 
 import ray
@@ -155,7 +154,7 @@ class VllmGenerationWorker:
             self.SamplingParams = vllm.SamplingParams
         except ImportError:
             raise ImportError(
-                f"vLLM is not installed. Please check that VllmGenerationWorker.DEFAULT_PY_EXECUTABLE covers the vllm dependency. "
+                "vLLM is not installed. Please check that VllmGenerationWorker.DEFAULT_PY_EXECUTABLE covers the vllm dependency. "
                 "If you are working interactively, you can install by running  `uv sync --extra vllm` anywhere in the repo."
             )
         vllm_kwargs = self.cfg.get("vllm_kwargs", {}).copy()

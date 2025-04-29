@@ -22,7 +22,6 @@ from collections import defaultdict
 
 from rich.box import SIMPLE
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from tensorboard.backend.event_processing import event_accumulator
@@ -138,7 +137,7 @@ def merge_tb_logs_to_json(log_dir, output_path, allow_conflicts=False):
 
         # Create metric header with better highlighting
         metric_text = Text()
-        metric_text.append(f"🔹 ", style="bold blue")
+        metric_text.append("🔹 ", style="bold blue")
         metric_text.append(f"{metric}", style="bold magenta")
         metric_text.append(f" - {len(steps)} steps", style="green")
         console.print(metric_text)
@@ -200,7 +199,7 @@ def merge_tb_logs_to_json(log_dir, output_path, allow_conflicts=False):
         )
     else:
         console.print(
-            f"[bold red]✓ To save the merged data, use --output_path[/bold red]"
+            "[bold red]✓ To save the merged data, use --output_path[/bold red]"
         )
 
 
