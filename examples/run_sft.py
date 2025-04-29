@@ -16,16 +16,16 @@ import argparse
 import os
 import pprint
 from functools import partial
-from typing import Dict, Any
+from typing import Any, Dict
 
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
-from nemo_rl.algorithms.sft import MasterConfig, sft_train, setup
+from nemo_rl.algorithms.sft import MasterConfig, setup, sft_train
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data import DataConfig, hf_datasets
 from nemo_rl.data.datasets import AllTaskProcessedDataset
-from nemo_rl.data.interfaces import TaskDataSpec, DatumSpec
+from nemo_rl.data.interfaces import DatumSpec, TaskDataSpec
 from nemo_rl.data.llm_message_utils import get_formatted_message_log
 from nemo_rl.distributed.virtual_cluster import init_ray
 from nemo_rl.utils.config import load_config, parse_hydra_overrides

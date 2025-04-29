@@ -86,12 +86,13 @@ python_files = "test_*.py"
 [tool.ruff.lint]
 # Enable all `pydocstyle` rules, limiting to those that adhere to the
 # Google convention via `convention = "google"`, below.
-select = ["D"]
+select = ["D", "F"]
 
-# On top of the Google convention, disable `D417`, which requires
-# documentation for every function parameter.
+# - On top of the Google convention, disable `D417`, which requires
+#   documentation for every function parameter.
+# - F841: local variable assigned but never used (exluced to favor readability)
 # TODO: Remove D10 once we are about to release to get all the docstrings written
-ignore = ["D417", "D10"]
+ignore = ["D417", "D10", "F841"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -102,6 +103,8 @@ convention = "google"
 "tests/**" = ["D"]
 # Ignore all files that end in `_test.py`.
 "*_test.py" = ["D"]
+# Ignore F401 (import but unused) in __init__.py
+"__init__.py" = ["F401"]
 
 [tool.uv]
 # Users may use different link-modes depending on their scenario:

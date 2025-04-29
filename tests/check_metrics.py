@@ -11,11 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
-import sys
 import argparse
+import json
 import statistics
-from typing import Dict, Tuple, Any, Union, List
+import sys
+from typing import Dict, Tuple
+
 from rich.console import Console
 from rich.table import Table
 

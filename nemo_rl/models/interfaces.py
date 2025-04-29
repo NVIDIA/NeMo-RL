@@ -14,8 +14,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.algorithms.interfaces import LossFunction
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.models.generation.interfaces import GenerationDatumSpec
 
 

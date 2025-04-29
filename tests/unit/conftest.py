@@ -11,32 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from io import StringIO
-import time
-import pytest
-from nemo_rl.utils.logger import GPUMonitoringConfig
-from tests import unit
-import torch
-import torch.distributed as dist
-import torch.multiprocessing as mp
+import json
 import os
 import random
-from typing import Callable
-import ray
+import time
+import unittest.mock
+from datetime import datetime
+from io import StringIO
+from typing import Callable, TypedDict
 
 import pytest
+import ray
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import os
-import random
-from typing import Callable
-import ray
-import json
+
 from nemo_rl.distributed.virtual_cluster import init_ray
-from typing import TypedDict
-from datetime import datetime
-import unittest.mock
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -396,8 +386,9 @@ def mock_2gpu_distributed_env():
 @pytest.fixture(scope="session", autouse=True)
 def tiny_llama_model_path():
     """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
-    from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer
     import shutil
+
+    from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
 
     model_path = TEST_ASSETS.TINY_LLAMA_MODEL_PATH
     # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
@@ -423,8 +414,9 @@ def tiny_llama_model_path():
 @pytest.fixture(scope="session", autouse=True)
 def tiny_llama_tied_model_path():
     """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
-    from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer
     import shutil
+
+    from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
 
     model_path = TEST_ASSETS.TINY_LLAMA_TIED_MODEL_PATH
     # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
@@ -450,8 +442,9 @@ def tiny_llama_tied_model_path():
 @pytest.fixture(scope="session", autouse=True)
 def tiny_qwen2_model_path():
     """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
-    from transformers import Qwen2Config, Qwen2ForCausalLM, AutoTokenizer
     import shutil
+
+    from transformers import AutoTokenizer, Qwen2Config, Qwen2ForCausalLM
 
     model_path = TEST_ASSETS.TINY_QWEN2_MODEL_PATH
     # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)

@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
-import subprocess
-import shlex
 import logging
+import os
+import shlex
+import subprocess
 from functools import lru_cache
 
 dir_path = os.path.dirname(os.path.abspath(__file__))

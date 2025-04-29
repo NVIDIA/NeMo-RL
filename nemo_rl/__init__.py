@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+
 from nemo_rl.package_info import (
     __contact_emails__,
     __contact_names__,

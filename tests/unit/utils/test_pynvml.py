@@ -15,9 +15,9 @@ import os
 from unittest.mock import patch
 
 from nemo_rl.utils.nvml import (
-    nvml_context,
     device_id_to_physical_device_id,
     get_device_uuid,
+    nvml_context,
 )
 
 

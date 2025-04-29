@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypedDict, Optional, Union
+from typing import Optional, TypedDict, Union
 
 from nemo_rl.models.generation.interfaces import GenerationConfig
 

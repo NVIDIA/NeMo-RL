@@ -11,16 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from copy import deepcopy
 from collections import UserDict
-from typing import List, Dict, Optional, Iterator, TypeVar, Any, Generic, Union
-from typing_extensions import Self
+from copy import deepcopy
+from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
 
 import torch
+from typing_extensions import Self
 
 from nemo_rl.distributed.collectives import (
-    rebalance_nd_tensor,
     gather_jagged_object_lists,
+    rebalance_nd_tensor,
 )
 
 DictT = TypeVar("DictT", bound=Dict[str, Any])
