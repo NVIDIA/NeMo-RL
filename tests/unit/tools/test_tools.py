@@ -14,7 +14,6 @@
 
 import pytest
 from copy import deepcopy
-from pprint import pformat
 
 import torch
 from datasets import load_dataset
@@ -129,7 +128,6 @@ def test_vllm_execute_code(cluster, tokenizer):
         {
             "input_ids": encodings["input_ids"],
             "input_lengths": input_lengths,
-            "stop_strings": ["</result>"],
         }
     )
 
@@ -165,9 +163,7 @@ def test_vllm_execute_code(cluster, tokenizer):
     output_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
 
     assert input_texts == test_prompts, "Unexpected modification to input texts"
-    assert output_texts == results, (
-        f"Expect:\n{pformat(results)}\nGot wrong output:\n{pformat(output_texts)}"
-    )
+    assert output_texts == results, f"Expect {results}, got wrong output {output_texts}"
     assert (logprobs[~is_generated] == 0.0).all(), (
         "Unexpected log probabilities on input tokens or paddings"
     )
@@ -202,14 +198,14 @@ def test_hf_execute_code(cluster, tokenizer):
         {
             "input_ids": encodings["input_ids"],
             "input_lengths": input_lengths,
-            "stop_strings": ["</result>"],
         }
     )
 
     # Create separate configs for each policy
     hf_config = deepcopy(basic_hf_test_config)
     hf_config["generation"] = configure_generation_config(
-        hf_config["generation"], tokenizer, is_eval=True
+        hf_config["generation"],
+        tokenizer,  # is_eval=True
     )
 
     # Create vLLM generation
@@ -238,9 +234,7 @@ def test_hf_execute_code(cluster, tokenizer):
     output_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
 
     assert input_texts == test_prompts, "Unexpected modification to input texts"
-    assert output_texts == results, (
-        f"Expect:\n{pformat(results)}\nGot wrong output:\n{pformat(output_texts)}"
-    )
+    assert output_texts == results, f"Expect {results}, got wrong output {output_texts}"
     assert (logprobs[~is_generated] == 0.0).all(), (
         "Unexpected log probabilities on input tokens or paddings"
     )
@@ -250,3 +244,67 @@ def test_hf_execute_code(cluster, tokenizer):
 
     # Clean up
     hf_policy.shutdown()
+
+
+@pytest.mark.timeout(150)
+def test_vllm_use_tool(cluster, tokenizer):
+    """Test that vLLM can use tool in the code executor."""
+    # Prepare test data
+    codes = ["<code>retrieve('Jen-Hsun Huang')</code>\n"]
+    results = [
+        "\n<result>\n"
+        "['Nvidia was established in 1993 by Jen-Hsun Huang, Curtis Priem, and Chris '\n"
+        " 'Malachowsky. In 2000 Nvidia took intellectual possession of 3dfx, one of the '\n"
+        " 'biggest GPU producers in 1990s.']\n"
+        "</result>"
+    ]
+    results = [code + result for code, result in zip(codes, results)]
+
+    test_prompts = [code * 4 for code in codes]
+    encodings = tokenizer(
+        test_prompts,
+        padding="max_length",
+        max_length=1024,
+        return_tensors="pt",
+        padding_side="right",
+    )
+    input_lengths = encodings["attention_mask"].sum(dim=1).to(torch.int32)
+    batch = BatchedDataDict(
+        {
+            "input_ids": encodings["input_ids"],
+            "input_lengths": input_lengths,
+        }
+    )
+
+    # Construct retriever
+    dataset = load_dataset("rahular/simple-wikipedia")
+    documents = [sample["text"] for sample in dataset["train"]]
+    tool_map = {"retrieve": BM25Retriever(documents, num_result=1)}
+
+    # Create separate configs for each policy
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
+
+    # Create vLLM generation
+    vllm_generation = VllmGeneration(cluster, vllm_config)
+
+    # Generate and check result
+    outputs = generate_with_code_and_tools(
+        vllm_generation, batch, tokenizer, tool_map=tool_map, greedy=True
+    )
+
+    all_output_ids = outputs["output_ids"]
+    input_lengths = outputs["unpadded_sequence_lengths"] - outputs["generation_lengths"]
+    output_lengths = outputs["unpadded_sequence_lengths"]
+    output_ids = []
+    for all_output_id, input_length, output_length in zip(
+        all_output_ids, input_lengths, output_lengths
+    ):
+        output_ids.append(all_output_id[input_length:output_length])
+
+    output_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+
+    assert output_texts == results, f"Expect {results}, got wrong output {output_texts}"
+
+    # Clean up
+    vllm_generation.shutdown()

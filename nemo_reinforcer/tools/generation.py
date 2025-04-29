@@ -22,13 +22,6 @@ from nemo_reinforcer.tools.tools import StatefulCodeExecutor
 LOGIT_INFINITY = 1000
 
 
-def unpad(batched_tensor, lengths):
-    lists = []
-    for tensor, length in zip(batched_tensor, lengths):
-        lists.append(tensor[:length].tolist())
-    return lists
-
-
 def generate_with_code_and_tools(
     policy: GenerationInterface,
     input_batch: BatchedDataDict[GenerationDatumSpec],
@@ -40,7 +33,24 @@ def generate_with_code_and_tools(
     *args,
     **kwargs,
 ) -> BatchedDataDict[GenerationOutputSpec]:
-    """Invoke policy.generate() with code execution and tool use."""
+    """Generate a batch of data with code execution and tool use.
+
+    All code execution and tool calls in the generation will be executed on-the-fly,
+    of which the results will be appended to the output. Multiple code execution and tool calls
+    is supported.
+
+    This function can be used as a drop-in replacement of `policy.generate()`.
+
+    Args:
+        policy: policy to generate from. Can be either vllm or HuggingFace backend
+        input_batch: BatchedDataDict containing input_ids and input_lengths tensors
+        tokenizer: tokenizer from the pretrained model
+        execute_code: whether to execute code
+        tool_map: tools that the model can use
+        tag: xml tag to detect code snippet
+        result_tag: xml tag to output the result
+        *args, **kwargs: arguments and keyword arguments accepted by `policy.generate()`
+    """
     if tool_map and not execute_code:
         warnings.warn(
             "Tool use requires code execution, but code execution is disabled. All the tools will be ignored."
@@ -57,9 +67,6 @@ def generate_with_code_and_tools(
     stop_strings = [stop_strings + [end_tag]] * batch_size
     batch["stop_strings"] = stop_strings
     old_logprobs = None
-    # input_ids: (batch_size, max_length)
-    # input_lengths: (batch_size,)
-    # stop_strings: (batch_size, *)
 
     active_batch = batch
     active_indices = torch.arange(batch_size)
@@ -67,37 +74,26 @@ def generate_with_code_and_tools(
     completed_output_ids = [None] * batch_size
     completed_logprobs = [None] * batch_size
 
-    i = 0
     while len(active_indices) > 0:
-        print(f"==================== iteration {i} ====================")
-        print(f"batch: {batch}")
-        print(f"active indices: {active_indices}")
-        i += 1
-
         generation_outputs = policy.generate(active_batch, *args, **kwargs)
-        # generation_lengths: (batch_size)
-        # logprobs: (batch_size, max_length) unbounded logits, default to 0
-        # output_ids: (batch_size, max_length)
-        # unpadded_sequence_lengths: (batch_size)
-        # max length = 131072
+
         output_ids = generation_outputs["output_ids"]
         # only contains logprobs for newly generated tokens
         logprobs = generation_outputs["logprobs"]
         input_lengths = active_batch["input_lengths"]
         total_lengths = generation_outputs["unpadded_sequence_lengths"]
         if old_logprobs is not None:
-            # recover logprobs for tokens generated in previous iterations
+            # restore logprobs for tokens generated in previous iterations
             for i, input_length in enumerate(input_lengths):
                 logprobs[i, :input_length] = old_logprobs[i, :input_length]
 
+        # extract newly generated tokens
         generated_ids = []
         for output_id, input_length, total_length in zip(
             output_ids, input_lengths, total_lengths
         ):
             generated_ids.append(output_id[input_length:total_length])
-        print(f"generated_ids = {generated_ids}")
 
-        # decode the tokens of incompleted samples
         generated_texts = tokenizer.batch_decode(
             generated_ids, skip_special_tokens=True
         )
@@ -109,7 +105,6 @@ def generate_with_code_and_tools(
         for i, (generated_text, active_index, total_length) in enumerate(
             zip(generated_texts, active_indices, total_lengths)
         ):
-            print(f"generated text = {generated_text}")
             match = re.search(
                 rf"{start_tag}(.*){end_tag}(.*)", generated_text, re.DOTALL
             )
@@ -129,17 +124,20 @@ def generate_with_code_and_tools(
         if len(is_code) == 0:
             break
 
+        # execute all code in this batch
         futures = []
         for i, expr, lookahead in zip(is_code, exprs, lookaheads):
             active_index = active_indices[i]
+            # dispatch code to a pre-allocated executor for that sample
+            # so that functions and variables will be carried over
             future = executors[active_index].__call__.remote(expr)
             futures.append(future)
         results = ray.get(futures)
-        print(f"got results:\n{results}")
 
         new_results = []
         for result in results:
             if result is None:
+                # no return value
                 result = ""
                 new_results.append(result)
                 continue
@@ -172,15 +170,10 @@ def generate_with_code_and_tools(
         )
         result_ids = encodings["input_ids"]
         result_lengths = encodings["attention_mask"].sum(dim=1).to(torch.int32)
-        print(f"result_ids = {result_ids}")
-        print(f"result_lengths = {result_lengths}")
 
         is_code = torch.tensor(is_code)
-        print(f"is_code = {is_code}")
-        # reduce active batch
-        print(f"active batch before reduction = {active_batch}")
+        # reduce active batch to those containing code
         active_batch = active_batch.select_indices(is_code)
-        print(f"active batch after reduction = {active_batch}")
         active_indices = active_indices[is_code]
         output_ids = output_ids[is_code]
         logprobs = logprobs[is_code]
@@ -210,8 +203,6 @@ def generate_with_code_and_tools(
 
         active_batch["input_ids"] = new_output_ids
         active_batch["input_lengths"] = total_lengths + result_lengths
-        print(f"new_output_ids = {new_output_ids}")
-        print(f"input_lengths = {total_lengths + result_lengths}")
         old_logprobs = new_logprobs
 
     output_ids = pad_sequence(

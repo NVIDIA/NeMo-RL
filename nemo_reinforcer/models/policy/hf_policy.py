@@ -519,6 +519,7 @@ class HfPolicyWorker:
                 ]
             if gen_cfg["stop_strings"] is not None:
                 stop_strings += gen_cfg["stop_strings"]
+            stop_strings = list(set(stop_strings))
 
             micro_batches = []
 
@@ -609,26 +610,17 @@ class HfPolicyWorker:
                 device=return_data["left_padded_output_ids"][0].device,
             )
 
-            for idx, seq in enumerate(return_data["left_padded_output_ids"]):
+            for idx, (seq, generated_logprob) in enumerate(
+                zip(
+                    return_data["left_padded_output_ids"],
+                    return_data["generation_logprobs"],
+                )
+            ):
                 # Get only the generated part (excluding input)
                 original_length = return_data["orig_input_lengths"][idx].item()
                 seq_len = seq.size(0)
 
-                # The generated content starts after the left-padded input
-                generated_part = seq[-(seq_len - input_length) :]
-
-                eos_positions = (generated_part == self.tokenizer.eos_token_id).nonzero(
-                    as_tuple=True
-                )[0]
-                # TODO @sahilj: handle different stopping criteria
-                # Calculate generation length
-                if len(eos_positions) > 0:
-                    gen_length = (
-                        eos_positions[0].item() + 1
-                    )  # +1 to include the EOS token
-                else:
-                    gen_length = len(generated_part)
-
+                gen_length = (generated_logprob != 0).sum().item()
                 generation_lengths.append(gen_length)
 
                 valid_length = original_length + gen_length
@@ -643,7 +635,7 @@ class HfPolicyWorker:
                 )
 
                 # Combine with generated part
-                valid_generated_part = generated_part[:gen_length]
+                valid_generated_part = seq[input_length : input_length + gen_length]
                 valid_tokens = torch.cat([valid_input_part, valid_generated_part])
 
                 # Place at the beginning of the right-padded sequence
