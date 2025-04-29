@@ -20,7 +20,6 @@ from nemo_rl.algorithms.utils import (
     calculate_kl_penalty_joschu2020,
     masked_mean,
 )
-
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.models.dtensor.parallelize import (
     get_logprobs_from_vocab_parallel_logits,

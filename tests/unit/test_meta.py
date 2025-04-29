@@ -14,8 +14,9 @@
 
 # This module tests things outside of any package (e.g., things in the root __init__.py)
 
-import pytest
 import os
+
+import pytest
 
 
 def test_usage_stats_disabled_by_default():

@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest.mock import MagicMock
+
 import pytest
 import torch
-from unittest.mock import MagicMock
 
 from nemo_rl.data.datasets import dpo_collate_fn
 from nemo_rl.data.interfaces import DatumSpec

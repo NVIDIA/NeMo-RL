@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import abc
-from typing import Dict, List, Tuple, NamedTuple, Optional
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 from torch import Tensor
 
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.data.interfaces import LLMMessageLogType
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 
 
 class EnvironmentReturn(NamedTuple):

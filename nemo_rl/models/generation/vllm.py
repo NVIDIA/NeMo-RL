@@ -12,26 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Union, List, TypedDict
 import gc
 import warnings
+from typing import List, Optional, TypedDict, Union
 
 import ray
 import torch
 
-from nemo_rl.models.generation.interfaces import (
-    GenerationInterface,
-    GenerationDatumSpec,
-    GenerationOutputSpec,
-    verify_right_padding,
-    GenerationConfig,
-)
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import (
-    RayVirtualCluster,
     PY_EXECUTABLES,
+    RayVirtualCluster,
 )
-from nemo_rl.distributed.worker_groups import RayWorkerGroup, RayWorkerBuilder
+from nemo_rl.distributed.worker_groups import RayWorkerBuilder, RayWorkerGroup
+from nemo_rl.models.generation.interfaces import (
+    GenerationConfig,
+    GenerationDatumSpec,
+    GenerationInterface,
+    GenerationOutputSpec,
+    verify_right_padding,
+)
 
 
 class VllmSpecificArgs(TypedDict):

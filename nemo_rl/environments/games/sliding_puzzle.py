@@ -12,19 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+import random
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
+
 import ray
 import torch
-from typing import Dict, List, Tuple, Optional, TypedDict, Any
-import random
-import copy
 
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.data.interfaces import LLMMessageLogType
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 from nemo_rl.environments.interfaces import (
     EnvironmentInterface,
     EnvironmentReturn,
 )
-from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 
 
 class SlidingPuzzleConfig(TypedDict):

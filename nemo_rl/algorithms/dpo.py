@@ -16,26 +16,27 @@ import warnings
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
-from transformers import AutoTokenizer
 from typing import Optional, Tuple, TypedDict
-from tqdm import tqdm
 
 import numpy as np
 import torch
 from torchdata.stateful_dataloader import StatefulDataLoader
+from tqdm import tqdm
+from transformers import AutoTokenizer
+
 from nemo_rl.algorithms.loss_functions import (
     DPOLossFn,
 )
-from nemo_rl.algorithms.utils import set_seed, get_tokenizer
+from nemo_rl.algorithms.utils import get_tokenizer, set_seed
 from nemo_rl.data import DataConfig
 from nemo_rl.data.datasets import AllTaskProcessedDataset, dpo_collate_fn
 from nemo_rl.data.interfaces import TaskDataSpec
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import ClusterConfig, RayVirtualCluster
 from nemo_rl.models.interfaces import PolicyInterface
-from nemo_rl.models.policy.hf_policy import HfPolicy
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.utils.checkpoint import CheckpointManager, CheckpointingConfig
+from nemo_rl.models.policy.hf_policy import HfPolicy
+from nemo_rl.utils.checkpoint import CheckpointingConfig, CheckpointManager
 from nemo_rl.utils.logger import Logger, LoggerConfig
 from nemo_rl.utils.timer import Timer
 

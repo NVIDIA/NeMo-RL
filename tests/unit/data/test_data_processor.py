@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import os
-import pytest
 import sys
+
+import pytest
 from datasets import Dataset
 
 abspath = os.path.abspath(__file__)
@@ -25,7 +26,6 @@ from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data.datasets import AllTaskProcessedDataset
 from nemo_rl.data.interfaces import TaskDataSpec
 from nemo_rl.models.policy import TokenizerConfig
-
 
 basic_tokenizer_test_config: TokenizerConfig = {
     "name": "Qwen/Qwen2.5-Math-1.5B-Instruct",

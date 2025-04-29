@@ -20,9 +20,9 @@ import pytest
 
 from nemo_rl.utils.logger import (
     Logger,
+    RayGpuMonitorLogger,
     TensorboardLogger,
     WandbLogger,
-    RayGpuMonitorLogger,
     flatten_dict,
 )
 

@@ -12,29 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
+from typing import List, Union
 
-from torch.distributed.tensor import DTensor
 import torch
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     checkpoint_wrapper,
 )
-from torch.distributed.fsdp import fully_shard, CPUOffloadPolicy, MixedPrecisionPolicy
+from torch.distributed.device_mesh import DeviceMesh
+from torch.distributed.fsdp import CPUOffloadPolicy, MixedPrecisionPolicy, fully_shard
+from torch.distributed.tensor import DTensor
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
     RowwiseParallel,
-    parallelize_module,
     SequenceParallel,
+    parallelize_module,
 )
-
-from torch.distributed.tensor import DTensor
-from torch.distributed.tensor.placement_types import Shard, Replicate
-from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
+from torch.distributed.tensor.placement_types import Replicate, Shard
 from transformers.models.llama.modeling_llama import LlamaForCausalLM
+from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
 
-from typing import Union, List
 from nemo_rl.distributed.model_utils import from_parallel_logits_to_logprobs
-from torch.distributed.device_mesh import DeviceMesh
 
 
 def _parallelize_llama(

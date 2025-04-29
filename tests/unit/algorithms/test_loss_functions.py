@@ -11,20 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
 from nemo_rl.algorithms.loss_functions import (
-    NLLLoss,
     ClippedPGLossFn,
     DPOLossFn,
+    NLLLoss,
 )
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.algorithms.utils import (
     calculate_kl_penalty_joschu2020,
     masked_mean,
 )
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 
 
 def setup_dpo_loss_test_data(vocab_size=16, batch_size=1):

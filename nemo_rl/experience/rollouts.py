@@ -15,28 +15,29 @@
 # Generate rollouts for arbitrary environments
 # Supports multi-turn rollouts and many simultaneous environments (E.g. you can train on math, code, multi-turn games and more at once)
 
-import torch
-from typing import List, Tuple, Dict, Optional, Any, NamedTuple
-from transformers import AutoTokenizer
-import ray
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+import ray
+import torch
+from transformers import AutoTokenizer
+
 from nemo_rl.data.interfaces import (
     DatumSpec,
-    LLMMessageLogType,
     FlatMessagesType,
+    LLMMessageLogType,
 )
 from nemo_rl.data.llm_message_utils import (
-    get_keys_from_message_log,
     batched_message_log_to_flat_message,
+    get_keys_from_message_log,
 )
-from nemo_rl.models.generation.interfaces import (
-    GenerationInterface,
-    GenerationDatumSpec,
-)
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.environments.interfaces import (
     EnvironmentInterface,
     EnvironmentReturn,
+)
+from nemo_rl.models.generation.interfaces import (
+    GenerationDatumSpec,
+    GenerationInterface,
 )
 
 

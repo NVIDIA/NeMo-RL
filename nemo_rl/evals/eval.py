@@ -28,7 +28,6 @@ from nemo_rl.environments.math_environment import MathEnvConfig
 from nemo_rl.models.generation.interfaces import GenerationConfig
 from nemo_rl.models.generation.vllm import VllmGeneration
 
-
 # ===============================================================================
 # Configuration
 # ===============================================================================

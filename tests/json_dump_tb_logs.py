@@ -12,19 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
+import datetime
 import glob
 import json
 import os
-import datetime
 import statistics
-from collections import defaultdict
-from tensorboard.backend.event_processing import event_accumulator
 import sys
-from rich.console import Console
-from rich.table import Table
+from collections import defaultdict
+
 from rich.box import SIMPLE
+from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
+from tensorboard.backend.event_processing import event_accumulator
 
 # By default TB tries to be smart about what to load in memory to avoid OOM
 # Since we expect every step to be there when we do our comparisons, we explicitly

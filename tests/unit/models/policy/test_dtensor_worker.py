@@ -11,14 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import ray
-import pytest
-import pprint
-import torch
 import os
+import pprint
+
+import pytest
+import ray
+import torch
 
 # Define a custom marker for model configuration tests
 pytestmark = pytest.mark.modelconfig
+
+from transformers import AutoModelForCausalLM
 
 from nemo_rl.algorithms.interfaces import LossFunction
 from nemo_rl.algorithms.utils import get_tokenizer
@@ -26,11 +29,10 @@ from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.models.generation.interfaces import configure_generation_config
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.hf_policy import HfPolicy
 from nemo_rl.models.policy.dtensor_policy_worker import DTensorPolicyWorker
-from tests.unit.test_utils import simple_loss
+from nemo_rl.models.policy.hf_policy import HfPolicy
 from tests.unit.conftest import TEST_ASSETS
-from transformers import AutoModelForCausalLM
+from tests.unit.test_utils import simple_loss
 
 
 def create_test_config(

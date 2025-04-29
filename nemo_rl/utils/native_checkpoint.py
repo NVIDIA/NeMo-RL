@@ -17,18 +17,19 @@
 import os
 from pathlib import Path
 from typing import Any, Optional
+
 import torch
-from torch.distributed.fsdp import FullyShardedDataParallel
-from transformers import AutoConfig, AutoTokenizer
 import torch.distributed.checkpoint as dcp
-from torch.distributed.checkpoint.stateful import Stateful
+from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
 from torch.distributed.checkpoint.state_dict import (
     get_model_state_dict,
-    set_model_state_dict,
     get_optimizer_state_dict,
+    set_model_state_dict,
     set_optimizer_state_dict,
 )
-from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
+from torch.distributed.checkpoint.stateful import Stateful
+from torch.distributed.fsdp import FullyShardedDataParallel
+from transformers import AutoConfig, AutoTokenizer
 
 
 ## modified from pytorch tutorial https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html

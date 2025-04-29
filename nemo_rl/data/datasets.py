@@ -11,15 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Dict, List, Union, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 import torch
 from datasets import Dataset
 
 from nemo_rl.data.interfaces import (
-    TaskDataSpec,
-    TaskDataProcessFnCallable,
     DatumSpec,
+    TaskDataProcessFnCallable,
+    TaskDataSpec,
 )
 from nemo_rl.data.llm_message_utils import (
     add_loss_mask_to_message_log,

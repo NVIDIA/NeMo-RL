@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from itertools import tee
-from typing import Dict, List, Tuple, TypedDict, Optional
+from typing import Dict, List, Optional, Tuple, TypedDict
 
 import ray
 import torch
 from math_verify import parse, verify
 
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 from nemo_rl.environments.interfaces import (
     EnvironmentInterface,
     EnvironmentReturn,
@@ -27,7 +28,6 @@ from nemo_rl.environments.metrics import (
     calculate_pass_rate_per_prompt,
 )
 from nemo_rl.environments.utils import chunk_list_to_workers
-from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 
 
 class MathEnvConfig(TypedDict):

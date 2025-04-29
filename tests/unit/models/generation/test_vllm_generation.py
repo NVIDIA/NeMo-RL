@@ -12,19 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from copy import deepcopy
 
 import pytest
-import torch
 import ray
-import os
+import torch
 
 from nemo_rl.algorithms.grpo import refit_policy_generation
 from nemo_rl.algorithms.utils import get_tokenizer
-from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.models.generation.interfaces import configure_generation_config
-from nemo_rl.models.generation.vllm import VllmGeneration, VllmConfig
+from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy import PolicyConfig
 
 # Define basic vLLM test config

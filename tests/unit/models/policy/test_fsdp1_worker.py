@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import ray
-import pytest
-import pprint
-import torch
 import os
+import pprint
 from copy import deepcopy
+
+import pytest
+import ray
+import torch
 
 from nemo_rl.algorithms.interfaces import LossFunction
 from nemo_rl.algorithms.utils import get_tokenizer
@@ -26,8 +27,7 @@ from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.models.generation.interfaces import configure_generation_config
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.hf_policy import HfPolicy
-from tests.unit.test_utils import simple_loss, nll_loss
-
+from tests.unit.test_utils import nll_loss, simple_loss
 
 basic_llama_test_config: PolicyConfig = {
     "model_name": "meta-llama/Llama-3.2-1B",
