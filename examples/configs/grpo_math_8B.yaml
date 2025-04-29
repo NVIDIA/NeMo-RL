@@ -20,7 +20,8 @@ policy:
   refit_buffer_size_gb: 4 # used for refitting inference engine, the unit is GB
   dtensor_cfg:
     enabled: False
-  max_tokens_per_microbatch: 4096
+  dynamic_batching: false
+  dynamic_batching_max_tokens_per_micro_batch: 4096
 
   optimizer:
     name: "torch.optim.AdamW"

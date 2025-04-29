@@ -190,7 +190,6 @@ class DTensorPolicyWorker:
                 "activation_checkpointing"
             ],
         )
-        self.model = self.model.cuda()
 
         if self.cpu_offload:
             self.model = self.move_buffer_to_device(self.model, "cpu")
@@ -265,24 +264,6 @@ class DTensorPolicyWorker:
         """Return information about the GPU being used by this worker."""
         return get_gpu_info(self.model)
 
-
-    def get_microbatch_iterator(
-        self,
-        local_global_batch, 
-        use_dynamic_batching, 
-        microbatch_size, 
-        microbatch_indices):
-
-        if dynamic_batching:
-            mb_iterator = local_global_batch.make_microbatch_iterator(
-                microbatch_indices=microbatch_indices)
-        else:
-            mb_iterator = local_global_batch.make_microbatch_iterator(
-                microbatch_size=microbatch_size)
-
-        return mb_iterator
-
-
     def train(
         self,
         data: BatchedDataDict,
@@ -290,11 +271,8 @@ class DTensorPolicyWorker:
         eval_mode: bool = False,
         gbs: Optional[int] = None,
         mbs: Optional[int] = None,
+        mb_indices = None
     ) -> Dict[str, Any]:
-
-        # self.log_memory("DEBUG TRAIN START")
-        # torch.distributed.barrier()
-
         """Train the policy on a batch of data with a given loss function."""
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
         if (
@@ -367,16 +345,12 @@ class DTensorPolicyWorker:
                 # Calculate number of microbatches to process
                 # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
                 # so its safe to not check for the case where the last data slice is smaller than mbs
-                dynamic_batching=True
-                if dynamic_batching:
-                    mbs_indices = data['microbatch_indices'][gb_idx]
-                    num_microbatches = len(mbs_indices)
-                    mb_iterator = local_global_batch.make_microbatch_iterator(
-                        microbatch_indices=mbs_indices)
+                if mb_indices is not None:
+                    num_microbatches = len(mb_indices[gb_idx])
+                    mb_iterator = batch.make_microbatch_iterator_from_indices(mb_indices[gb_idx])
                 else:
                     num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
-                    mb_iterator = local_global_batch.make_microbatch_iterator(
-                        microbatch_size=mbs)
+                    mb_iterator = batch.make_microbatch_iterator(mbs)
 
                 for mb in global_batch.make_microbatch_iterator(mbs):
                     input_ids = mb.get("input_ids").cuda()
@@ -502,7 +476,10 @@ class DTensorPolicyWorker:
             return metrics
 
     def get_logprobs(
-        self, data: BatchedDataDict, micro_batch_size: int = None
+        self, 
+        data: BatchedDataDict, 
+        micro_batch_size: int = None,
+        micro_batch_indices = None,
     ) -> BatchedDataDict:
         """Get the logprobs of the model for a batch of data.
 
@@ -529,14 +506,10 @@ class DTensorPolicyWorker:
         with unshard_fsdp2_model(self.model), torch.no_grad():
             data.to("cuda")
 
-            dynamic_batching = True
-            if dynamic_batching:
-                mbs_indices = data['microbatch_indices'][0]
-                mb_iterator = data.make_microbatch_iterator(
-                    microbatch_indices=mbs_indices)
+            if micro_batch_indices is not None:
+                mb_iterator = data.make_microbatch_iterator_from_indices(micro_batch_indices[0])
             else:
-                mb_iterator = local_global_batch.make_microbatch_iterator(
-                    microbatch_size=logprob_batch_size)
+                mb_iterator = data.make_microbatch_iterator(logprob_batch_size)
 
             for lp_batch in mb_iterator:
                 input_ids = lp_batch.get("input_ids").cuda()
@@ -611,7 +584,7 @@ class DTensorPolicyWorker:
         all_log_probs_padded = []
         for lp in all_log_probs:
             batch_size, seq_len = lp.shape
-            padding_needed = global_seqlen - seq_len
+            padding_needed = padded_seqlen - seq_len
             if padding_needed > 0:
                 lp = torch.nn.functional.pad(lp, (0, padding_needed), mode='constant', value=0.0)
             all_log_probs_padded.append(lp)
@@ -656,7 +629,13 @@ class DTensorPolicyWorker:
                     val.copy_(curr_buffers[k])
 
     def get_reference_policy_logprobs(
+<<<<<<< HEAD:nemo_rl/models/policy/dtensor_policy_worker.py
         self, data: BatchedDataDict, micro_batch_size: int = None
+=======
+        self, 
+        data: BatchedDataDict,
+        mb_indices = None,
+>>>>>>> a22aaa3 (clean refactor):nemo_reinforcer/models/policy/dtensor_policy_worker.py
     ) -> BatchedDataDict:
         """Get the logprobs from the reference policy for a batch of data.
 
@@ -666,7 +645,11 @@ class DTensorPolicyWorker:
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
         with self.use_reference_model():
+<<<<<<< HEAD:nemo_rl/models/policy/dtensor_policy_worker.py
             reference_logprobs = self.get_logprobs(data, micro_batch_size)
+=======
+            reference_logprobs = self.get_logprobs(data, mb_indices)
+>>>>>>> a22aaa3 (clean refactor):nemo_reinforcer/models/policy/dtensor_policy_worker.py
 
         return_data = BatchedDataDict()
         return_data["reference_logprobs"] = reference_logprobs["logprobs"].cpu()

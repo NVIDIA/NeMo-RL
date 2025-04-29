@@ -109,6 +109,31 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         return tied_worker_groups
 
+    def _shard_data(
+        self, 
+        data: BatchedDataDict[GenerationDatumSpec],
+        batch_size: int = None, 
+    ):
+        if self.cfg['dynamic_batching']:
+            dynamic_batching_cfg = {
+                'sequence_lengths_per_input': data['input_lengths'],
+                'max_tokens_per_microbatch': self.cfg["dynamic_batching_max_tokens_per_micro_batch"]
+            }
+            sharded_data, microbatch_indices = data.shard_by_batch_size(
+                self.dp_size, 
+                batch_size=batch_size, 
+                dynamic_batching_cfg=dynamic_batching_cfg,
+            )
+        else:
+            sharded_data = data.shard_by_batch_size(
+                self.dp_size, 
+                batch_size=batch_size, 
+            )
+            microbatch_indices = None
+
+        return sharded_data, microbatch_indices
+
+
     def get_logprobs(
         self, data: BatchedDataDict[GenerationDatumSpec]
     ) -> BatchedDataDict:
@@ -119,15 +144,13 @@ class HfPolicy(PolicyInterface, GenerationInterface):
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
-        sequence_lengths = data['input_lengths']
-        sharded_data = data.shard_by_batch_size(
-            self.dp_size, 
-            batch_size=None, 
-            sequence_lengths_per_datum=sequence_lengths,
-            max_tokens_per_microbatch=self.cfg["max_tokens_per_microbatch"])
 
+        sharded_data, microbatch_indices = self._shard_data(data, batch_size=None)
         futures = self.worker_group.run_all_workers_multiple_data(
-            "get_logprobs", sharded_data, only_on="all_tied_workers"
+            "get_logprobs", 
+            sharded_data, 
+            common_kwargs={"mb_indices": microbatch_indices},
+            only_on="all_tied_workers"
         )
         logprobs = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures)
@@ -141,20 +164,17 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         Returns: Identical to get_logprobs.
         """
-
-        sequence_lengths = data['input_lengths']
-        sharded_data = data.shard_by_batch_size(
-            self.dp_size, 
-            batch_size=None, 
-            sequence_lengths_per_datum=sequence_lengths,
-            max_tokens_per_microbatch=self.cfg["max_tokens_per_microbatch"])
-
+        sharded_data, micro_batch_indices = self._shard_data(data, batch_size=None)
         futures = self.worker_group.run_all_workers_multiple_data(
             "get_reference_policy_logprobs",
             sharded_data,
-            common_kwargs={"micro_batch_size": micro_batch_size},
+            common_kwargs={
+                "micro_batch_size": micro_batch_size,
+                "micro_batch_indices" : microbatch_indices
+            },
             only_on="all_tied_workers",
         )
+
         logprobs = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures)
         )
@@ -172,12 +192,8 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         batch_size = gbs or self.cfg["train_global_batch_size"]
         micro_batch_size = mbs or self.cfg["train_micro_batch_size"]
         # Shard and replicate the batch
-        sequence_lengths = data['input_lengths']
-        sharded_data = data.shard_by_batch_size(
-            self.dp_size,
-            batch_size=batch_size, 
-            sequence_lengths_per_datum=sequence_lengths,
-            max_tokens_per_microbatch=self.cfg["max_tokens_per_microbatch"])
+        sharded_data, microbatch_indices = self._shard_data(
+            data, batch_size=self.cfg["train_global_batch_size"])
 
         # Train each shard in parallel
         futures = self.worker_group.run_all_workers_multiple_data(
@@ -186,8 +202,9 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             common_kwargs={
                 "loss_fn": loss_fn,
                 "eval_mode": eval_mode,
-                "gbs": batch_size,
-                "mbs": micro_batch_size,
+                "gbs": gbs,
+                "mbs": mbs,
+                "mb_indices": microbatch_indices
             },
             only_on="all_tied_workers",
         )

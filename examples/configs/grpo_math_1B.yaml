@@ -43,7 +43,8 @@ policy:
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
   refit_buffer_size_gb: 4 # used for refitting inference engine, the unit is GB
-  max_tokens_per_microbatch: 2048
+  dynamic_batching: false
+  dynamic_batching_max_tokens_per_micro_batch: 2048
 
   dtensor_cfg:
     enabled: true

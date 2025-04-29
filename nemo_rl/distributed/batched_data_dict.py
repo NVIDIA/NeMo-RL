@@ -142,8 +142,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         batch_size: Optional[int] = None,
         allow_uneven_shards: bool = False,
         batch_size: Optional[int] = None, 
-        sequence_lengths_per_datum: Optional[list[int]] = None, 
-        max_tokens_per_microbatch: Optional[int] = None, 
+        dynamic_batching_cfg = None
     ) -> List["SlicedDataDict"]:
         """Shards a batch by first dividing it into chunks of size batch_size, then further dividing each chunk into shards equal parts. Finally aggregates the sub-shards by their position.
 
@@ -222,16 +221,19 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             )
 
         num_chunks = total_batch_size // batch_size
-<<<<<<< HEAD:nemo_rl/distributed/batched_data_dict.py
         # Calculate shard size, rounding up if not evenly divisible
         shard_size = (
             (batch_size + shards - 1) // shards
             if allow_uneven_shards
             else batch_size // shards
         )
-=======
         shard_size = batch_size // shards
 
+        if dynamic_batching_cfg is not None:
+            assert 'sequence_lengths_per_input' in dynamic_batching_cfg
+            assert 'max_tokens_per_microbatch' in dynamic_batching_cfg
+            assert len(dynamic_batching_cfg['sequence_lengths_per_input']) == total_batch_size
+            
         # batch shard is not inplace, create a deepcopy of the data
         data = {}
         for k, v in self.data.items():
@@ -241,17 +243,15 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 import copy
                 data[k] = copy.deepcopy(v)
 
-        # if sequence lengths are provided, sort the data by the sequence lengths and distribute
-        # evenly to each shard. This ensures each DP rank receives samples of about equal sequence lengths, 
-        # which improves load balancing
-        if sequence_lengths_per_datum is not None:
-            assert len(sequence_lengths_per_datum) == total_batch_size
+        # if using dynamic microbatching, preprocess the data by sorting the data 
+        # by the sequence lengths. This ensures each DP rank receives samples of about 
+        # equal sequence lengths which improves load balancing
+        if dynamic_batching_cfg is not None:
             batch_sorted_indices = []
             for chunk_idx in range(num_chunks):
                 chunk_start = chunk_idx * batch_size
                 chunk_end = (chunk_idx + 1) * batch_size
-                chunk_seqlens = sequence_lengths_per_datum[chunk_start:chunk_end]
-
+                chunk_seqlens = dynamic_batching_cfg['sequence_lengths_per_input'][chunk_start:chunk_end]
                 # sort the indices by sequence lengths
                 chunk_idx_indices = sorted(range(batch_size), key=lambda i: chunk_seqlens[i])
                 chunk_idx_indices = [i + chunk_start for i in chunk_idx_indices]
@@ -272,7 +272,6 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 data[k] = sorted_v
 
         # Create one BatchedDataDict per shard position
->>>>>>> 4e7eeda (sort inside gbs):nemo_reinforcer/distributed/batched_data_dict.py
         aggregated_shards = [SlicedDataDict() for _ in range(shards)]
 
         # Group data by shard position across all chunks
@@ -315,38 +314,44 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                             )
         
    
-        # group microbatches dynamically by the total tokens per microbatch
-        if max_tokens_per_microbatch is not None:
-            assert sequence_lengths_per_datum is not None
-            for shard in aggregated_shards:
-                shard['microbatch_indices'] = []
-
+        # map inputs to microbatches such that the total number tokens in 
+        # a microbatch is as close to (including padding tokens) 'max_tokens_per_microbatch'
+        if dynamic_batching_cfg is not None:
+            max_tokens_per_microbatch = dynamic_batching_cfg['max_tokens_per_microbatch']
+            microbatch_indices = []
+            # loop through each chunk, dividing the chunk into microbatches
             for chunk_idx in range(num_chunks):
-                microbatch_indices = [[0,1]]
+                chunk_microbatch_indices = [[0,1]]
                 current_mbs_total_tokens = 0
-
                 #for each indice in the shard, map it to an microbatch
                 for shard_indice in range(shard_size):
-                    # check if the sample at shard_indice may be added to the current mbs for all shards
-                    # because of padding, and that the sequence lengths are sorted, the total tokens of a mbs
-                    # is the number of indices * the max sequence length
+                    # use the max seqlen of all shards to calculate the total number of tokens in the mb
+                    # this ensures each DP rank has the same batch size each iteration which is 
+                    # required for FSDP2 and megatron policies.
+                    chunk_start = chunk_idx*shard_size
+                    chunk_end = (chunk_idx+1)*shard_size
                     seqlens_this_chunk = [
-                        shard['input_lengths'][chunk_idx*shard_size:(chunk_idx+1)*shard_size][shard_indice]
-                        for shard in aggregated_shards]
+                        shard['input_lengths'][chunk_start:chunk_end][shard_indice]
+                        for shard in aggregated_shards
+                    ]
+                    # check if the sample at shard_indice may be added to the current mbs for all shards
+                    # the total tokens of a mbs = number of indices in the mbs * the max sequence length in the mbs
                     max_seqlen_this_chunk = max(seqlens_this_chunk).item()
-
-                    curr_mbs_size = microbatch_indices[-1][1] - microbatch_indices[-1][0] + 1
-                    if curr_mbs_size * max_seqlen_this_chunk <= max_tokens_per_microbatch:
-                        microbatch_indices[-1][-1] = shard_indice+1
+                    curr_mbs_size = chunk_microbatch_indices[-1][1] - chunk_microbatch_indices[-1][0] + 1
+                    total_tokens_in_mbs = curr_mbs_size * max_seqlen_this_chunk
+                    # if the current mbs can accomodate this indice, add it
+                    if total_tokens_in_mbs <= max_tokens_per_microbatch:
+                        chunk_microbatch_indices[-1][-1] = shard_indice+1
                         current_mbs_total_tokens += max_seqlen_this_chunk
+                    # otherwise start a new mbs
                     else:
-                        microbatch_indices.append([shard_indice, shard_indice+1])
+                        chunk_microbatch_indices.append([shard_indice, shard_indice+1])
                         current_mbs_total_tokens = max_seqlen_this_chunk
 
-                for shard in aggregated_shards:
-                    shard['microbatch_indices'].append(microbatch_indices)
-            
-        return aggregated_shards
+                microbatch_indices.append(chunk_microbatch_indices)
+            return aggregated_shards, microbatch_indices
+
+        return aggregated_shards    
 
     def slice(self, start: int, end: int) -> "SlicedDataDict":
         """Slices the batch from start to end.
@@ -360,10 +365,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         """
         sliced_batch = SlicedDataDict()
         for k in self.data:
-            if k == "microbatch_indices":
-                sliced_batch[k] = self.data[k]
-            else:
-                sliced_batch[k] = self.data[k][start:end]
+            sliced_batch[k] = self.data[k][start:end]
         return sliced_batch
 
     def repeat_interleave(self, num_repeats: int) -> "BatchedDataDict":
@@ -385,23 +387,25 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 ]
         return repeated_batch
 
+    def make_microbatch_iterator_from_indices(
+        self, 
+        microbatch_indices,
+    ) -> Iterator["SlicedDataDict"]:
+        for start, end in microbatch_indices:
+            yield self.slice(start, end)    
+        
     def make_microbatch_iterator(
         self, 
         microbatch_size: int = None, 
-        microbatch_indices = None,
     ) -> Iterator["SlicedDataDict"]:
-        """Make an iterator over the batch that yields microbatches of size microbatch_size."""
-        if microbatch_indices is not None:
-            for start, end in microbatch_indices:
-                yield self.slice(start, end)    
-        else:
-            bsize = self.size
-            assert microbatch_size is not None
-            assert bsize % microbatch_size == 0, (
-                f"Data dict size ({bsize}) is not a multiple of the provided microbatch size ({microbatch_size})"
-            )
-            for i in range(0, bsize, microbatch_size):
-                yield self.slice(i, i + microbatch_size)
+        """Make an iterator over the batch that yields microbatches."""
+        bsize = self.size
+        assert microbatch_size is not None
+        assert bsize % microbatch_size == 0, (
+            f"Data dict size ({bsize}) is not a multiple of the provided microbatch size ({microbatch_size})"
+        )
+        for i in range(0, bsize, microbatch_size):
+            yield self.slice(i, i + microbatch_size)
 
     @property
     def size(self) -> int:
