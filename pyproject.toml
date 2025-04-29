@@ -83,6 +83,13 @@ addopts = "--cov=nemo_rl --cov-report=term --cov-report=json -s -rA -x"
 testpaths = ["tests"]
 python_files = "test_*.py"
 
+[tool.coverage.run]
+concurrency = ["thread", "multiprocessing"]
+omit = ["/tmp/*"]
+
+[tool.coverage.paths]
+source = ["nemo_reinforcer/", "/opt/reinforcer/nemo_reinforcer/"]
+
 [tool.ruff.lint]
 # Enable all `pydocstyle` rules, limiting to those that adhere to the
 # Google convention via `convention = "google"`, below.
