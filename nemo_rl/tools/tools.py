@@ -6,9 +6,10 @@ from typing import Any, Dict, List, Optional
 import ray
 import torch
 from datasets import load_dataset
-from nemo_reinforcer.tools.interfaces import ToolInterface
 from tqdm import tqdm
 from transformers import AutoTokenizer
+
+from nemo_rl.tools.interfaces import ToolInterface
 
 
 @ray.remote

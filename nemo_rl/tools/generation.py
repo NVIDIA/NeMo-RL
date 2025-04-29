@@ -5,16 +5,17 @@ from typing import Dict
 
 import ray
 import torch
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.models.generation.interfaces import (
+from torch.nn.utils.rnn import pad_sequence
+from transformers import AutoTokenizer
+
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.models.generation.interfaces import (
     GenerationDatumSpec,
     GenerationInterface,
     GenerationOutputSpec,
 )
-from nemo_reinforcer.tools.interfaces import ToolInterface
-from nemo_reinforcer.tools.tools import StatefulCodeExecutor
-from torch.nn.utils.rnn import pad_sequence
-from transformers import AutoTokenizer
+from nemo_rl.tools.interfaces import ToolInterface
+from nemo_rl.tools.tools import StatefulCodeExecutor
 
 LOGIT_INFINITY = 1000
 

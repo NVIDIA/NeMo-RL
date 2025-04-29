@@ -12,27 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
 from copy import deepcopy
 
+import pytest
 import torch
 from datasets import load_dataset
+from transformers import AutoTokenizer
 
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.models.generation.interfaces import configure_generation_config
-from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
-from nemo_reinforcer.models.policy.hf_policy import HfPolicy, PolicyConfig
-from nemo_reinforcer.tools.generation import generate_with_code_and_tools
-from nemo_reinforcer.tools.tools import BM25Retriever
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
+from nemo_rl.models.policy.hf_policy import HfPolicy, PolicyConfig
+from nemo_rl.tools.generation import generate_with_code_and_tools
+from nemo_rl.tools.tools import BM25Retriever
+
+MODEL_NAME = "meta-llama/Llama-3.2-1B"
 
 
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
-    "model_name": "meta-llama/Llama-3.2-3B",  # Small model for testing
-    "tokenizer_name": "meta-llama/Llama-3.2-3B",
+    "model_name": MODEL_NAME,
+    "tokenizer_name": None,
     "dtype": "bfloat16",
     "max_new_tokens": 100,
     "temperature": 1.0,
@@ -40,8 +42,6 @@ basic_vllm_test_config: VllmConfig = {
     "top_k": None,
     "stop_token_ids": None,
     "stop_strings": None,
-    "tool_map": {},  # placeholder
-    "execute_code": False,  # placeholder
     "vllm_cfg": {
         "tensor_parallel_size": 1,
         "gpu_memory_utilization": 0.3,
@@ -50,8 +50,8 @@ basic_vllm_test_config: VllmConfig = {
 }
 
 basic_hf_test_config: PolicyConfig = {
-    "model_name": basic_vllm_test_config["model_name"],
-    "tokenizer_name": basic_vllm_test_config["tokenizer_name"],
+    "model_name": MODEL_NAME,
+    "tokenizer_name": None,
     "generation_batch_size": 1,
     "generation": {
         "backend": "hf",
@@ -70,6 +70,8 @@ basic_hf_test_config: PolicyConfig = {
     "max_new_tokens": 16,
     "do_sample": False,
     "precision": "float32",
+    "activation_checkpointing_enabled": False,
+    "fsdp_offload_enabled": False,
     "optimizer": {
         "name": "torch.optim.AdamW",
         "kwargs": {
@@ -79,6 +81,7 @@ basic_hf_test_config: PolicyConfig = {
             "eps": 1e-8,
         },
     },
+    "dtensor_cfg": {"enabled": False},
 }
 
 
@@ -99,9 +102,14 @@ def cluster():
 
 @pytest.fixture(scope="function")
 def tokenizer():
-    """Initialize tokenizer for the test model."""
-    model_name = basic_vllm_test_config["model_name"]
-    tokenizer = get_tokenizer(model_name)
+    """Loads the tokenizer for the tests."""
+    print(f"Loading tokenizer: {MODEL_NAME}")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    print(
+        f"Tokenizer loaded. Pad token: {tokenizer.pad_token} (ID: {tokenizer.pad_token_id}), EOS token: {tokenizer.eos_token} (ID: {tokenizer.eos_token_id})"
+    )
     return tokenizer
 
 
@@ -209,7 +217,9 @@ def test_hf_execute_code(cluster, tokenizer):
     )
 
     # Create vLLM generation
-    hf_policy = HfPolicy(cluster, hf_config)
+    hf_policy = HfPolicy(
+        cluster, hf_config, tokenizer, init_reference_model=False, init_optimizer=False
+    )
 
     # Generate and check result
     outputs = generate_with_code_and_tools(hf_policy, batch, tokenizer, greedy=True)
