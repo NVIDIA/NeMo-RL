@@ -3,18 +3,18 @@
 <!-- markdown all in one -->
 - [Nemo-RL: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to \>100B Parameters, scaling from 1 GPU to 100s](#nemo-rl-a-scalable-and-efficient-post-training-library-for-models-ranging-from-tiny-to-100b-parameters-scaling-from-1-gpu-to-100s)
   - [Features](#features)
-  - [Prerequisuites](#prerequisuites)
+  - [Prerequisites](#prerequisites)
   - [Quick start](#quick-start)
     - [GRPO](#grpo)
-      - [Single Node](#single-node)
-      - [Multi-node](#multi-node)
+      - [Single Node](#grpo-single-node)
+      - [Multi-node](#grpo-multi-node)
         - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
     - [SFT](#sft)
-      - [Single Node](#single-node-1)
-      - [Multi-node](#multi-node-1)
+      - [Single Node](#sft-single-node)
+      - [Multi-node](#sft-multi-node)
     - [DPO](#dpo)
-      - [Single Node](#single-node-2)
-      - [Multi-node](#multi-node-2)
+      - [Single Node](#dpo-single-node)
+      - [Multi-node](#dpo-multi-node)
   - [Cluster Start](#cluster-start)
 
 **Nemo-RL** is a scalable and efficient post-training library designed for models ranging from 1 GPU to thousands, and from tiny to over 100 billion parameters.
@@ -48,7 +48,7 @@ What you can expect:
 - 🔜 **Megatron Inference** - Support Megatron Inference for day-0 support for new megatron models
 - 🔜 **MoE Models** - Support DeepseekV3 and Llama4
 
-## Prerequisuites
+## Prerequisites
 
 Clone **NeMo RL**
 ```sh
@@ -80,7 +80,7 @@ pip install uv
 
 We have a reference GRPO experiment config set up trained for math benchmarks using the [OpenInstructMath2](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2) dataset.
 
-#### Single Node
+#### GRPO Single Node
 
 To run GRPO on a single GPU for `Qwen/Qwen2.5-1.5B`:
 
@@ -108,7 +108,7 @@ uv run python examples/run_grpo_math.py \
   logger.num_val_samples_to_print=10 \
 ```
 
-#### Multi-node
+#### GRPO Multi-node
 
 ```sh
 # Run from the root of NeMo-RL repo
@@ -162,7 +162,7 @@ uv run python examples/run_grpo_sliding_puzzle.py
 
 We provide a sample SFT experiment that uses the [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
 
-#### Single Node
+#### SFT Single Node
 
 The default SFT experiment is configured to run on a single GPU. To launch the experiment,
 
@@ -184,7 +184,7 @@ uv run python examples/run_sft.py \
 
 Refer to `examples/configs/sft.yaml` for a full list of parameters that can be overridden.
 
-#### Multi-node
+#### SFT Multi-node
 
 ```sh
 # Run from the root of NeMo-RL repo
@@ -207,7 +207,7 @@ sbatch \
 
 We provide a sample DPO experiment that uses the [HelpSteer3 dataset](https://huggingface.co/datasets/nvidia/HelpSteer3) for preference-based training.
 
-#### Single Node
+#### DPO Single Node
 
 The default DPO experiment is configured to run on a single GPU. To launch the experiment:
 
@@ -237,9 +237,9 @@ uv run python examples/run_dpo.py \
   logger.wandb.name="llama-dpo-sft"
 ```
 
-Refer to [dpo.yaml](examples/configs/dpo.yaml) for a full list of parameters that can be overridden. For an in-depth explanation of how to add your own DPO dataset, refer to the [DPO documentation](docs/guides/dpo.md).
+Refer to [dpo.yaml](../examples/configs/dpo.yaml) for a full list of parameters that can be overridden. For an in-depth explanation of how to add your own DPO dataset, refer to the [DPO documentation](docs/guides/dpo.md).
 
-#### Multi-node
+#### DPO Multi-node
 
 For distributed DPO training across multiple nodes, modify the following script for your use case:
 

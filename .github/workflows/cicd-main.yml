@@ -128,7 +128,7 @@ jobs:
         run: |
           pip install uv
           cd docs/
-          uv run --group docs sphinx-build . _build/html
+          uv run --group docs sphinx-build --fail-on-warning --builder html . _build/html
 
   build-container:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
@@ -150,7 +150,7 @@ jobs:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 60
+      TIMEOUT: 75
       UNIT_TEST_SCRIPT: |
         cd /opt/nemo-rl
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
@@ -168,10 +168,10 @@ jobs:
       FUNCTIONAL_TEST_SCRIPT: |
         cd /opt/nemo-rl
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L1|L2)$ ]]; then
-          uv run --no-sync bash ./tests/functional/sft.sh
-          uv run --no-sync bash ./tests/functional/grpo.sh
-          uv run --no-sync bash ./tests/functional/grpo_multiturn.sh
-          uv run --no-sync bash ./tests/functional/dpo.sh
+          time uv run --no-sync bash ./tests/functional/sft.sh
+          time uv run --no-sync bash ./tests/functional/grpo.sh
+          time uv run --no-sync bash ./tests/functional/grpo_multiturn.sh
+          time uv run --no-sync bash ./tests/functional/dpo.sh
         else
           echo Skipping functional tests for level ${{ needs.pre-flight.outputs.test_level }}
         fi
