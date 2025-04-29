@@ -16,20 +16,20 @@ import argparse
 import os
 import pprint
 from functools import partial
-from typing import Dict, Any
+from typing import Any, Dict
 
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
-from nemo_reinforcer.algorithms.sft import MasterConfig, sft_train, setup
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.data import DataConfig, hf_datasets
-from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
-from nemo_reinforcer.data.interfaces import TaskDataSpec, DatumSpec
-from nemo_reinforcer.data.llm_message_utils import get_formatted_message_log
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
-from nemo_reinforcer.utils.config import load_config
-from nemo_reinforcer.utils.logger import get_next_experiment_dir
+from nemo_rl.algorithms.sft import MasterConfig, setup, sft_train
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.data import DataConfig, hf_datasets
+from nemo_rl.data.datasets import AllTaskProcessedDataset
+from nemo_rl.data.interfaces import DatumSpec, TaskDataSpec
+from nemo_rl.data.llm_message_utils import get_formatted_message_log
+from nemo_rl.distributed.virtual_cluster import init_ray
+from nemo_rl.utils.config import load_config, parse_hydra_overrides
+from nemo_rl.utils.logger import get_next_experiment_dir
 
 
 def parse_args():
@@ -40,10 +40,7 @@ def parse_args():
     )
 
     # Parse known args for the script
-    args, remaining = parser.parse_known_args()
-
-    # Convert remaining args to OmegaConf format
-    overrides = OmegaConf.from_dotlist(remaining)
+    args, overrides = parser.parse_known_args()
 
     return args, overrides
 
@@ -154,7 +151,7 @@ def main():
 
     if overrides:
         print(f"Overrides: {overrides}")
-        config = OmegaConf.merge(config, overrides)
+        config = parse_hydra_overrides(config, overrides)
 
     config: MasterConfig = OmegaConf.to_container(config, resolve=True)
     print("Applied CLI overrides")

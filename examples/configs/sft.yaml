@@ -1,6 +1,10 @@
 # SFT Algorithm Configuration
 sft:
+  ## total number of steps to train will equal
+  ## min((max_num_epochs * len(train_dataloader)), max_num_steps)
+  max_num_epochs: 1
   max_num_steps: 60
+
   val_period: 10
   val_batches: 8
   val_global_batch_size: 32
@@ -29,7 +33,7 @@ policy:
   activation_checkpointing_enabled: false
 
   dtensor_cfg:
-    enabled: false
+    enabled: true
     cpu_offload: False
     sequence_parallel: false
     activation_checkpointing: false
@@ -47,6 +51,10 @@ policy:
       weight_decay: 0.1
       betas: [0.9, 0.98]
       eps: 1e-5
+      # when using Dtensor, we need to set foreach
+      # and fused to False
+      foreach: False
+      fused: False
     
 data:
   max_input_seq_length: ${policy.max_total_sequence_length}

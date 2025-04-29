@@ -1,4 +1,4 @@
-# An in-depth walkthrough of GRPO in Reinforcer
+# An in-depth walkthrough of GRPO in NeMo-RL
 
 ## Quickstart: Launch a GRPO Run
 
@@ -12,22 +12,23 @@ uv run examples/run_grpo_math.py --config <PATH TO YAML CONFIG> {overrides}
 
 If not specified, `config` will default to [examples/configs/grpo.yaml](../../examples/configs/grpo_math_1B.yaml)
 
-**Reminder**: Don't forget to set your HF_HOME and WANDB_API_KEY (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
+**Reminder**: Don't forget to set your HF_HOME, WANDB_API_KEY, and HF_DATASETS_CACHE (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
 
 ## Now, for the details:
 
-In this guide, we'll walk through we handle
+In this guide, we'll walk through how we handle
 
 * Data
 * Model training
 * Fast generation
 * Overall Resource Flow
+* Loss
 
 ### Data
 
 We support training with multiple RL "Environments" at the same time.
 
-An [Environment](../../nemo_reinforcer/environments/interfaces.py) is an object that accepts a state/action history and returns an update state and rewards for the step. They run as Ray Remote Actors. Example [MathEnvironment](../../nemo_reinforcer/environments/math_environment.py).
+An [Environment](../../nemo_rl/environments/interfaces.py) is an object that accepts a state/action history and returns an update state and rewards for the step. They run as Ray Remote Actors. Example [MathEnvironment](../../nemo_rl/environments/math_environment.py).
 
 To support this, we need to know:
 
@@ -37,7 +38,7 @@ To support this, we need to know:
 
 #### Common Data Format
 
-We define a [DatumSpec](../../nemo_reinforcer/data/interfaces.py) that holds all relevant information for each training example:
+We define a [DatumSpec](../../nemo_rl/data/interfaces.py) that holds all relevant information for each training example:
 
 ```python
 class DatumSpec(TypedDict):
@@ -53,7 +54,7 @@ class DatumSpec(TypedDict):
 #### Data Processors
 
 We name all distinct "environments your model wants to optimize against" "tasks". So you might define a "math" task or a "code" task.
-For each task, you should provide a data processor that reads from your dataset and returns a [DatumSpec](../../nemo_reinforcer/data/interfaces.py)
+For each task, you should provide a data processor that reads from your dataset and returns a [DatumSpec](../../nemo_rl/data/interfaces.py)
 
 ```python
 def my_data_processor(
@@ -99,12 +100,69 @@ Notice that you provide a mapping of tasks to their processors so the dataset kn
 
 ### Policy Model
 
-We define a {py:class}`PolicyInterface]() <nemo_reinforcer.models.interfaces>` that contains everything you need to train a Policy model.
+We define a {py:class}`PolicyInterface]() <nemo_rl.models.interfaces>` that contains everything you need to train a Policy model.
 
-This Policy object holds a [RayWorkerGroup](../../nemo_reinforcer/distributed/worker_groups.py) of SPMD (1 proc/gpu) processes that run HF/MCore, all coordinated by this object so it appears to you like 1 GPU!
+This Policy object holds a [RayWorkerGroup](../../nemo_rl/distributed/worker_groups.py) of SPMD (1 proc/gpu) processes that run HF/MCore, all coordinated by this object so it appears to you like 1 GPU!
 
 ### Fast Generation
 
-We support vLLM through the [VllmGeneration](../../nemo_reinforcer/models/generation/vllm.py) class right now.
+We support vLLM through the [VllmGeneration](../../nemo_rl/models/generation/vllm.py) class right now.
 
-The function [grpo_train](../../nemo_reinforcer/algorithms/grpo.py) contains the core GRPO training loop.
+The function [grpo_train](../../nemo_rl/algorithms/grpo.py) contains the core GRPO training loop.
+
+### Loss
+We use the [ClippedPGLossFn](../../nemo_rl/algorithms/loss_functions.py) to calculate the loss for GRPO. Formally,
+
+$$
+L(\theta) = E_{x \sim \pi_{\theta_{\text{old}}}} \Big[ \min \Big(\frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}A_t, \text{clip} \big( \frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}, 1 - \varepsilon, 1 + \varepsilon \big) A_t \Big) \Big] - \beta D_{\text{KL}} (\pi_\theta \| \pi_\text{ref})
+$$
+
+where:
+
+- $\pi_\theta$ is the policy model we are currently optimizing
+- $\pi_{\theta_{\text{old}}}$ is the previous policy model (from the beginning of this step)
+- $A_t$ is the advantage estimate
+- $\varepsilon$ is a clipping hyperparameter
+- $\beta$ is the KL penalty coefficient
+- $\pi_{\text{ref}}$ is the reference policy
+
+#### Improvements to the GRPO loss formulation for stability and accuracy
+
+#### On-Policy KL Approximation
+
+In practice, we calculate the KL divergence using the estimator from Schulman 2020 (http://joschu.net/blog/kl-approx.html), which is unbiased and guaranteed to be positive.
+
+$$
+D_{\text{KL}} (\pi_\theta || \pi_\text{ref}) \approx E_{x \sim \pi_{\theta}} \Big[ \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - \log \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - 1 \Big]
+$$
+
+Note that the loss function above samples from $\pi_{\theta_{\text{old}}}$ instead of $\pi_\theta$, meaning that the KL approximation is off-policy if we use samples from $\pi_{\theta_{\text{old}}}$. This is the default formulation used in the [original GRPO paper](https://arxiv.org/abs/2402.03300). In order to use an _on-policy_ KL approximation while sampling from $\pi_{\theta_{\text{old}}}$, we can incorporate importance weights:
+
+$$
+\begin{align*}
+D_{\text{KL}} (\pi_\theta || \pi_\text{ref}) &\approx E_{x \sim \pi_{\theta}} \Big[ \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - \log \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - 1 \Big] \\
+&= \sum_x \pi_{\theta}(x) \Big[ \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - \log \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - 1 \Big] \\
+&= \sum_x \pi_{\theta_{\text{old}}}(x) \frac{\pi_{\theta}(x)}{\pi_{\theta_{\text{old}}}(x)} \Big[ \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - \log \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - 1 \Big] \\
+&= E_{x \sim \pi_{\theta_\text{old}}} \frac{\pi_{\theta}(x)}{\pi_{\theta_{\text{old}}}(x)} \Big[ \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - \log \frac{\pi_\text{ref}(x)}{\pi_\theta(x)} - 1 \Big] \\
+\end{align*}
+$$
+
+To enable the on-policy KL approximation, set the config `use_on_policy_kl_approximation=True` in the `ClippedPGLossConfig`. By default, we set this config to False to align with standard GRPO.
+
+
+#### Importance Sampling Correction
+The policy we use to draw samples, $\pi_{\theta_{\text{old}}}$, is used in both the inference framework and the training framework. To account for this distinction, we refer to the inference framework policy as $\pi_{\text{inference}}$ and the training framework policy as $\pi_{\text{training}}$. As noted in [Adding New Models](../adding-new-models.md#understanding-discrepancies-between-backends), it is possible for the token probabilities from $\pi_{\text{training}}$ and $\pi_{\text{inference}}$ to have discrepancies (from numerics, precision differences, bugs, etc.), leading to off-policy samples. We can correct for this by introducing importance weights between $\pi_{\text{training}}$ and $\pi_{\text{inference}}$ to the first term of the loss function. 
+
+Let $f_\theta(x) = \min \Big(\frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}A_t, \text{clip} \big( \frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}, 1 - \varepsilon, 1 + \varepsilon \big) A_t \Big)$ represent the first term of loss function. Then,
+
+$$
+\begin{align*}
+E_{x \sim \pi_\text{training}} f_\theta(x) &= \sum_x \pi_\text{training}(x) f_\theta(x) \\
+&= \sum_x \pi_\text{inference}(x) \frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)} f_\theta(x) \\
+&= E_{x \sim \pi_\text{inference}} \frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)} f_\theta(x)
+\end{align*}
+$$
+
+By multiplying the first term of the loss function by the importance weights $\frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)}$, we can correct for the distribution mismatch between $\pi_{\text{training}}$ and $\pi_{\text{inference}}$ while still sampling from $\pi_{\text{inference}}$.
+
+To enable the importance sampling correction, set the config `use_importance_sampling_correction=True` in the `ClippedPGLossConfig`. By default, we set this config to False to align with standard GRPO.

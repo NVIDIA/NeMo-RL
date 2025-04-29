@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 
 
 @pytest.fixture(autouse=True)
@@ -23,10 +24,10 @@ def mock_virtual_cluster_pg():
     # Mock the _init_placement_groups and get_placement_groups methods to avoid actually initializing placement groups
     with (
         patch(
-            "nemo_reinforcer.distributed.virtual_cluster.RayVirtualCluster.get_placement_groups"
+            "nemo_rl.distributed.virtual_cluster.RayVirtualCluster.get_placement_groups"
         ) as mock_get_pg,
         patch(
-            "nemo_reinforcer.distributed.virtual_cluster.RayVirtualCluster._init_placement_groups"
+            "nemo_rl.distributed.virtual_cluster.RayVirtualCluster._init_placement_groups"
         ) as mock_init_pg,
     ):
         mock_get_pg.return_value = []

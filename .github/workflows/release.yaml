@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-name: "Release Reinforcer"
+name: "Release NeMo-RL"
 
 on:
   workflow_dispatch:
@@ -35,9 +35,9 @@ jobs:
     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_release_library.yml@v0.22.6
     with:
       release-ref: ${{ inputs.release-ref }}
-      python-package: nemo_reinforcer
+      python-package: nemo_rl
       python-version: "3.11"
-      library-name: NeMo-Reinforcer
+      library-name: NeMo-RL
       dry-run: ${{ inputs.dry-run }}
       version-bump-branch: ${{ inputs.version-bump-branch }}
     secrets:

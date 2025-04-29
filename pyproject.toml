@@ -3,12 +3,12 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nemo-reinforcer"
+name = "nemo-rl"
 dynamic = [
     "version",
     "readme",
 ]
-description = "Nemo-Reinforcer: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
+description = "Nemo-RL: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
 requires-python = ">=3.10"
 license = {text = "Apache 2.0"}
 dependencies = [
@@ -30,15 +30,15 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["nemo_reinforcer"]
+packages = ["nemo_rl"]
 
 [tool.setuptools.dynamic]
-version = {attr = "nemo_reinforcer.__version__"}  # any module attribute compatible with ast.literal_eval
+version = {attr = "nemo_rl.__version__"}  # any module attribute compatible with ast.literal_eval
 readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.optional-dependencies]
 vllm = [
-    "vllm==0.8.2",
+    "vllm==0.8.4",
 ]
 
 [dependency-groups]
@@ -79,19 +79,20 @@ exclude = '''
 '''
 
 [tool.pytest.ini_options]
-addopts = "--cov=nemo_reinforcer --cov-report=term --cov-report=json -s -rA -x"
+addopts = "--cov=nemo_rl --cov-report=term --cov-report=json -s -rA -x"
 testpaths = ["tests"]
 python_files = "test_*.py"
 
 [tool.ruff.lint]
 # Enable all `pydocstyle` rules, limiting to those that adhere to the
 # Google convention via `convention = "google"`, below.
-select = ["D"]
+select = ["D", "F"]
 
-# On top of the Google convention, disable `D417`, which requires
-# documentation for every function parameter.
+# - On top of the Google convention, disable `D417`, which requires
+#   documentation for every function parameter.
+# - F841: local variable assigned but never used (exluced to favor readability)
 # TODO: Remove D10 once we are about to release to get all the docstrings written
-ignore = ["D417", "D10"]
+ignore = ["D417", "D10", "F841"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -102,6 +103,8 @@ convention = "google"
 "tests/**" = ["D"]
 # Ignore all files that end in `_test.py`.
 "*_test.py" = ["D"]
+# Ignore F401 (import but unused) in __init__.py
+"__init__.py" = ["F401"]
 
 [tool.uv]
 # Users may use different link-modes depending on their scenario:

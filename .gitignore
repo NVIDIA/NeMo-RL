@@ -15,17 +15,15 @@ apidocs/
 dist/
 *.egg-info/
 *.vscode/
-uv.lock
 
 # Test
-.coverage
-<<<<<<< HEAD
 coverage.json
+.coverage*
 unit_results.json
 unit_results/
-=======
+release_run*
+ckpts/
 test_assets/
->>>>>>> main
 
 # Cache
 uv_cache/

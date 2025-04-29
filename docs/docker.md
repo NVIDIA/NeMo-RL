@@ -6,7 +6,7 @@ If you only need the base image with ray + uv, you can build it like so:
 
 ```sh
 cd docker/
-docker buildx build --target base -t reinforcer -f Dockerfile ..
+docker buildx build --target base -t nemo_rl -f Dockerfile ..
 ```
 
 This is **our recommendation** as it is a small image and allows you to specify your python dependencies at runtime.
@@ -17,7 +17,7 @@ The docker image build without a target stage will include all of the default de
 
 ```sh
 cd docker/
-docker buildx build -t reinforcer -f Dockerfile ..
+docker buildx build -t nemo_rl -f Dockerfile ..
 ```
 
 This image sets up the python environment for you, so you do not have to use `uv` if you don't need

@@ -1,5 +1,5 @@
 # Design and Philosophy
-In this section, we will describe the problems this library aims to solve and motivate/dicuss the Reinforcer APIs.
+In this section, we will describe the problems this library aims to solve and motivate/dicuss the NeMo-RL APIs.
 
 ## Motivation
 Online RL requires coordinating a lot of different pieces of software/models
@@ -19,8 +19,8 @@ Fundamentally, we need to be able to do 4 things between these RL Actors:
 ## Design
 
 We create composable and hackable abstractions for each layer of the tasks above
-- Resourcing -> {py:class}`RayVirtualCluster <nemo_reinforcer.distributed.virtual_cluster.RayVirtualCluster>`
-- Isolation -> {py:class}`RayWorkerGroup <nemo_reinforcer.distributed.worker_groups.RayWorkerGroup>`
+- Resourcing -> {py:class}`RayVirtualCluster <nemo_rl.distributed.virtual_cluster.RayVirtualCluster>`
+- Isolation -> {py:class}`RayWorkerGroup <nemo_rl.distributed.worker_groups.RayWorkerGroup>`
 - Coordination -> A Single-Process Controller using Ray
 - Communication -> Data flows through one of the following:
   - the single controller 
@@ -32,7 +32,7 @@ By creating a common interface for these 4 tasks, **RL algorithm code looks the 
 
 ![actor-wg-worker-vc](../assets/actor-wg-worker-vc.png)
 
-### {py:class}`RayVirtualCluster <nemo_reinforcer.distributed.virtual_cluster.RayVirtualCluster>`
+### {py:class}`RayVirtualCluster <nemo_rl.distributed.virtual_cluster.RayVirtualCluster>`
 VirtualCluster provides a basic abstraction on top of Ray Placement Groups that allow you to section off a part of your compute resources for WorkerGroups to run on as though they had their own cluster. They support running just one WorkerGroup on each VirtualCluster, or *colocation*, where multiple WorkerGroups share resources (i.e running policy training(hf) and generation(vllm) on the same GPUs in-turn).
 
 Minimally, it has has the following core API:
@@ -68,7 +68,7 @@ class RayVirtualCluster:
         """
 ```
 
-### {py:class}`RayWorkerGroup <nemo_reinforcer.distributed.worker_groups.RayWorkerGroup>`
+### {py:class}`RayWorkerGroup <nemo_rl.distributed.worker_groups.RayWorkerGroup>`
 All work is done by "Worker Processes"(Ray Actors) that run on a small unit of resources (usually 1 CPU or 1 CPU+GPU). These workers are managed by *RayWorkerGroup*
 ```python
 class RayWorkerGroup:
@@ -109,4 +109,4 @@ def grpo_train(
         training_data = calculate_grpo_trainnig_data(generations, logprobs, reference_logprobs, rewards)
         policy.train(generations, logprobs, reference_logprobs, GRPOLossFn)
 ```
-For a real implementation of grpo (with valiation, checkpointing, memory movement, and the omitted data processing steps), see [grpo_train](../../nemo_reinforcer/algorithms/grpo.py)
+For a real implementation of grpo (with valiation, checkpointing, memory movement, and the omitted data processing steps), see [grpo_train](../../nemo_rl/algorithms/grpo.py)

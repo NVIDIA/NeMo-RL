@@ -11,28 +11,28 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import ray
-import pytest
-import pprint
-import torch
 import os
-import unittest.mock
-import torch.distributed as dist
+import pprint
+
+import pytest
+import ray
+import torch
 
 # Define a custom marker for model configuration tests
 pytestmark = pytest.mark.modelconfig
 
-from nemo_reinforcer.algorithms.interfaces import LossFunction
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
-from nemo_reinforcer.models.generation.interfaces import configure_generation_config
-from nemo_reinforcer.models.policy import PolicyConfig
-from nemo_reinforcer.models.policy.hf_policy import HfPolicy
-from nemo_reinforcer.models.policy.dtensor_policy_worker import DTensorPolicyWorker
-from tests.unit.test_utils import simple_loss
-from tests.unit.conftest import TEST_ASSETS
 from transformers import AutoModelForCausalLM
+
+from nemo_rl.algorithms.interfaces import LossFunction
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.models.policy import PolicyConfig
+from nemo_rl.models.policy.dtensor_policy_worker import DTensorPolicyWorker
+from nemo_rl.models.policy.hf_policy import HfPolicy
+from tests.unit.conftest import TEST_ASSETS
+from tests.unit.test_utils import simple_loss
 
 
 def create_test_config(
@@ -86,6 +86,17 @@ def create_test_config(
         },
         "max_grad_norm": 1.0,
     }
+
+
+@pytest.fixture(scope="module", autouse=True)
+def skip_tied_weight_check_for_all():
+    """Automatically skip tied weight check for all tests in this module."""
+    os.environ["NRL_SKIP_TIED_WEIGHT_CHECK"] = "1"
+
+    yield
+
+    # Restore the original value
+    os.environ.pop("NRL_SKIP_TIED_WEIGHT_CHECK", None)
 
 
 @pytest.fixture(scope="module")

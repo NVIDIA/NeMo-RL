@@ -13,7 +13,8 @@
 # limitations under the License.
 import pytest
 import torch
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 
 
 def test_shard_by_batch_size_basic():

@@ -17,17 +17,17 @@ RUN chmod 755 /home/ray/.cache
 
 FROM base AS hermetic
 
-WORKDIR /opt/reinforcer
+WORKDIR /opt/nemo-rl
 
 # First copy only the dependency files
 COPY --chown=ray --chmod=755 pyproject.toml uv.lock ./
 
-ENV UV_PROJECT_ENVIRONMENT=/opt/reinforcer_venv
-ENV VIRTUAL_ENV=/opt/reinforcer_venv
+ENV UV_PROJECT_ENVIRONMENT=/opt/nemo_rl_venv
+ENV VIRTUAL_ENV=/opt/nemo_rl_venv
 
 # Create and activate virtual environment
 RUN <<"EOF"
-uv venv /opt/reinforcer_venv
+uv venv /opt/nemo_rl_venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
 
 # Sync each training + inference backend one at a time (since they may conflict)
@@ -38,7 +38,7 @@ uv sync --locked --extra vllm --no-install-project
 uv sync --locked --all-groups --no-install-project
 EOF
 
-ENV PATH="/opt/reinforcer_venv/bin:$PATH"
+ENV PATH="/opt/nemo_rl_venv/bin:$PATH"
 
 # The ray images automatically activate the anaconda venv. We will
 # comment this out of the .bashrc to give the same UX between docker

@@ -12,20 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Dict, List
+
 import pytest
 import torch
-from typing import Dict, List
 from transformers import AutoTokenizer
 
-from nemo_reinforcer.data.llm_message_utils import (
-    message_log_to_flat_messages,
-    get_keys_from_message_log,
-    batched_message_log_to_flat_message,
-    get_formatted_message_log,
+from nemo_rl.data.interfaces import LLMMessageLogType, TaskDataSpec
+from nemo_rl.data.llm_message_utils import (
     add_loss_mask_to_message_log,
+    batched_message_log_to_flat_message,
     get_first_index_that_differs,
+    get_formatted_message_log,
+    get_keys_from_message_log,
+    message_log_to_flat_messages,
 )
-from nemo_reinforcer.data.interfaces import LLMMessageLogType, TaskDataSpec
 
 
 @pytest.fixture
@@ -430,6 +431,22 @@ def test_add_loss_mask_to_chat_message_log(
     assert torch.equal(
         tokenized_chat_message_log[0][0]["token_loss_mask"],
         torch.tensor([1, 1, 1, 1, 1, 1]),
+    )
+    assert torch.equal(
+        tokenized_chat_message_log[0][1]["token_loss_mask"], torch.tensor([0, 0, 0])
+    )
+    assert torch.equal(
+        tokenized_chat_message_log[0][2]["token_loss_mask"], torch.tensor([1, 1])
+    )
+
+    ## test only unmasking final message
+    add_loss_mask_to_message_log(
+        tokenized_chat_message_log,
+        only_unmask_final=True,
+    )
+    assert torch.equal(
+        tokenized_chat_message_log[0][0]["token_loss_mask"],
+        torch.tensor([0, 0, 0, 0, 0, 0]),
     )
     assert torch.equal(
         tokenized_chat_message_log[0][1]["token_loss_mask"], torch.tensor([0, 0, 0])

@@ -12,14 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-import tempfile
 import json
-from nemo_reinforcer.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
-from nemo_reinforcer.data.hf_datasets.prompt_response_dataset import (
+import tempfile
+
+import pytest
+from transformers import AutoTokenizer
+
+from nemo_rl.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
+from nemo_rl.data.hf_datasets.prompt_response_dataset import (
     PromptResponseDataset,
 )
-from transformers import AutoTokenizer
 
 
 @pytest.fixture
