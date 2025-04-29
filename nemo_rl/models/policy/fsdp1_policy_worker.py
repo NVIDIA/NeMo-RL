@@ -772,9 +772,17 @@ class FSDP1PolicyWorker:
                 self._held_sharded_state_dict_reference = self.model.state_dict()
 
         # Calculate available memory
-        if refit_buffer_size_gb is None:
-            pass
-        total_available_bytes = refit_buffer_size_gb * (1024**3)
+        if refit_buffer_size_gb is not None:
+            total_available_bytes = refit_buffer_size_gb * (1024**3)
+        else:
+            from nemo_reinforcer.utils.nvml import get_free_memory_bytes
+
+            # Get current device index from torch
+            device_idx = torch.cuda.current_device()
+            # Get device free memory using NVML
+            total_available_bytes = get_free_memory_bytes(device_idx)
+            # Use 80% of the free memory for safety
+            total_available_bytes *= 0.8
 
         # Group tensors by size
         cur_available_bytes = total_available_bytes

@@ -271,13 +271,21 @@ def setup(
 def refit_policy_generation(
     policy: PolicyInterface,
     policy_generation: GenerationInterface,
-    refit_buffer_size_gb: int = 10,
+    refit_buffer_size_gb: int = None,
 ):
-    """Refit the policy generation interface with the latest policy weights."""
+    """Refit the policy_generation with the latest policy weights.
+
+    Args:
+        policy: The policy to provide weights to the inference engine.
+        policy_generation: The inference engine to refit.
+        refit_buffer_size_gb: The size of the buffer to use for refitting. If None, will compute by the remaining memory.
+    """
     policy.offload_before_refit()
     policy_generation.prepare_for_generation(tags=["weights"])
     # get model param keys, which is grouped by size
-    grouped_param_keys = policy.prepare_weights_for_ipc(refit_buffer_size_gb=refit_buffer_size_gb)
+    grouped_param_keys = policy.prepare_weights_for_ipc(
+        refit_buffer_size_gb=refit_buffer_size_gb
+    )
     # do update
     for keys in grouped_param_keys:
         ipc_handles = policy.get_weights_ipc_handles(keys)
