@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import gc
+import os
 import warnings
 from collections import defaultdict
 from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, Optional
-import os
 
 import ray
 import torch
@@ -28,28 +28,25 @@ from torch.distributed.fsdp import (
     MixedPrecision,
 )
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.integrations.accelerate import find_tied_parameters
 
 from nemo_rl.algorithms.interfaces import LossFunction
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import (
+    PY_EXECUTABLES,
+)
 from nemo_rl.models.generation.interfaces import (
     GenerationDatumSpec,
     GenerationOutputSpec,
     verify_right_padding,
 )
-
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers.integrations.accelerate import find_tied_parameters
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.utils import import_class_from_path
-from nemo_rl.distributed.virtual_cluster import (
-    PY_EXECUTABLES,
-)
+from nemo_rl.models.policy.utils import get_gpu_info, import_class_from_path
 from nemo_rl.utils.native_checkpoint import (
-    save_checkpoint,
     load_checkpoint,
+    save_checkpoint,
 )
-from nemo_rl.models.policy.utils import get_gpu_info
 
 
 @ray.remote

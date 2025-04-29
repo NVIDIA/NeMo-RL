@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import tempfile
-import json
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from nemo_rl.data.hf_datasets.dpo import DPODataset
 

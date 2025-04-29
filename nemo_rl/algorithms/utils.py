@@ -17,7 +17,6 @@ from functools import wraps
 
 import numpy as np
 import torch
-from torch.masked import as_masked_tensor
 from transformers import AutoTokenizer
 
 from nemo_rl.data import hf_datasets

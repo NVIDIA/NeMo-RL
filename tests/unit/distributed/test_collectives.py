@@ -14,8 +14,8 @@
 import torch
 
 from nemo_rl.distributed.collectives import (
-    rebalance_nd_tensor,
     gather_jagged_object_lists,
+    rebalance_nd_tensor,
 )
 
 

@@ -11,13 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import pytest
-import os
 import glob
+import os
 import subprocess
+
+import pytest
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(dir_path, "..", ".."))
+configs_dir = os.path.join(project_root, "examples", "configs")
+recipes_dir = os.path.join(project_root, "examples", "configs", "recipes")
 test_suites_dir = os.path.join(project_root, "tests", "test_suites")
 
 nightly_test_suite_path = os.path.join(test_suites_dir, "nightly.txt")
@@ -28,6 +31,13 @@ nightly_performance_test_suite_path = os.path.join(
 release_performance_test_suite_path = os.path.join(
     test_suites_dir, "release_performance.txt"
 )
+
+# Relative to project root
+ALGO_MAPPING_TO_BASE_YAML = {
+    "sft": "examples/configs/sft.yaml",
+    "dpo": "examples/configs/dpo.yaml",
+    "grpo": "examples/configs/grpo_math_1B.yaml",
+}
 
 
 @pytest.fixture
@@ -89,6 +99,16 @@ def all_test_suites(
     )
 
 
+@pytest.fixture
+def all_recipe_yaml_rel_paths():
+    all_recipes = []
+    for recipe_path in glob.glob(
+        os.path.join(recipes_dir, "**", "*.yaml"), recursive=True
+    ):
+        all_recipes.append(recipe_path[len(recipes_dir) + 1 :])
+    return all_recipes
+
+
 @pytest.mark.parametrize(
     "test_suite_path",
     [
@@ -111,12 +131,14 @@ def test_test_suites_exist(test_suite_path):
 
 
 def test_no_overlap_across_test_suites(all_test_suites):
-    recipes = set(all_test_suites)
-    assert len(recipes) == len(all_test_suites), f"Test suites have repeats {recipes}"
+    all_tests = set(all_test_suites)
+    assert len(all_tests) == len(all_test_suites), (
+        f"Test suites have repeats {all_tests}"
+    )
 
 
-def test_all_recipes_accounted_for_in_test_suites(all_test_suites):
-    all_recipes_in_test_suites = set(all_test_suites)
+def test_all_test_scripts_accounted_for_in_test_suites(all_test_suites):
+    all_test_scripts_in_test_suites = set(all_test_suites)
 
     all_tests_in_test_suites_dir = set()
     for recipe_path in glob.glob(
@@ -126,8 +148,37 @@ def test_all_recipes_accounted_for_in_test_suites(all_test_suites):
         recipe_name = recipe_path[len(project_root) + 1 :]
         all_tests_in_test_suites_dir.add(recipe_name)
 
-    assert all_recipes_in_test_suites == all_tests_in_test_suites_dir, (
-        "All recipes are not accounted for in the test suites"
+    assert all_test_scripts_in_test_suites == all_tests_in_test_suites_dir, (
+        "All test scripts are not accounted for in the test suites"
+    )
+
+
+def test_all_recipe_yamls_accounted_for_in_test_suites(
+    all_recipe_yaml_rel_paths, all_test_suites
+):
+    """This test along with test_all_test_scripts_accounted_for_in_test_suites() ensures that all recipe yaml/test scripts/test_suite(txts) are in sync."""
+    assert len(set(all_recipe_yaml_rel_paths)) == len(set(all_test_suites)), (
+        "Recipe YAMLs should be accounted for in the test suites"
+    )
+
+    all_test_script_paths_in_test_suites = set()
+    for test_script in all_test_suites:
+        # Each test suite is relative from project root
+        test_script_rel_to_test_suites_dir = test_script[
+            len(os.path.join("tests", "test_suites")) + 1 :
+        ]
+        all_test_script_paths_in_test_suites.add(test_script_rel_to_test_suites_dir)
+
+    # Since we're comparing yaml to sh, chop off the .sh/.yaml extensions for comparison
+    all_test_script_paths_in_test_suites = {
+        os.path.splitext(path)[0] for path in all_test_script_paths_in_test_suites
+    }
+    all_recipe_yaml_rel_paths = {
+        os.path.splitext(path)[0] for path in all_recipe_yaml_rel_paths
+    }
+
+    assert all_test_script_paths_in_test_suites == set(all_recipe_yaml_rel_paths), (
+        "All recipe YAMLs are not accounted for in the test suites"
     )
 
 
@@ -214,3 +265,37 @@ def test_all_tests_can_find_config_if_dryrun(all_test_suites):
         assert result.returncode == 0, (
             f"Command failed with exit code {result.returncode}"
         )
+
+
+def test_all_recipes_start_with_algo_hyphen(all_recipe_yaml_rel_paths):
+    expected_algos = set(ALGO_MAPPING_TO_BASE_YAML.keys())
+    for recipe_yaml in all_recipe_yaml_rel_paths:
+        basename = os.path.basename(recipe_yaml)
+        algo = basename.split("-")[0]
+        assert algo in expected_algos, (
+            f"Recipe {recipe_yaml} has unexpected algo {algo}"
+        )
+
+
+@pytest.mark.parametrize("algo, algo_base_yaml", ALGO_MAPPING_TO_BASE_YAML.items())
+def test_all_recipes_can_merge_configs_with_base_config(
+    all_recipe_yaml_rel_paths, all_test_suites, algo, algo_base_yaml
+):
+    from omegaconf import OmegaConf
+
+    base_yaml = os.path.join(project_root, algo_base_yaml)
+    base_config = OmegaConf.load(base_yaml)
+    # Would result in an error if we couldn't merge our config with the recipe's config
+    OmegaConf.set_struct(base_config, True)
+    for recipe_yaml in all_recipe_yaml_rel_paths:
+        if not os.path.basename(recipe_yaml).startswith(algo):
+            # Skipping here b/c we test that all recipes start with the algo-hyphen in
+            #  test_all_recipes_start_with_algo_hyphen()
+            continue
+        recipe_yaml_path = os.path.join(recipes_dir, recipe_yaml)
+        recipe_config = OmegaConf.load(recipe_yaml_path)
+        OmegaConf.set_struct(recipe_config, True)
+        # This will raise a error if the config can't be merged
+        print(f"Merging {recipe_yaml} with {base_yaml}")
+        merged_config = OmegaConf.merge(base_config, recipe_config)
+        print(merged_config)

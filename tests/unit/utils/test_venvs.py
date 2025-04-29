@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-from unittest.mock import patch
-from tempfile import TemporaryDirectory
-from nemo_rl.utils.venvs import create_local_venv
 import subprocess
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+
+from nemo_rl.utils.venvs import create_local_venv
 
 
 def test_create_local_venv():

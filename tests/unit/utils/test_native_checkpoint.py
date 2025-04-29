@@ -11,23 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import os
+from tempfile import TemporaryDirectory
+
 import pytest
 import torch
-from tempfile import TemporaryDirectory
+from transformers import AutoModelForCausalLM
 
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.models.policy.hf_policy import HfPolicy
-from transformers import AutoTokenizer, AutoModelForCausalLM
 from nemo_rl.utils.native_checkpoint import (
-    load_checkpoint,
-    save_checkpoint,
     ModelState,
     OptimizerState,
     convert_dcp_to_hf,
+    load_checkpoint,
+    save_checkpoint,
 )
 from tests.unit.test_utils import simple_loss
 

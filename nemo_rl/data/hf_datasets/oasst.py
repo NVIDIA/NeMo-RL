@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
+import copy
 import gzip
+import json
 import os
 import random
+
 import requests
-import copy
-from dataclasses import dataclass
-from typing import Optional
 
 from nemo_rl.data.interfaces import TaskDataSpec
 

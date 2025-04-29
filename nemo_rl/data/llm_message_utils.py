@@ -15,10 +15,11 @@ import warnings
 from typing import Dict, List
 
 import torch
+
 from datasets import Dataset
 from nemo_rl.data.interfaces import (
-    LLMMessageLogType,
     FlatMessagesType,
+    LLMMessageLogType,
     TaskDataSpec,
 )
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
