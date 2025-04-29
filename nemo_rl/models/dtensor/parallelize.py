@@ -31,6 +31,7 @@ from torch.distributed.tensor import DTensor
 from torch.distributed.tensor.placement_types import Shard, Replicate
 from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
 from transformers.models.llama.modeling_llama import LlamaForCausalLM
+from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM
 
 from typing import Union, List
 from nemo_rl.distributed.model_utils import from_parallel_logits_to_logprobs
@@ -101,7 +102,7 @@ def _parallelize_llama(
 
 
 def _parallelize_qwen(
-    model: Qwen2ForCausalLM,
+    model: Union[Qwen2ForCausalLM, Qwen3ForCausalLM],
     dp_mesh: DeviceMesh,
     tp_mesh: DeviceMesh,
     mp_policy: MixedPrecisionPolicy,
@@ -111,7 +112,7 @@ def _parallelize_qwen(
 ):
     """Parallelizes a Qwen2ForCausalLM model across data and tensor parallel dimensions."""
 
-    class Qwen2RotaryEmbedParallel(SequenceParallel):
+    class QwenRotaryEmbedParallel(SequenceParallel):
         """Custom SequenceParallel class for Qwen2 rotary embeddings because the input is a tuple."""
 
         @staticmethod
@@ -144,6 +145,23 @@ def _parallelize_qwen(
 
             return type(inputs)(new_inputs)
 
+    class Qwen3QKNorm(SequenceParallel):
+        @staticmethod
+        def _prepare_input_fn(sequence_sharding, mod, inputs, device_mesh):
+            input_tensor = inputs[0]
+
+            if isinstance(input_tensor, DTensor):
+                assert input_tensor.placements == (Shard(dim=2),)
+            elif isinstance(input_tensor, torch.Tensor):
+                # assume the input passed in already sharded on the sequence dim and create the DTensor
+                return DTensor.from_local(
+                    input_tensor, device_mesh, sequence_sharding, run_check=False
+                )
+            else:
+                raise ValueError(
+                    f"expecting input of {mod} to be a torch.Tensor or DTensor, but got {input_tensor}"
+                )
+
     if tp_mesh.size() > 1:
         assert not model.config.tie_word_embeddings, (
             "Tie word embeddings not supported when TP is enabled"
@@ -159,7 +177,7 @@ def _parallelize_qwen(
                     input_layouts=Replicate(),
                     output_layouts=Shard(1),
                 ),
-                "model.rotary_emb": Qwen2RotaryEmbedParallel(),
+                "model.rotary_emb": QwenRotaryEmbedParallel(),
                 "model.norm": SequenceParallel(),
                 "model.layers.*.input_layernorm": SequenceParallel(),
                 "model.layers.*.self_attn.q_proj": ColwiseParallel(
@@ -174,6 +192,8 @@ def _parallelize_qwen(
                 "model.layers.*.self_attn.o_proj": RowwiseParallel(
                     output_layouts=Shard(1)
                 ),
+                "model.layers.*.self_attn.q_norm": Qwen3QKNorm(),
+                "model.layers.*.self_attn.k_norm": Qwen3QKNorm(),
                 "model.layers.*.post_attention_layernorm": SequenceParallel(),
                 "model.layers.*.mlp.up_proj": ColwiseParallel(),
                 "model.layers.*.mlp.gate_proj": ColwiseParallel(),
@@ -217,6 +237,7 @@ def _parallelize_qwen(
 
 PARALLIZE_FUNCTIONS = {
     Qwen2ForCausalLM: _parallelize_qwen,
+    Qwen3ForCausalLM: _parallelize_qwen,
     LlamaForCausalLM: _parallelize_llama,
 }
 
