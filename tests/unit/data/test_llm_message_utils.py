@@ -18,6 +18,7 @@ from typing import Dict, List
 from transformers import AutoTokenizer
 
 from nemo_rl.data.llm_message_utils import (
+    _validate_tensor_consistency,
     message_log_to_flat_messages,
     get_keys_from_message_log,
     batched_message_log_to_flat_message,
@@ -403,6 +404,21 @@ def test_get_formatted_message_log_qwen(
     actual_text = [m["content"] for m in result]
 
     assert actual_text == expected_text
+
+
+def test_formatted_message_log_empty_message():
+    message_log = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": ""},
+    ]
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
+    task_data_spec = TaskDataSpec(task_name="test")
+    result = get_formatted_message_log(message_log, tokenizer, task_data_spec)
+    flat_result = message_log_to_flat_messages(result)
+    for k in flat_result.keys():
+        if isinstance(flat_result[k], torch.Tensor):
+            # make sure validate_tensor_consistency does not raise an error when one of the messages is empty
+            _validate_tensor_consistency([flat_result[k]])
 
 
 def test_add_loss_mask_to_chat_message_log(
