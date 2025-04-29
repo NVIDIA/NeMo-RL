@@ -803,6 +803,11 @@ class FSDP1PolicyWorker:
         from torch.distributed.tensor import DTensor
         from torch.multiprocessing.reductions import reduce_tensor
 
+        # Clean up the held tensors to reduce peak memory
+        if self._held_streamed_param_reference is not None:
+            del self._held_streamed_param_reference
+            self._held_streamed_param_reference = None
+
         converted_params = {}
         for key in keys:
             # Get full_tensor for dtensor (GPU > 1)
