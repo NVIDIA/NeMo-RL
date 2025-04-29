@@ -172,6 +172,7 @@ jobs:
           time uv run --no-sync bash ./tests/functional/grpo.sh
           time uv run --no-sync bash ./tests/functional/grpo_multiturn.sh
           time uv run --no-sync bash ./tests/functional/dpo.sh
+          time uv run --no-sync bash ./tests/functional/eval.sh
         else
           echo Skipping functional tests for level ${{ needs.pre-flight.outputs.test_level }}
         fi
