@@ -853,6 +853,11 @@ class FSDP1PolicyWorker:
             "prepare_weights_for_ipc must be called before get_weights_ipc_handles"
         )
 
+        # Clean up the held tensors to reduce peak memory
+        if self._held_streamed_param_reference is not None:
+            del self._held_streamed_param_reference
+            self._held_streamed_param_reference = None
+
         converted_params = {}
         for key in keys:
             # Get full_tensor for dtensor (GPU > 1)
