@@ -29,13 +29,15 @@ from tests.unit.test_utils import simple_loss, nll_loss
 
 basic_llama_test_config: PolicyConfig = {
     "model_name": "meta-llama/Llama-3.2-1B",
-    "tokenizer_name": "meta-llama/Llama-3.2-1B",
+    "tokenizer": {"name": "meta-llama/Llama-3.2-1B"},
     "generation_batch_size": 1,  # Small batch size for testing
     "train_global_batch_size": 4,
     "train_micro_batch_size": 1,
     "learning_rate": 5e-6,
     "logprob_batch_size": 1,
     "precision": "float32",
+    "fsdp_offload_enabled": False,
+    "activation_checkpointing_enabled": False,
     "generation": {
         "backend": "hf",
         "temperature": 1.0,
@@ -44,6 +46,13 @@ basic_llama_test_config: PolicyConfig = {
         "top_k": None,
         "stop_token_ids": None,
         "stop_strings": None,
+    },
+    "dtensor_cfg": {
+        "enabled": False,
+        "cpu_offload": False,
+        "sequence_parallel": False,
+        "activation_checkpointing": False,
+        "tensor_parallel_size": 1,
     },
     "optimizer": {
         "name": "torch.optim.AdamW",
@@ -60,6 +69,7 @@ basic_llama_test_config: PolicyConfig = {
             "T_max": 100,
         },
     },
+    "max_grad_norm": 1.0,
 }
 
 
@@ -74,8 +84,7 @@ def gc_collect():
 @pytest.fixture(scope="function")
 def tokenizer():
     """Initialize tokenizer for the test model."""
-    model_name = basic_llama_test_config["model_name"]
-    tokenizer = get_tokenizer(model_name)
+    tokenizer = get_tokenizer(basic_llama_test_config["tokenizer"])
     return tokenizer
 
 
@@ -128,27 +137,27 @@ def test_input_data(tokenizer):
 
 
 @pytest.fixture
-def policy_setup(tokenizer):
+def policy_setup(tokenizer, num_gpus):
     """Setup and teardown for policy tests - creates a virtual cluster and policy."""
     policy = None
     cluster = None
 
-    cluster_name = "test"
-    print(f"Creating virtual cluster '{cluster_name}'...")
+    cluster_name = f"test-init-{num_gpus}gpu"
+    print(f"Creating virtual cluster '{cluster_name}' for {num_gpus} GPUs...")
 
     cluster = RayVirtualCluster(
         name=cluster_name,
-        bundle_ct_per_node_list=[2],  # Single node, 2 gpus
+        bundle_ct_per_node_list=[num_gpus],
         use_gpus=True,
-        num_gpus_per_node=2,  # Using both GPUs
-        max_colocated_worker_groups=1,  # Only one worker group
+        num_gpus_per_node=num_gpus,
+        max_colocated_worker_groups=1,
     )
 
     config = basic_llama_test_config
     config["generation"] = configure_generation_config(config["generation"], tokenizer)
 
     print("Creating HfPolicy...")
-    policy = HfPolicy(cluster=cluster, config=config)
+    policy = HfPolicy(cluster=cluster, config=config, tokenizer=tokenizer)
 
     yield policy, cluster
 
@@ -159,15 +168,18 @@ def policy_setup(tokenizer):
 
 
 @pytest.mark.timeout(180)
-def test_hf_policy_init(policy_setup):
+@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
+def test_hf_policy_init(policy_setup, num_gpus):
     policy, cluster = policy_setup
 
     # Verify cluster and policy were properly created
     assert policy is not None, "Policy was not created properly"
     assert cluster is not None, "Cluster was not created properly"
 
-    # Verify we have two workers, one per GPU
-    assert len(policy.worker_group.workers) == 2, "Should have 2 workers, one per GPU"
+    # Verify we have workers matching the GPU count
+    assert len(policy.worker_group.workers) == num_gpus, (
+        f"Should have {num_gpus} worker(s), one per GPU"
+    )
 
     # Check workers are alive
     worker_alive = ray.get([w.is_alive.remote() for w in policy.worker_group.workers])
@@ -183,42 +195,51 @@ def test_hf_policy_init(policy_setup):
 
     # Check 1: Verify workers have different ranks
     gpu_ranks = [info["rank"] for info in gpu_infos]
-    assert len(set(gpu_ranks)) == 2, f"Expected 2 different ranks, got {gpu_ranks}"
-    assert set(gpu_ranks) == {0, 1}, f"Expected ranks 0 and 1, got {gpu_ranks}"
+    assert len(set(gpu_ranks)) == num_gpus, (
+        f"Expected {num_gpus} different ranks, got {gpu_ranks}"
+    )
+    assert set(gpu_ranks) == set(range(num_gpus)), (
+        f"Expected ranks {set(range(num_gpus))}, got {gpu_ranks}"
+    )
 
     # Check 2: Verify workers have different local_ranks
     local_ranks = [info["local_rank"] for info in gpu_infos]
-    assert len(set(local_ranks)) == 2, (
-        f"Expected 2 different local_ranks, got {local_ranks}"
+    assert len(set(local_ranks)) == num_gpus, (
+        f"Expected {num_gpus} different local_ranks, got {local_ranks}"
     )
-    assert set(local_ranks) == {0, 1}, (
-        f"Expected local_ranks 0 and 1, got {local_ranks}"
+    assert set(local_ranks) == set(range(num_gpus)), (
+        f"Expected local_ranks {set(range(num_gpus))}, got {local_ranks}"
     )
 
     # Check 3: Verify workers have different CUDA_VISIBLE_DEVICES
     cuda_visible_devices = [
         info["env_vars"].get("CUDA_VISIBLE_DEVICES") for info in gpu_infos
     ]
-    assert len(set(cuda_visible_devices)) == 2, (
-        f"Expected different CUDA_VISIBLE_DEVICES, got {cuda_visible_devices}"
-    )
+    if num_gpus > 1:
+        assert len(set(cuda_visible_devices)) == num_gpus, (
+            f"Expected different CUDA_VISIBLE_DEVICES, got {cuda_visible_devices}"
+        )
+    else:
+        assert len(set(cuda_visible_devices)) == 1, (
+            f"Expected one CUDA_VISIBLE_DEVICES for 1 GPU, got {cuda_visible_devices}"
+        )
 
     # Check 4: Verify all workers report correct world_size
     for info in gpu_infos:
-        assert info["world_size"] == 2, (
-            f"Expected world_size=2, got {info['world_size']}"
+        assert info["world_size"] == num_gpus, (
+            f"Expected world_size={num_gpus}, got {info['world_size']}"
         )
-        assert info["env_vars"]["WORLD_SIZE"] == "2", (
-            f"Expected WORLD_SIZE=2, got {info['env_vars']['WORLD_SIZE']}"
+        assert info["env_vars"]["WORLD_SIZE"] == str(num_gpus), (
+            f"Expected WORLD_SIZE={num_gpus}, got {info['env_vars']['WORLD_SIZE']}"
         )
 
-    # Check 5: Verify significant GPU memory is allocated (at least 1GB) on both GPUs
+    # Check 5: Verify significant GPU memory is allocated (at least 1GB) on all GPUs
     for info in gpu_infos:
         assert info["memory_allocated_mb"] > 1000, (
             f"Not enough memory allocated on GPU for rank {info['rank']}: {info['memory_allocated_mb']:.2f} MB"
         )
 
-    # Check 6: Verify model parameters are on CUDA devices for both workers
+    # Check 6: Verify model parameters are on CUDA devices for all workers
     for info in gpu_infos:
         param_sample = list(info["parameter_sample"].values())[0]
         assert "cuda" in param_sample["device"], (
@@ -240,7 +261,7 @@ def test_hf_policy_init(policy_setup):
 
 
 @pytest.fixture
-def training_setup():
+def training_setup(tokenizer, num_gpus):
     """Setup and teardown specifically for training tests."""
     policy = None
     cluster = None
@@ -249,21 +270,28 @@ def training_setup():
 
     try:
         # Create resources with unique name
-        cluster_name = "test-train"
-        print(f"Creating training virtual cluster '{cluster_name}'...")
+        cluster_name = f"test-train-{num_gpus}gpu"
+        print(
+            f"Creating training virtual cluster '{cluster_name}' for {num_gpus} GPUs..."
+        )
 
         cluster = RayVirtualCluster(
             name=cluster_name,
-            bundle_ct_per_node_list=[2],  # Single node, 2 gpus
+            bundle_ct_per_node_list=[num_gpus],
             use_gpus=True,
-            num_gpus_per_node=2,  # Using both GPUs
-            max_colocated_worker_groups=1,  # Only one worker group
+            num_gpus_per_node=num_gpus,
+            max_colocated_worker_groups=1,
         )
 
         config = basic_llama_test_config
 
         print("Creating training HfPolicy...")
-        policy = HfPolicy(cluster=cluster, config=config, init_reference_model=False)
+        policy = HfPolicy(
+            cluster=cluster,
+            config=config,
+            init_reference_model=False,
+            tokenizer=tokenizer,
+        )
 
         # Create a test batch
         print("Creating test batch...")
@@ -302,8 +330,19 @@ def training_setup():
         policy.worker_group.shutdown()
 
 
+def get_max_gpu_utilization(policy):
+    max_memory_allocated = 0
+    max_memory_reserved = 0
+    gpu_infos = ray.get([w.get_gpu_info.remote() for w in policy.worker_group.workers])
+    for info in gpu_infos:
+        max_memory_allocated = max(max_memory_allocated, info["memory_allocated_mb"])
+        max_memory_reserved = max(max_memory_reserved, info["memory_reserved_mb"])
+    return max_memory_allocated, max_memory_reserved
+
+
 @pytest.mark.timeout(180)
-def test_hf_policy_training(training_setup):
+@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
+def test_hf_policy_training(training_setup, tracker, num_gpus):
     def verify_loss_tensor(loss_tensor):
         assert not torch.isnan(loss_tensor).any(), "Loss should not be NaN"
         assert not torch.isinf(loss_tensor).any(), "Loss should not be Inf"
@@ -334,29 +373,68 @@ def test_hf_policy_training(training_setup):
         print(f"Training loss: {results['loss']}")
 
     policy.finish_training()
-
-    # Verify loss changed between iterations (model parameters were updated)
     assert losses[0] > losses[-1], "Loss should decrease over training iterations"
+
+    after_training_mem_allocated, after_training_mem_reserved = get_max_gpu_utilization(
+        policy
+    )
+    print(
+        f"Max GPU Utilization after training: {after_training_mem_allocated:,.1f} MB allocated, "
+        f"{after_training_mem_reserved:,.1f} MB reserved"
+    )
+    tracker.track(
+        f"after_training_mem_allocated_{num_gpus}gpu", after_training_mem_allocated
+    )
+    tracker.track(
+        f"after_training_mem_reserved_{num_gpus}gpu", after_training_mem_reserved
+    )
+
+    policy.offload_after_refit()
+    after_offload_mem_allocated, after_offload_mem_reserved = get_max_gpu_utilization(
+        policy
+    )
+    print(
+        f"Max GPU Utilization after offload: {after_offload_mem_allocated:,.1f} MB allocated, "
+        f"{after_offload_mem_reserved:,.1f} MB reserved"
+    )
+    tracker.track(
+        f"after_offload_mem_allocated_{num_gpus}gpu", after_offload_mem_allocated
+    )
+    tracker.track(
+        f"after_offload_mem_reserved_{num_gpus}gpu", after_offload_mem_reserved
+    )
+
+    # Compare memory after offload to memory after training
+    assert after_training_mem_allocated > 10_000, (
+        "Memory after training should be more than 10GB"
+    )
+    assert after_offload_mem_allocated < 1_200, (
+        "Memory after offload should be less than 1.2GB"
+    )
 
 
 @pytest.fixture
-def generation_setup(request, test_input_data, tokenizer):
+def generation_setup(request, test_input_data, tokenizer, num_gpus):
     """Setup and teardown specifically for generation tests."""
     policy = None
     cluster = None
     data = None
+    init_reference_model = request.param
 
     try:
         # Create resources with unique name
-        cluster_name = "test-generate"
-        print(f"Creating generation virtual cluster '{cluster_name}'...")
+        cluster_name = f"test-gen-{num_gpus}gpu-ref{init_reference_model}"
+        print(
+            f"Creating generation virtual cluster '{cluster_name}' for {num_gpus} GPUs "
+            f"(ref_model={init_reference_model})..."
+        )
 
         cluster = RayVirtualCluster(
             name=cluster_name,
-            bundle_ct_per_node_list=[2],  # Single node, 2 gpus
+            bundle_ct_per_node_list=[num_gpus],
             use_gpus=True,
-            num_gpus_per_node=2,  # Using both GPUs
-            max_colocated_worker_groups=1,  # Only one worker group
+            num_gpus_per_node=num_gpus,
+            max_colocated_worker_groups=1,
         )
 
         config = basic_llama_test_config
@@ -366,7 +444,10 @@ def generation_setup(request, test_input_data, tokenizer):
 
         print("Creating generation HfPolicy...")
         policy = HfPolicy(
-            cluster=cluster, config=config, init_reference_model=request.param
+            cluster=cluster,
+            config=config,
+            tokenizer=tokenizer,
+            init_reference_model=request.param,
         )
 
         # Create a test batch
@@ -390,8 +471,9 @@ def generation_setup(request, test_input_data, tokenizer):
 
 
 @pytest.mark.timeout(180)
+@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
 @pytest.mark.parametrize("generation_setup", [False], indirect=True)
-def test_hf_policy_generation(generation_setup, tokenizer, tracker):
+def test_hf_policy_generation(generation_setup, tokenizer, num_gpus, tracker):
     policy, cluster, data, prompts, expected_generations = generation_setup
 
     # Verify resources were created properly
@@ -446,7 +528,7 @@ def test_hf_policy_generation(generation_setup, tokenizer, tracker):
         torch.exp(torch.abs(results["logprobs"] - fprop_results["logprobs"]))
     )
     print(f"avg prob mult error: {avg_prob_mult_error}")
-    tracker.track("avg_prob_mult_error", float(avg_prob_mult_error))
+    tracker.track(f"avg_prob_mult_error_{num_gpus}gpu", float(avg_prob_mult_error))
     assert avg_prob_mult_error <= 1.025
 
     # get logprobs for the expected generations
@@ -471,7 +553,7 @@ def test_hf_policy_generation(generation_setup, tokenizer, tracker):
 
     expected_logprobs = policy.get_logprobs(expected_data)["logprobs"]
     mean_lps = torch.mean(expected_logprobs * expected_tokenized["attention_mask"])
-    tracker.track("mean_lps", float(mean_lps))
+    tracker.track(f"mean_lps_{num_gpus}gpu", float(mean_lps))
     assert mean_lps > -1.7, "Expected logprobs should be greater than -1.7"
     assert mean_lps < -1.4, "Expected logprobs should be less than -1.4"
 
@@ -481,6 +563,7 @@ def test_hf_policy_generation(generation_setup, tokenizer, tracker):
 
 
 @pytest.mark.timeout(180)
+@pytest.mark.parametrize("num_gpus", [1, 2], ids=["1gpu", "2gpu"])
 @pytest.mark.parametrize("generation_setup", [True], indirect=True)
 def test_all_hf_policy_generation_lps_ref_training(generation_setup):
     policy, cluster, data, prompts, expected_generations = generation_setup
@@ -584,7 +667,7 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
     )
 
     # Create policy
-    policy = HfPolicy(cluster=cluster, config=config)
+    policy = HfPolicy(cluster=cluster, config=config, tokenizer=tokenizer)
 
     # Call prepare_for_generation if available
     print("Preparing for generation...")

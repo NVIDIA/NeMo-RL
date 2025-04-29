@@ -42,7 +42,6 @@ class TaskDataSpec:
     prompt_file: Optional[os.PathLike] = None
 
     system_prompt_file: Optional[Union[str, os.PathLike]] = None
-    custom_template: Optional[Union[str, os.PathLike]] = None
 
     def __post_init__(self):
         def load_prompt_file(
@@ -66,7 +65,6 @@ class TaskDataSpec:
         default_attrs = {
             "system_prompt": from_spec.system_prompt,
             "prompt": from_spec.prompt,
-            "custom_template": from_spec.custom_template,
         }
 
         for attr_name, default_value in default_attrs.items():

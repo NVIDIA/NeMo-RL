@@ -27,7 +27,7 @@ uv run examples/run_sft.py \
 
 SFT datasets in Reinforcer are encapsulated using classes. Each SFT data class is expected to have the following attributes:
   1. `formatted_ds`: The dictionary of formatted datasets. This dictionary should contain `train` and `validation` splits, and each split should conform to the format described below.
-  2. `task_spec`: The `TaskDataSpec` for this dataset. This should specify the name you choose for this dataset as well as the `custom_template` for this dataset. More on custom templates below.
+  2. `task_spec`: The `TaskDataSpec` for this dataset. This should specify the name you choose for this dataset.
 
 SFT datasets are expected to follow the HuggingFace chat format. Refer to the [chat dataset document](../design-docs/chat-datasets.md) for details. If your data is not in the correct format, simply write a preprocessing script to convert the data into this format. [data/hf_datasets/squad.py](../../nemo_reinforcer/data/hf_datasets/squad.py) has an example:
 
@@ -51,17 +51,21 @@ def format_squad(data):
     }
 ```
 
-Reinforcer SFT uses HuggingFace chat templates to format the individual examples. If you would like to use a custom template, create a string template in [jinja format](https://huggingface.co/docs/transformers/v4.34.0/en/chat_templating#how-do-i-create-a-chat-template) and pass it to the dataset's `TaskDataSpec`. For example,
+Reinforcer SFT uses HuggingFace chat templates to format the individual examples. Three types of chat templates are supported, which can be configured via `tokenizer.chat_template` in your yaml config (see [sft.yaml](../../examples/configs/sft.yaml) for an example):
 
-```python
-custom_template = (
-    "{% for message in messages %}{%- if message['role'] == 'system'  %}{{'Context: ' + message['content'].strip()}}{%- elif message['role'] == 'user'  %}{{' Question: ' + message['content'].strip() + ' Answer: '}}{%- elif message['role'] == 'assistant'  %}{{message['content'].strip()}}{%- endif %}{% endfor %}"
-)
-task_spec = TaskDataSpec(
-    task_name="squad",
-    custom_template=custom_template,
-)
-```
+1. Apply the tokenizer's default chat template. To use the tokenizer's default, either omit `tokenizer.chat_template` from the config altogether, or set `tokenizer.chat_template="default"`.
+2. Use a "passthrough" template which simply concatenates all messages. This is desirable if the chat template has been applied to your dataset as an offline preprocessing step. In this case, you should set `tokenizer.chat_template` to None as follows:
+    ```yaml
+    tokenizer:
+      chat_template: NULL
+    ```
+3. Use a custom template: If you would like to use a custom template, create a string template in [jinja format](https://huggingface.co/docs/transformers/v4.34.0/en/chat_templating#how-do-i-create-a-chat-template), and add that string to the config. For example,
+
+    ```yaml
+    tokenizer:
+    custom_template: "{% for message in messages %}{%- if message['role'] == 'system'  %}{{'Context: ' + message['content'].strip()}}{%- elif message['role'] == 'user'  %}{{' Question: ' + message['content'].strip() + ' Answer: '}}{%- elif message['role'] == 'assistant'  %}{{message['content'].strip()}}{%- endif %}{% endfor %}"
+    ```
+
 
 By default, NeMo-Reinforcer has support for `Squad` and `OpenAssistant` datasets. Both of these datasets are downloaded from HuggingFace and preprocessed on-the-fly, so there's no need to provide a path to any datasets on disk.
 

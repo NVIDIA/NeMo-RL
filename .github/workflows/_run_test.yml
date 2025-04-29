@@ -70,6 +70,9 @@ jobs:
           run: |
             docker pull nemoci.azurecr.io/nemo_reinforcer_container:${{ github.run_id }}
 
+        - name: Checkout repository
+          uses: actions/checkout@v4
+
         - name: Start container
           run: |
             nvidia-smi
@@ -81,6 +84,7 @@ jobs:
               --env HF_DATASETS_CACHE=/home/TestData/reinforcer/hf_datasets_cache \
               --env REINFORCER_REPO_DIR=/opt/reinforcer \
               --env HF_TOKEN \
+              --volume $GITHUB_WORKSPACE:/opt/reinforcer \
               --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR \
               --volume /mnt/datadrive/TestData/reinforcer/datasets:/opt/reinforcer/datasets:ro \
               --volume /mnt/datadrive/TestData/reinforcer/checkpoints:/home/TestData/reinforcer/checkpoints:ro \
@@ -91,15 +95,25 @@ jobs:
 
         - name: Run unit tests
           run: |
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.UNIT_TEST_SCRIPT }}"
+            docker exec nemo_container_${{ github.run_id }} git config --global --add safe.directory /opt/reinforcer
+            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
+            ${{ inputs.UNIT_TEST_SCRIPT }}"
 
         - name: Run doc tests
           run: |
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.DOC_TEST_SCRIPT }}"
+            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
+            ${{ inputs.DOC_TEST_SCRIPT }}"
 
         - name: Run functional tests
           run: |
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
+            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
+            ${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
 
         - uses: "NVIDIA/NeMo/.github/actions/cancel-workflow@main"
           if: failure()
@@ -107,6 +121,7 @@ jobs:
         - name: after_script
           if: always() && inputs.AFTER_SCRIPT != ':'
           run: |
+            # Run the after script
             cmd=$(cat <<"RUN_TEST_EOF"
             ${{ inputs.AFTER_SCRIPT }}
             RUN_TEST_EOF
@@ -125,5 +140,7 @@ jobs:
         - name: Container shutdown
           if: always()
           run: |
+            # Ensure any added files in the mounted directory are owned by the runner user to allow it to clean up
+            docker exec nemo_container_${{ github.run_id }} bash -c "find /opt/reinforcer -path '/opt/reinforcer/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +"
             docker container stop nemo_container_${{ github.run_id }} || true
             docker container rm nemo_container_${{ github.run_id }} || true

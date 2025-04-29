@@ -19,9 +19,13 @@ uv.lock
 
 # Test
 .coverage
+<<<<<<< HEAD
 coverage.json
 unit_results.json
 unit_results/
+=======
+test_assets/
+>>>>>>> main
 
 # Cache
 uv_cache/

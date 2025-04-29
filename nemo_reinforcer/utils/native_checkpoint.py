@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 import torch
-
+from torch.distributed.fsdp import FullyShardedDataParallel
 from transformers import AutoConfig, AutoTokenizer
 import torch.distributed.checkpoint as dcp
 from torch.distributed.checkpoint.stateful import Stateful
@@ -137,6 +137,8 @@ def save_checkpoint(
     optimizer: Optional[torch.optim.Optimizer] = None,
     scheduler: Optional[Any] = None,
     optimizer_path: Optional[str] = None,
+    tokenizer: Optional[Any] = None,
+    tokenizer_path: Optional[str] = None,
     save_torch_dist: bool = True,
     save_hf: bool = False,
 ) -> None:
@@ -152,7 +154,15 @@ def save_checkpoint(
         save_hf: Whether to save in HuggingFace format
     """
     if save_hf:
-        model_state_dict = model._fsdp_wrapped_module.state_dict()
+        if hasattr(model, "_fsdp_wrapped_module"):
+            model_state_dict = model._fsdp_wrapped_module.state_dict()
+        else:
+            model_state_dict = {
+                k: v.full_tensor()
+                if isinstance(v, torch.distributed.tensor.DTensor)
+                else v
+                for k, v in model.state_dict().items()
+            }
 
         if torch.distributed.get_rank() == 0:
             # Create a new path by appending "-hf" to the weights path
@@ -174,6 +184,13 @@ def save_checkpoint(
                 )
             optimizer_state = {"optim": OptimizerState(model, optimizer, scheduler)}
             dcp.save(optimizer_state, checkpoint_id=optimizer_path)
+
+    if tokenizer is not None:
+        if tokenizer_path is None:
+            raise ValueError(
+                "tokenizer_path must be provided when saving tokenizer state"
+            )
+        tokenizer.save_pretrained(tokenizer_path)
 
 
 def load_checkpoint(

@@ -236,6 +236,7 @@ def setup(
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
+        tokenizer=tokenizer,
         weights_path=Path(last_checkpoint_path) / "policy" / "weights"
         if last_checkpoint_path
         else None,
@@ -543,6 +544,9 @@ def grpo_train(
                 flat_messages, input_lengths = batched_message_log_to_flat_message(
                     repeated_batch["message_log"],
                     pad_value_dict={"token_ids": tokenizer.pad_token_id},
+                    make_sequence_length_divisible_by=master_config["policy"][
+                        "make_sequence_length_divisible_by"
+                    ],
                 )
 
                 # Create training data from flattened messages
@@ -627,6 +631,9 @@ def grpo_train(
                         weights_path=os.path.join(checkpoint_path, "policy", "weights"),
                         optimizer_path=os.path.join(
                             checkpoint_path, "policy", "optimizer"
+                        ),
+                        tokenizer_path=os.path.join(
+                            checkpoint_path, "policy", "tokenizer"
                         ),
                         save_hf=is_last_checkpoint,
                     )
