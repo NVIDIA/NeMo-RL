@@ -480,6 +480,7 @@ class HfPolicyWorker:
 
         Args:
             data: BatchedDataDict containing input_ids and input_lengths tensors
+            greedy: Whether to use greedy decoding instead of sampling
 
         Returns:
             BatchedDataDict conforming to GenerationOutputSpec:
@@ -511,6 +512,13 @@ class HfPolicyWorker:
             # Get generation config from self.cfg
             generation_batch_size = self.cfg["generation_batch_size"]
             gen_cfg = self.cfg["generation"]
+            stop_strings = []
+            if data["stop_strings"] is not None:
+                stop_strings += [
+                    string for strings in data["stop_strings"] for string in strings
+                ]
+            if gen_cfg["stop_strings"] is not None:
+                stop_strings += gen_cfg["stop_strings"]
 
             micro_batches = []
 
@@ -546,7 +554,7 @@ class HfPolicyWorker:
                     top_k=gen_cfg["top_k"],
                     pad_token_id=gen_cfg["pad_token_id"],
                     eos_token_id=gen_cfg["stop_token_ids"],
-                    stop_strings=gen_cfg["stop_strings"],
+                    stop_strings=stop_strings,
                     tokenizer=self.tokenizer,  # needs for stop_strings
                     return_dict_in_generate=True,
                     output_scores=True,

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from typing import Any, TypedDict, Dict, Union, Tuple, List
+from typing import Any, TypedDict, Dict, Union, Tuple, List, Optional
 
 import torch
 from transformers import AutoTokenizer
@@ -166,6 +166,7 @@ class GenerationDatumSpec(TypedDict):
 
     input_ids: torch.Tensor
     input_lengths: torch.Tensor
+    stop_strings: Optional[List[str]] = None
     __extra__: Any
 
 

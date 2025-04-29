@@ -13,10 +13,8 @@
 # limitations under the License.
 
 import pytest
-import torch
 
 from datasets import load_dataset
-from transformers import AutoTokenizer
 
 from nemo_reinforcer.algorithms.utils import get_tokenizer
 from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
@@ -74,8 +72,8 @@ def test_vllm_execute_code(cluster, tokenizer):
     """Test that vLLM can call the code executor."""
     # Prepare test data
     codes = [
-        ("<code>x = 3; y = 4</code>\nThis is some regular text.\n<code>x + y</code>\n"),
-        ("<code>\ndef f(x):\n    return x * x\n\nf(2)\n</code>\n"),
+        "<code>x = 3; y = 4</code>\nThis is some regular text.\n<code>x + y</code>\n",
+        "<code>\ndef f(x):\n    return x * x\n\nf(2)\n</code>\n",
     ]
     results = ["<result>7</result>", "\n<result>\n4\n</result>"]
     results = [code + result for code, result in zip(codes, results)]

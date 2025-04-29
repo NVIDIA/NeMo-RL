@@ -244,6 +244,14 @@ class VllmGenerationWorker:
         batch_size = input_ids.shape[0]
         # Original input length with padding
         padded_input_length = input_ids.size(1)
+        stop_strings = []
+        if data["stop_strings"] is not None:
+            stop_strings += [
+                string for strings in data["stop_strings"] for string in strings
+            ]
+        if self.cfg["stop_strings"] is not None:
+            stop_strings += self.cfg["stop_strings"]
+        stop_strings = list(set(stop_strings))
 
         # Prepare prompts for vLLM (removing padding)
         prompts = []
@@ -276,7 +284,7 @@ class VllmGenerationWorker:
             logprobs=0,  # Return logprobs for the generated tokens
             stop_token_ids=self.cfg["stop_token_ids"],
             logits_processors=logits_processors,
-            stop=self.cfg["stop_strings"],
+            stop=stop_strings,
             include_stop_str_in_output=True,  # returning stop strings like hf
         )
 
@@ -368,6 +376,15 @@ class VllmGenerationWorker:
         """
         # Read generation parameters from config
         top_k = self.cfg["top_k"] if self.cfg["top_k"] is not None else -1
+        stop_strings = []
+        if data["stop_strings"] is not None:
+            stop_strings += [
+                string for strings in data["stop_strings"] for string in strings
+            ]
+        if self.cfg["stop_strings"] is not None:
+            stop_strings += self.cfg["stop_strings"]
+        stop_strings = list(set(stop_strings))
+
         logits_processors = []
         if self.cfg["execute_code"]:
             processor = CodeLogitsProcessor(
@@ -382,7 +399,7 @@ class VllmGenerationWorker:
             max_tokens=self.cfg["max_new_tokens"],
             logits_processors=logits_processors,
             stop_token_ids=self.cfg["stop_token_ids"],
-            stop=self.cfg["stop_strings"],
+            stop=stop_strings,
             include_stop_str_in_output=True,  # returning stop strings like hf
         )
 

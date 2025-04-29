@@ -13,7 +13,7 @@
 # limitations under the License.
 from copy import deepcopy
 from collections import UserDict
-from typing import List, Dict, Optional, Iterator, TypeVar, Any, Generic
+from typing import List, Dict, Optional, Iterator, TypeVar, Any, Generic, Union
 from typing_extensions import Self
 
 import torch
@@ -232,6 +232,30 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         for k in self.data:
             sliced_batch[k] = self.data[k][start:end]
         return sliced_batch
+
+    def select_indices(
+        self, indices: Union[List[int], torch.Tensor]
+    ) -> "BatchedDataDict":
+        """Selects specific rows from the batch based on indices.
+
+        Args:
+            indices: A list or tensor of integer indices to select.
+
+        Returns:
+            BatchedDataDict: A new BatchedDataDict containing only the selected rows.
+        """
+        selected_batch = BatchedDataDict()
+        for k, v in self.data.items():
+            if torch.is_tensor(v):
+                selected_batch[k] = v[indices]
+            elif isinstance(v, list):
+                selected_batch[k] = [v[i] for i in indices]
+            else:
+                # Handle other potential types if necessary, or raise error
+                raise TypeError(
+                    f"Unsupported type {type(v)} for index selection in BatchedDataDict"
+                )
+        return selected_batch
 
     def repeat_interleave(self, num_repeats: int) -> "BatchedDataDict":
         """Repeats the batch num_repeats times.

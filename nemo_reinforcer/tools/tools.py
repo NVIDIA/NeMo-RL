@@ -4,6 +4,7 @@ import math
 from tqdm import tqdm
 from collections import Counter
 
+import ray
 import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer
@@ -11,6 +12,7 @@ from transformers import AutoTokenizer
 from nemo_reinforcer.tools.interfaces import ToolInterface
 
 
+@ray.remote
 class StatefulCodeExecutor(ToolInterface):
     """Stateful code executor.
 
