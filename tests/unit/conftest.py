@@ -470,8 +470,9 @@ def tiny_qwen2_model_path():
 @pytest.fixture(scope="session", autouse=True)
 def tiny_qwen3_model_path():
     """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
-    from transformers import Qwen3Config, Qwen3ForCausalLM, AutoTokenizer
     import shutil
+
+    from transformers import AutoTokenizer, Qwen3Config, Qwen3ForCausalLM
 
     model_path = TEST_ASSETS.TINY_QWEN3_MODEL_PATH
     # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)

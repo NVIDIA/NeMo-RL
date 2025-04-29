@@ -30,7 +30,6 @@ from torch.distributed.tensor.parallel import (
 from torch.distributed.tensor.placement_types import Replicate, Shard
 from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
-from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM
 
 from nemo_rl.distributed.model_utils import from_parallel_logits_to_logprobs
