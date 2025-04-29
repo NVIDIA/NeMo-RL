@@ -282,7 +282,6 @@ def test_all_recipes_can_merge_configs_with_base_config(
     all_recipe_yaml_rel_paths, all_test_suites, algo, algo_base_yaml
 ):
     from omegaconf import OmegaConf
-    from omegaconf.errors import ConfigKeyError
 
     base_yaml = os.path.join(project_root, algo_base_yaml)
     base_config = OmegaConf.load(base_yaml)
