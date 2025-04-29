@@ -52,7 +52,6 @@ from nemo_rl.utils.native_checkpoint import (
     save_checkpoint,
 )
 
-import time
 
 @contextmanager
 def unshard_fsdp2_model(model: nn.Module):
@@ -104,9 +103,7 @@ def get_cpu_state_dict(
 
 @ray.remote(
     runtime_env={
-        "env_vars": {
-            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
-        }
+        "env_vars": {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
     }
 )
 class DTensorPolicyWorker:
@@ -271,7 +268,7 @@ class DTensorPolicyWorker:
         eval_mode: bool = False,
         gbs: Optional[int] = None,
         mbs: Optional[int] = None,
-        mb_indices = None
+        micro_batch_indices = None
     ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
@@ -336,21 +333,21 @@ class DTensorPolicyWorker:
                 else:
                     raise ValueError(f"Unknown loss type: {loss_fn.loss_type}")
 
-                global_seqlen = data.get("input_ids").shape[1]
+                padded_seqlen = data.get("input_ids").shape[1]
             
                 self.optimizer.zero_grad()
                 mb_losses = []
-                local_global_batch = data.slice(gb_start, gb_start + local_gbs)
+                global_batch = data.slice(gb_start, gb_start + local_gbs)
 
                 # Calculate number of microbatches to process
                 # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
                 # so its safe to not check for the case where the last data slice is smaller than mbs
-                if mb_indices is not None:
-                    num_microbatches = len(mb_indices[gb_idx])
-                    mb_iterator = batch.make_microbatch_iterator_from_indices(mb_indices[gb_idx])
+                if micro_batch_indices is not None:
+                    num_microbatches = len(micro_batch_indices[gb_idx])
+                    mb_iterator = global_batch.make_microbatch_iterator_from_indices(micro_batch_indices[gb_idx])
                 else:
                     num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
-                    mb_iterator = batch.make_microbatch_iterator(mbs)
+                    mb_iterator = global_batch.make_microbatch_iterator(mbs)
 
                 for mb in global_batch.make_microbatch_iterator(mbs):
                     input_ids = mb.get("input_ids").cuda()
@@ -498,8 +495,7 @@ class DTensorPolicyWorker:
             if micro_batch_size is not None
             else self.cfg["logprob_batch_size"]
         )
-        global_seqlen = data.get("input_ids").shape[1]
-
+        padded_seqlen = data.get("input_ids").shape[1]
         all_log_probs = []
         self.model.eval()
 
@@ -629,13 +625,10 @@ class DTensorPolicyWorker:
                     val.copy_(curr_buffers[k])
 
     def get_reference_policy_logprobs(
-<<<<<<< HEAD:nemo_rl/models/policy/dtensor_policy_worker.py
-        self, data: BatchedDataDict, micro_batch_size: int = None
-=======
         self, 
-        data: BatchedDataDict,
-        mb_indices = None,
->>>>>>> a22aaa3 (clean refactor):nemo_reinforcer/models/policy/dtensor_policy_worker.py
+        data: BatchedDataDict, 
+        micro_batch_size: int = None,
+        micro_batch_indices = None,
     ) -> BatchedDataDict:
         """Get the logprobs from the reference policy for a batch of data.
 
@@ -645,11 +638,7 @@ class DTensorPolicyWorker:
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
         with self.use_reference_model():
-<<<<<<< HEAD:nemo_rl/models/policy/dtensor_policy_worker.py
-            reference_logprobs = self.get_logprobs(data, micro_batch_size)
-=======
-            reference_logprobs = self.get_logprobs(data, mb_indices)
->>>>>>> a22aaa3 (clean refactor):nemo_reinforcer/models/policy/dtensor_policy_worker.py
+            reference_logprobs = self.get_logprobs(data, micro_batch_size, micro_batch_indices)
 
         return_data = BatchedDataDict()
         return_data["reference_logprobs"] = reference_logprobs["logprobs"].cpu()

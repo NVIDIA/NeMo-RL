@@ -202,7 +202,7 @@ def _parallelize_llama(
 
         base_model_sp_plan = {
             "model.embed_tokens": RowwiseParallel(
-                input_layouts=Replicate(), output_layouts=Shard(1),
+                input_layouts=Replicate(), output_layouts=Shard(1)
             ),
             "model.norm": SequenceParallel(),
             "model.layers.*.input_layernorm": SequenceParallel(),
@@ -232,6 +232,7 @@ def _parallelize_llama(
     return fully_shard(
         model, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
     )
+
 
 def _parallelize_qwen(
     model: Union[Qwen2ForCausalLM, Qwen3ForCausalLM],

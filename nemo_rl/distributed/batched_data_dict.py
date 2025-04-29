@@ -141,7 +141,6 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         shards: int,
         batch_size: Optional[int] = None,
         allow_uneven_shards: bool = False,
-        batch_size: Optional[int] = None, 
         dynamic_batching_cfg = None
     ) -> List["SlicedDataDict"]:
         """Shards a batch by first dividing it into chunks of size batch_size, then further dividing each chunk into shards equal parts. Finally aggregates the sub-shards by their position.
@@ -271,7 +270,6 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
                 data[k] = sorted_v
 
-        # Create one BatchedDataDict per shard position
         aggregated_shards = [SlicedDataDict() for _ in range(shards)]
 
         # Group data by shard position across all chunks
@@ -394,13 +392,10 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         for start, end in microbatch_indices:
             yield self.slice(start, end)    
         
-    def make_microbatch_iterator(
-        self, 
-        microbatch_size: int = None, 
+    def make_microbatch_iterator(self, microbatch_size: int = None, 
     ) -> Iterator["SlicedDataDict"]:
-        """Make an iterator over the batch that yields microbatches."""
+        """Make an iterator over the batch that yields microbatches of size microbatch_size."""
         bsize = self.size
-        assert microbatch_size is not None
         assert bsize % microbatch_size == 0, (
             f"Data dict size ({bsize}) is not a multiple of the provided microbatch size ({microbatch_size})"
         )
