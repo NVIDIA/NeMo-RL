@@ -12,19 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
+import datetime
 import glob
 import json
 import os
-import datetime
 import statistics
-from collections import defaultdict
-from tensorboard.backend.event_processing import event_accumulator
 import sys
+from collections import defaultdict
+
+from rich.box import SIMPLE
 from rich.console import Console
 from rich.table import Table
-from rich.box import SIMPLE
-from rich.panel import Panel
 from rich.text import Text
+from tensorboard.backend.event_processing import event_accumulator
 
 # By default TB tries to be smart about what to load in memory to avoid OOM
 # Since we expect every step to be there when we do our comparisons, we explicitly
@@ -137,7 +137,7 @@ def merge_tb_logs_to_json(log_dir, output_path, allow_conflicts=False):
 
         # Create metric header with better highlighting
         metric_text = Text()
-        metric_text.append(f"🔹 ", style="bold blue")
+        metric_text.append("🔹 ", style="bold blue")
         metric_text.append(f"{metric}", style="bold magenta")
         metric_text.append(f" - {len(steps)} steps", style="green")
         console.print(metric_text)
@@ -199,7 +199,7 @@ def merge_tb_logs_to_json(log_dir, output_path, allow_conflicts=False):
         )
     else:
         console.print(
-            f"[bold red]✓ To save the merged data, use --output_path[/bold red]"
+            "[bold red]✓ To save the merged data, use --output_path[/bold red]"
         )
 
 

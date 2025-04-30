@@ -15,6 +15,8 @@ apidocs/
 dist/
 *.egg-info/
 *.vscode/
+release_run*
+ckpts/
 
 # Test
 coverage.json

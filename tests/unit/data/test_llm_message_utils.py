@@ -12,20 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Dict, List
+
 import pytest
 import torch
-from typing import Dict, List
 from transformers import AutoTokenizer
 
-from nemo_rl.data.llm_message_utils import (
-    message_log_to_flat_messages,
-    get_keys_from_message_log,
-    batched_message_log_to_flat_message,
-    get_formatted_message_log,
-    add_loss_mask_to_message_log,
-    get_first_index_that_differs,
-)
 from nemo_rl.data.interfaces import LLMMessageLogType, TaskDataSpec
+from nemo_rl.data.llm_message_utils import (
+    add_loss_mask_to_message_log,
+    batched_message_log_to_flat_message,
+    get_first_index_that_differs,
+    get_formatted_message_log,
+    get_keys_from_message_log,
+    message_log_to_flat_messages,
+)
 
 
 @pytest.fixture

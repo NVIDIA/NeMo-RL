@@ -23,14 +23,14 @@ from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.distributed.worker_groups import RayWorkerBuilder, RayWorkerGroup
 from nemo_rl.models.generation.interfaces import (
-    GenerationInterface,
     GenerationDatumSpec,
+    GenerationInterface,
     GenerationOutputSpec,
 )
 from nemo_rl.models.interfaces import PolicyInterface
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.fsdp1_policy_worker import FSDP1PolicyWorker
 from nemo_rl.models.policy.dtensor_policy_worker import DTensorPolicyWorker
+from nemo_rl.models.policy.fsdp1_policy_worker import FSDP1PolicyWorker
 
 
 class HfPolicy(PolicyInterface, GenerationInterface):

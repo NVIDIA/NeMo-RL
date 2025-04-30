@@ -20,7 +20,6 @@ from nemo_rl.algorithms.utils import (
     calculate_kl_penalty_joschu2020,
     masked_mean,
 )
-
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.models.dtensor.parallelize import (
     get_logprobs_from_vocab_parallel_logits,
@@ -29,8 +28,8 @@ from nemo_rl.models.dtensor.parallelize import (
 
 class ClippedPGLossConfig(TypedDict):
     reference_policy_kl_penalty: float
-    ratio_eps_min: float
-    ratio_eps_max: float
+    ratio_clip_min: float
+    ratio_clip_max: float
     use_on_policy_kl_approximation: bool
     use_importance_sampling_correction: bool
 
@@ -55,7 +54,7 @@ class ClippedPGLossFn(LossFunction):
 
     - PPO (Clipped) - https://arxiv.org/abs/1707.06347
     - GRPO - https://arxiv.org/abs/2402.03300
-    - REINFORCE/RLOO (set disable_ppo_ratio = True and ignores ratio_eps) - https://arxiv.org/abs/2402.14740
+    - REINFORCE/RLOO (set disable_ppo_ratio = True and ignores ratio_clip_min/ratio_clip_max) - https://arxiv.org/abs/2402.14740
 
     Formula:
     L(θ) = E_t [ min(r_t(θ) * A_t, clip(r_t(θ), 1-ε, 1+ε) * A_t) ] - β * KL(π_θ || π_ref)
@@ -63,11 +62,11 @@ class ClippedPGLossFn(LossFunction):
     where:
     - r_t(θ) = π_θ(a_t|s_t) / π_θ_old(a_t|s_t) is the probability ratio
     - A_t is the advantage estimate
-    - ε is the clip parameter (ratio_eps)
+    - ε is the clip parameter (ratio_clip_min/ratio_clip_max)
         - As proposed in the DAPO paper (https://arxiv.org/pdf/2503.14476),
           we allow setting a distinct minimum and maximum value for the clip parameter (set to the same value for PPO/GRPO/etc.)
-            - ratio_eps_min: minimum value for the clip parameter
-            - ratio_eps_max: maximum value for the clip parameter
+            - ratio_clip_min: minimum value for the clip parameter
+            - ratio_clip_max: maximum value for the clip parameter
     - β is the KL penalty coefficient (reference_policy_kl_penalty)
     - KL(π_θ || π_ref) is the KL divergence between the current policy and reference policy (Schulman Approx.)
 
@@ -78,8 +77,8 @@ class ClippedPGLossFn(LossFunction):
     """
 
     def __init__(self, cfg: ClippedPGLossConfig):
-        self.ratio_eps_min = cfg["ratio_eps_min"]
-        self.ratio_eps_max = cfg["ratio_eps_max"]
+        self.ratio_clip_min = cfg["ratio_clip_min"]
+        self.ratio_clip_max = cfg["ratio_clip_max"]
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.disable_ppo_ratio = cfg.get("disable_ppo_ratio", False)
         self.use_on_policy_kl_approximation = cfg["use_on_policy_kl_approximation"]
@@ -154,7 +153,7 @@ class ClippedPGLossFn(LossFunction):
         if not self.disable_ppo_ratio:
             ratios = (curr_logprobs - prev_logprobs).exp()
             ratios_clamped = ratios.clamp(
-                1.0 - self.ratio_eps_min, 1.0 + self.ratio_eps_max
+                1.0 - self.ratio_clip_min, 1.0 + self.ratio_clip_max
             )
         else:
             ratios = curr_logprobs

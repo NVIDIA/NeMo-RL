@@ -12,37 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
+from copy import deepcopy
+
 import pytest
 import ray
 import torch
-from copy import deepcopy
-import gc
-
 from transformers import AutoTokenizer
 
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.environments.games.sliding_puzzle import (
+    SlidingPuzzleConfig,
+    SlidingPuzzleEnv,
+    SlidingPuzzleGameLogic,
+    SlidingPuzzleMetadata,
+)
+from nemo_rl.experience.rollouts import run_multi_turn_rollout
+from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.hf_policy import HfPolicy
-from nemo_rl.models.generation.interfaces import configure_generation_config
-from nemo_rl.experience.rollouts import run_multi_turn_rollout
 
 # Import the test environment definitions
 from tests.unit.test_envs import (
+    MultiStepCalcMetadata,
     MultiStepCalculatorEnv,
     _MultiStepCalculatorLogic,
-    MultiStepCalcMetadata,
 )
-
-from nemo_rl.environments.games.sliding_puzzle import (
-    SlidingPuzzleGameLogic,
-    SlidingPuzzleEnv,
-    SlidingPuzzleConfig,
-    SlidingPuzzleMetadata,
-)
-
-from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
-
 
 MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 

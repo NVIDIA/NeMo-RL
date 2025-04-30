@@ -53,7 +53,7 @@ myst_enable_extensions = [
     "fieldlist",  # Enables field lists for metadata like :author: Name
     "tasklist",  # Adds support for GitHub-style task lists with [ ] and [x]
 ]
-myst_heading_anchors = 4  # Generates anchor links for headings up to level 4
+myst_heading_anchors = 5  # Generates anchor links for headings up to level 5
 
 # -- Options for Autodoc2 ---------------------------------------------------
 sys.path.insert(0, os.path.abspath(".."))

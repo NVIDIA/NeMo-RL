@@ -12,19 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from copy import deepcopy
 
 import pytest
-import torch
 import ray
-import os
+import torch
 
 from nemo_rl.algorithms.grpo import refit_policy_generation
 from nemo_rl.algorithms.utils import get_tokenizer
-from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.models.generation.interfaces import configure_generation_config
-from nemo_rl.models.generation.vllm import VllmGeneration, VllmConfig
+from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy import PolicyConfig
 
 # Define basic vLLM test config
@@ -282,7 +282,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     hf_config = get_basic_hf_test_config(enable_dtensor=False)
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-    print(f"refitting vllm policy...")
+    print("refitting vllm policy...")
     refit_policy_generation(hf_policy, policy, hf_config["refit_buffer_size_gb"])
 
     try:
@@ -445,7 +445,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
         print("Creating HF policy...")
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-        print(f"refitting vllm policy...")
+        print("refitting vllm policy...")
         refit_policy_generation(
             hf_policy, vllm_policy, hf_config["refit_buffer_size_gb"]
         )
@@ -788,7 +788,7 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     hf_config = get_basic_hf_test_config(enable_dtensor=enable_dtensor)
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-    print(f"refitting vllm policy...")
+    print("refitting vllm policy...")
     # take it outside statistics to get clean peak memory during refit
     hf_policy.offload_before_refit()
     # reset peak memory stats before refit
@@ -860,7 +860,7 @@ def test_vllm_generation_with_stop(
         hf_config = get_basic_hf_test_config(enable_dtensor=enable_dtensor)
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-        print(f"refitting vllm policy...")
+        print("refitting vllm policy...")
         refit_policy_generation(
             hf_policy,
             vllm_generation,

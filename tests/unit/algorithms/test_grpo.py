@@ -11,18 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import pytest
-import torch
-import ray
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
-from nemo_rl.experience.rollouts import calculate_rewards
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+import pytest
+import ray
+import torch
+
 from nemo_rl.data.interfaces import DatumSpec, LLMMessageLogType
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.environments.interfaces import (
     EnvironmentInterface,
     EnvironmentReturn,
 )
+from nemo_rl.experience.rollouts import calculate_rewards
 
 
 @ray.remote(num_cpus=0)

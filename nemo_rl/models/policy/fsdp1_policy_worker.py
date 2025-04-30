@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import gc
+import os
 import warnings
 from collections import defaultdict
 from contextlib import contextmanager, nullcontext
 from typing import Any, Dict, Optional
-import os
 
 import ray
 import torch
@@ -28,28 +28,25 @@ from torch.distributed.fsdp import (
     MixedPrecision,
 )
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.integrations.accelerate import find_tied_parameters
 
 from nemo_rl.algorithms.interfaces import LossFunction
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import (
+    PY_EXECUTABLES,
+)
 from nemo_rl.models.generation.interfaces import (
     GenerationDatumSpec,
     GenerationOutputSpec,
     verify_right_padding,
 )
-
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers.integrations.accelerate import find_tied_parameters
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.utils import import_class_from_path
-from nemo_rl.distributed.virtual_cluster import (
-    PY_EXECUTABLES,
-)
+from nemo_rl.models.policy.utils import get_gpu_info, import_class_from_path
 from nemo_rl.utils.native_checkpoint import (
-    save_checkpoint,
     load_checkpoint,
+    save_checkpoint,
 )
-from nemo_rl.models.policy.utils import get_gpu_info
 
 
 @ray.remote
@@ -94,6 +91,8 @@ class FSDP1PolicyWorker:
             device_map="cpu",  # load weights onto CPU initially
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
         )
+        # caching since this property is not always preserved after FSDP
+        self.num_tied_weights = len(find_tied_parameters(self.model))
 
         if init_reference_model:
             self.reference_model = AutoModelForCausalLM.from_pretrained(
@@ -229,11 +228,10 @@ class FSDP1PolicyWorker:
     ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
         # Check if the model has tied weights
-        num_tied_weights = len(find_tied_parameters(self.model))
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
-        if num_tied_weights != 0 and not skip_tie_check:
+        if self.num_tied_weights != 0 and not skip_tie_check:
             raise ValueError(
-                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )
 
         if gbs is None:

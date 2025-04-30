@@ -13,13 +13,14 @@
 # limitations under the License.
 import os
 import warnings
-from transformers import AutoTokenizer
 from pathlib import Path
 from typing import Optional, Tuple, TypedDict
 
 import numpy as np
 import torch
 from torchdata.stateful_dataloader import StatefulDataLoader
+from transformers import AutoTokenizer
+
 from nemo_rl.algorithms.loss_functions import (
     NLLLoss,
 )
@@ -34,9 +35,9 @@ from nemo_rl.data.llm_message_utils import (
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import ClusterConfig, RayVirtualCluster
 from nemo_rl.models.interfaces import PolicyInterface
-from nemo_rl.models.policy.hf_policy import HfPolicy
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.utils.checkpoint import CheckpointManager, CheckpointingConfig
+from nemo_rl.models.policy.hf_policy import HfPolicy
+from nemo_rl.utils.checkpoint import CheckpointingConfig, CheckpointManager
 from nemo_rl.utils.logger import Logger, LoggerConfig
 from nemo_rl.utils.timer import Timer
 
@@ -195,7 +196,7 @@ def setup(
         init_reference_model=False,
     )
     loss_fn = NLLLoss()
-    print(f"  ✓ Model initialized")
+    print("  ✓ Model initialized")
 
     print("\n" + "=" * 60)
     print(" " * 18 + "SETUP COMPLETE")

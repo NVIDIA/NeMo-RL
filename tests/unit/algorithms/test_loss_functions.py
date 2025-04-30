@@ -13,18 +13,16 @@
 # limitations under the License.
 import pytest
 import torch
-import numpy as np
 
 from nemo_rl.algorithms.loss_functions import (
-    NLLLoss,
     ClippedPGLossFn,
     DPOLossFn,
+    NLLLoss,
 )
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.algorithms.utils import (
-    calculate_kl_penalty_joschu2020,
     masked_mean,
 )
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 
 
 def setup_dpo_loss_test_data(vocab_size=16, batch_size=1):
@@ -373,10 +371,10 @@ def test_clipped_pg_loss_ppo_clipping():
     device = "cuda"
     data, seq_len, vocab_size = _setup_clipped_pg_test_data(device=device)
 
-    ratio_eps = 0.2
+    ratio_clip = 0.2
     cfg = {
-        "ratio_eps_min": ratio_eps,
-        "ratio_eps_max": ratio_eps,
+        "ratio_clip_min": ratio_clip,
+        "ratio_clip_max": ratio_clip,
         "reference_policy_kl_penalty": 0.0,  # Disable KL
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
@@ -405,7 +403,7 @@ def test_clipped_pg_loss_ppo_clipping():
     )
 
     ratios_clamped = torch.clamp(
-        ratios, 1.0 - ratio_eps, 1.0 + ratio_eps
+        ratios, 1.0 - ratio_clip, 1.0 + ratio_clip
     )  # [0.8, 1.0, 1.2]
     assert torch.allclose(
         ratios_clamped, torch.tensor([[0.8, 1.0, 1.2]], device=device), rtol=1e-3
@@ -454,8 +452,8 @@ def test_clipped_pg_loss_reinforce_mode():
     cfg = {
         "disable_ppo_ratio": True,
         "reference_policy_kl_penalty": 0.0,
-        "ratio_eps_min": 0.0,  # Placeholder, ignored
-        "ratio_eps_max": 0.0,  # Placeholder, ignored
+        "ratio_clip_min": 0.0,  # Placeholder, ignored
+        "ratio_clip_max": 0.0,  # Placeholder, ignored
         "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
     }
@@ -501,8 +499,8 @@ def test_clipped_pg_loss_kl_penalty():
     kl_beta = 0.1
     cfg = {
         "reference_policy_kl_penalty": kl_beta,
-        "ratio_eps_min": 0.2,
-        "ratio_eps_max": 0.2,
+        "ratio_clip_min": 0.2,
+        "ratio_clip_max": 0.2,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
@@ -572,8 +570,8 @@ def test_clipped_pg_loss_masking():
     data["advantages"] = torch.randn_like(data["advantages"]) + 1.0
 
     cfg = {
-        "ratio_eps_min": 0.2,
-        "ratio_eps_max": 0.2,
+        "ratio_clip_min": 0.2,
+        "ratio_clip_max": 0.2,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
@@ -635,8 +633,8 @@ def test_clipped_pg_loss_zero_mask():
     dummy_logits = torch.randn(1, seq_len, vocab_size, device=device)
 
     cfg = {
-        "ratio_eps_min": 0.2,
-        "ratio_eps_max": 0.2,
+        "ratio_clip_min": 0.2,
+        "ratio_clip_max": 0.2,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
@@ -661,12 +659,12 @@ def test_clipped_pg_loss_on_policy_kl_importance_sampling():
     device = "cuda"
     data, seq_len, vocab_size = _setup_clipped_pg_test_data(device=device)
 
-    ratio_eps = 0.2
+    ratio_clip = 0.2
     kl_beta = 0.1
 
     cfg = {
-        "ratio_eps_min": ratio_eps,
-        "ratio_eps_max": ratio_eps,
+        "ratio_clip_min": ratio_clip,
+        "ratio_clip_max": ratio_clip,
         "reference_policy_kl_penalty": kl_beta,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": True,
@@ -708,7 +706,7 @@ def test_clipped_pg_loss_on_policy_kl_importance_sampling():
     )
 
     ratios_clamped = torch.clamp(
-        ratios, 1.0 - ratio_eps, 1.0 + ratio_eps
+        ratios, 1.0 - ratio_clip, 1.0 + ratio_clip
     )  # [0.8, 1.0, 1.2]
     assert torch.allclose(
         ratios_clamped, torch.tensor([[0.8, 1.0, 1.2]], device=device), rtol=1e-3

@@ -12,43 +12,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import gc
-
+import os
 from collections import defaultdict
 from contextlib import contextmanager, nullcontext
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional, Tuple, Union
 
 import ray
 import torch
+from torch import nn
 from torch.distributed.fsdp import (
     FSDPModule,
 )
+from torch.distributed.tensor import DTensor
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.integrations.accelerate import find_tied_parameters
-from nemo_rl.models.dtensor.parallelize import _parallelize_model
 
 from nemo_rl.algorithms.interfaces import LossFunction
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
-from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.utils import import_class_from_path
 from nemo_rl.distributed.virtual_cluster import (
     PY_EXECUTABLES,
 )
-from typing import Iterable, Tuple, Union
-from torch.distributed.tensor import DTensor
 from nemo_rl.models.dtensor.parallelize import (
-    get_logprobs_from_vocab_parallel_logits,
-    get_grad_norm,
+    _parallelize_model,
     clip_grad_by_total_norm_,
+    get_grad_norm,
+    get_logprobs_from_vocab_parallel_logits,
     to_local_if_dtensor,
 )
+from nemo_rl.models.policy import PolicyConfig
+from nemo_rl.models.policy.utils import get_gpu_info, import_class_from_path
 from nemo_rl.utils.native_checkpoint import (
-    save_checkpoint,
     load_checkpoint,
+    save_checkpoint,
 )
-from torch import nn
-from nemo_rl.models.policy.utils import get_gpu_info
 
 
 @contextmanager
@@ -142,6 +139,8 @@ class DTensorPolicyWorker:
             device_map="cpu",  # load weights onto CPU initially
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
         )
+        # caching since this property is not always preserved after FSDP
+        self.num_tied_weights = len(find_tied_parameters(self.model))
 
         self.tokenizer = tokenizer
         # ------------------------------------------------
@@ -256,15 +255,14 @@ class DTensorPolicyWorker:
         mbs: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
-        num_tied_weights = len(find_tied_parameters(self.model))
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
         if (
-            num_tied_weights != 0
+            self.num_tied_weights != 0
             and self.cfg["dtensor_cfg"]["tensor_parallel_size"] > 1
             and not skip_tie_check
         ):
             raise ValueError(
-                f"Using dtensor policy with tp size {self.cfg['dtensor_cfg']['tensor_parallel_size']} for model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+                f"Using dtensor policy with tp size {self.cfg['dtensor_cfg']['tensor_parallel_size']} for model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )
 
         if gbs is None:
