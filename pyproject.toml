@@ -88,7 +88,7 @@ concurrency = ["thread", "multiprocessing"]
 omit = ["/tmp/*"]
 
 [tool.coverage.paths]
-source = ["nemo_reinforcer/", "/opt/reinforcer/nemo_reinforcer/"]
+source = ["nemo_rl/", "/opt/nemo-rl/nemo_rl/"]
 
 [tool.ruff.lint]
 # Enable all `pydocstyle` rules, limiting to those that adhere to the
