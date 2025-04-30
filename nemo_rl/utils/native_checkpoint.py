@@ -15,7 +15,6 @@
 """Checkpoint management utilities for HF models."""
 
 import os
-from pathlib import Path
 from typing import Any, Optional
 
 import torch
