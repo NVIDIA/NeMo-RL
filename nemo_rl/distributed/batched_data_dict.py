@@ -226,7 +226,6 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             if allow_uneven_shards
             else batch_size // shards
         )
-        shard_size = batch_size // shards
 
         if dynamic_batching_cfg is not None:
             assert 'sequence_lengths_per_input' in dynamic_batching_cfg
@@ -385,14 +384,19 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 ]
         return repeated_batch
 
+    def truncate_tensors(self, dim, truncated_len):
+        for k,v in self.items():
+            if torch.is_tensor(v) and len(v.shape) >= dim + 1:
+                self.data[k] = torch.narrow(v, dim=dim, start=0, length=truncated_len)
+
     def make_microbatch_iterator_from_indices(
-        self, 
-        microbatch_indices,
+        self, microbatch_indices,
     ) -> Iterator["SlicedDataDict"]:
         for start, end in microbatch_indices:
             yield self.slice(start, end)    
         
-    def make_microbatch_iterator(self, microbatch_size: int = None, 
+    def make_microbatch_iterator(
+        self, microbatch_size: int = None, 
     ) -> Iterator["SlicedDataDict"]:
         """Make an iterator over the batch that yields microbatches of size microbatch_size."""
         bsize = self.size

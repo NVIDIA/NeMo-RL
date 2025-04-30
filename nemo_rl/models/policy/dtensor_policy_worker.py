@@ -261,6 +261,15 @@ class DTensorPolicyWorker:
         """Return information about the GPU being used by this worker."""
         return get_gpu_info(self.model)
 
+    def remove_sequence_padding(self, data):
+        sequence_dim = 1
+        orig_seqlen = data["input_ids"].shape[sequence_dim]
+        padded_seqlen = ((max(data["input_lengths"]) + 64 - 1) // 64) * 64
+        padded_seqlen = min(padded_seqlen, orig_seqlen)
+        data.truncate_tensors(dim=sequence_dim, truncated_len=padded_seqlen)
+
+        return data
+
     def train(
         self,
         data: BatchedDataDict,
@@ -288,6 +297,14 @@ class DTensorPolicyWorker:
         local_gbs = gbs // self.dp_size
         dataset_size = data.get("input_ids").shape[0]
         num_global_batches = dataset_size // local_gbs
+
+        # dim 1 is always assumed to be the sequence dim, sanity check this here
+        sequence_dim = 1
+        seq_dim_size = data.get("input_ids").shape[sequence_dim]
+        for k,v in data.items():
+            if torch.is_tensor(v) and len(v.shape) > 1:
+                assert v.shape[sequence_dim] == seq_dim_size, \
+                    f"Dim 1 must be the sequence dim, expected dim 1={seq_dim_size} but got shape {v.shape}"
 
         if eval_mode:
             ctx = torch.no_grad()
@@ -349,15 +366,10 @@ class DTensorPolicyWorker:
                     num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
                     mb_iterator = global_batch.make_microbatch_iterator(mbs)
 
-                for mb in global_batch.make_microbatch_iterator(mbs):
-                    input_ids = mb.get("input_ids").cuda()
-                    input_lengths = mb.get("input_lengths")
-                    padded_seqlen = ((max(input_lengths) + 64 - 1) // 64) * 64
-                    for k, v in mb.items():
-                        if torch.is_tensor(v) and len(v.shape) > 1:
-                            v = v[:, :padded_seqlen] 
-                            mb[k] = v
+                for mb in mb_iterator:      
+                    mb = self.remove_sequence_padding(mb)
 
+                    input_lengths = mb.get("input_lengths")
                     input_ids = mb["input_ids"]
                     batch_size, seq_len = input_ids.shape
 
@@ -369,8 +381,6 @@ class DTensorPolicyWorker:
                         attention_mask[i, :length] = 1
 
                     with torch.autocast(device_type="cuda", dtype=self.dtype):
-                        batch_size, seq_len = input_ids.shape
-
                         attention_mask_input_all_ones = torch.ones(
                             (batch_size, seq_len),
                             dtype=torch.long,
@@ -495,7 +505,15 @@ class DTensorPolicyWorker:
             if micro_batch_size is not None
             else self.cfg["logprob_batch_size"]
         )
-        padded_seqlen = data.get("input_ids").shape[1]
+
+        # dim 1 is always assumed to be the sequence dim, sanity check this here
+        sequence_dim = 1
+        seq_dim_size = data.get("input_ids").shape[sequence_dim]
+        for k,v in data.items():
+            if torch.is_tensor(v) and len(v.shape) > 1:
+                assert v.shape[sequence_dim] == seq_dim_size, \
+                    f"Dim 1 must be the sequence dim, expected dim 1={seq_dim_size} but got shape {v.shape}"
+
         all_log_probs = []
         self.model.eval()
 
@@ -508,10 +526,10 @@ class DTensorPolicyWorker:
                 mb_iterator = data.make_microbatch_iterator(logprob_batch_size)
 
             for lp_batch in mb_iterator:
+                lp_batch = self.remove_sequence_padding(lp_batch)
+
                 input_ids = lp_batch.get("input_ids").cuda()
                 input_lengths = lp_batch.get("input_lengths")
-                padded_seqlen = ((max(input_lengths) + 64 - 1) // 64) * 64
-                input_ids = input_ids[:, :padded_seqlen] 
 
                 batch_size, seq_len = input_ids.shape
                 # Create attention mask for right-padded data
@@ -579,8 +597,7 @@ class DTensorPolicyWorker:
 
         all_log_probs_padded = []
         for lp in all_log_probs:
-            batch_size, seq_len = lp.shape
-            padding_needed = padded_seqlen - seq_len
+            padding_needed = seq_dim_size - lp.shape[1]
             if padding_needed > 0:
                 lp = torch.nn.functional.pad(lp, (0, padding_needed), mode='constant', value=0.0)
             all_log_probs_padded.append(lp)
