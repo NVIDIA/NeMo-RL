@@ -26,3 +26,14 @@ tests/test_suites/llm/sft-llama3.1-8b-instruct-1n8g-fsdp1.sh
 
 # Functional 32b test
 tests/test_suites/llm/sft-qwen2.5-32b-4n8g-fsdp2tp8sp-actckpt.sh
+
+#######
+# DPO #
+#######
+
+# 1N dtensor
+tests/test_suites/llm/dpo-llama3.2-1b-instruct-1n8g-fsdp2tp1.yaml
+
+# Short dtensor vs fsdp1 comparison
+tests/test_suites/llm/dpo-llama3.1-8b-instruct-4n8g-fsdp1-quick.yaml
+tests/test_suites/llm/dpo-llama3.1-8b-instruct-4n8g-fsdp2tp2-quick.yaml
