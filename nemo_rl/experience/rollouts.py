@@ -311,7 +311,9 @@ def run_multi_turn_rollout(
                 >= max_seq_len
             ):
                 # truncate
-                tokenized_obs = tokenized_obs[: max_seq_len - (len(generated_ids[i]) + active_input_lengths[i])]
+                tokenized_obs = tokenized_obs[
+                    : max_seq_len - (len(generated_ids[i]) + active_input_lengths[i])
+                ]
                 truncation_mask[i] = True
                 # Record truncation
                 sample_truncated[active_indices[i]] = True
