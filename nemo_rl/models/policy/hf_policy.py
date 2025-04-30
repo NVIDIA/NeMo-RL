@@ -119,7 +119,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
                 'sequence_lengths_per_input': data['input_lengths'],
                 'max_tokens_per_microbatch': self.cfg["dynamic_batching_max_tokens_per_micro_batch"]
             }
-            sharded_data, micro_batch_indices = data.shard_by_batch_size(
+            sharded_data = data.shard_by_batch_size(
                 self.dp_size, 
                 batch_size=batch_size, 
                 dynamic_batching_cfg=dynamic_batching_cfg,
@@ -129,9 +129,8 @@ class HfPolicy(PolicyInterface, GenerationInterface):
                 self.dp_size, 
                 batch_size=batch_size, 
             )
-            micro_batch_indices = None
 
-        return sharded_data, micro_batch_indices
+        return sharded_data
 
 
     def get_logprobs(
@@ -145,11 +144,10 @@ class HfPolicy(PolicyInterface, GenerationInterface):
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
 
-        sharded_data, micro_batch_indices = self._shard_data(data, batch_size=None)
+        sharded_data = self._shard_data(data, batch_size=None)
         futures = self.worker_group.run_all_workers_multiple_data(
             "get_logprobs", 
             sharded_data, 
-            common_kwargs={"micro_batch_indices": micro_batch_indices},
             only_on="all_tied_workers"
         )
         logprobs = BatchedDataDict.from_batches(
@@ -164,13 +162,12 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         Returns: Identical to get_logprobs.
         """
-        sharded_data, micro_batch_indices = self._shard_data(data, batch_size=None)
+        sharded_data = self._shard_data(data, batch_size=None)
         futures = self.worker_group.run_all_workers_multiple_data(
             "get_reference_policy_logprobs",
             sharded_data,
             common_kwargs={
                 "micro_batch_size": micro_batch_size,
-                "micro_batch_indices" : micro_batch_indices
             },
             only_on="all_tied_workers",
         )
@@ -192,7 +189,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         batch_size = gbs or self.cfg["train_global_batch_size"]
         micro_batch_size = mbs or self.cfg["train_micro_batch_size"]
         # Shard and replicate the batch
-        sharded_data, micro_batch_indices = self._shard_data(
+        sharded_data = self._shard_data(
             data, batch_size=self.cfg["train_global_batch_size"])
 
         # Train each shard in parallel
@@ -202,9 +199,8 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             common_kwargs={
                 "loss_fn": loss_fn,
                 "eval_mode": eval_mode,
-                "gbs": gbs,
-                "mbs": mbs,
-                "micro_batch_indices": micro_batch_indices
+                "gbs": batch_size,
+                "mbs": micro_batch_size,
             },
             only_on="all_tied_workers",
         )

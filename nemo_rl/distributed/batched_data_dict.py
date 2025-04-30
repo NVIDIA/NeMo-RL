@@ -27,6 +27,11 @@ DictT = TypeVar("DictT", bound=Dict[str, Any])
 
 
 class BatchedDataDict(UserDict, Generic[DictT]):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.metadata = {}
+
     @classmethod
     def from_batches(
         cls: Self,
@@ -309,16 +314,15 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                             aggregated_shards[shard_idx][k].extend(
                                 [data[k][i] for i in indices]
                             )
-        
    
         # map inputs to microbatches such that the total number tokens in 
         # a microbatch is as close to (including padding tokens) 'max_tokens_per_microbatch'
         if dynamic_batching_cfg is not None:
             max_tokens_per_microbatch = dynamic_batching_cfg['max_tokens_per_microbatch']
-            microbatch_indices = []
+            micro_batch_indices = []
             # loop through each chunk, dividing the chunk into microbatches
             for chunk_idx in range(num_chunks):
-                chunk_microbatch_indices = [[0,1]]
+                chunk_micro_batch_indices = [[0,1]]
                 current_mbs_total_tokens = 0
                 #for each indice in the shard, map it to an microbatch
                 for shard_indice in range(shard_size):
@@ -334,21 +338,40 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                     # check if the sample at shard_indice may be added to the current mbs for all shards
                     # the total tokens of a mbs = number of indices in the mbs * the max sequence length in the mbs
                     max_seqlen_this_chunk = max(seqlens_this_chunk).item()
-                    curr_mbs_size = chunk_microbatch_indices[-1][1] - chunk_microbatch_indices[-1][0] + 1
+                    curr_mbs_size = chunk_micro_batch_indices[-1][1] - chunk_micro_batch_indices[-1][0] + 1
                     total_tokens_in_mbs = curr_mbs_size * max_seqlen_this_chunk
                     # if the current mbs can accomodate this indice, add it
                     if total_tokens_in_mbs <= max_tokens_per_microbatch:
-                        chunk_microbatch_indices[-1][-1] = shard_indice+1
+                        chunk_micro_batch_indices[-1][-1] = shard_indice+1
                         current_mbs_total_tokens += max_seqlen_this_chunk
                     # otherwise start a new mbs
                     else:
-                        chunk_microbatch_indices.append([shard_indice, shard_indice+1])
+                        chunk_micro_batch_indices.append([shard_indice, shard_indice+1])
                         current_mbs_total_tokens = max_seqlen_this_chunk
+                micro_batch_indices.append(chunk_micro_batch_indices)
 
-                microbatch_indices.append(chunk_microbatch_indices)
-            return aggregated_shards, microbatch_indices
+            for shard in aggregated_shards:
+                shard.metadata['micro_batch_indices'] = micro_batch_indices
 
         return aggregated_shards    
+
+    def get_batch(self, batch_idx, batch_size) -> "SlicedDataDict":
+        """Slices a subbatch from the batch.
+
+        Args:
+            batch_idx: the batch index to slice
+            batch_size: the size of the batch to be sliced
+
+        Returns:
+            BatchedDataDict: A new BatchedDataDict containing the sliced data
+        """    
+        start = batch_size * batch_idx
+        end = batch_size * (batch_idx+1)
+        batch = self.slice(start, end)
+        if 'micro_batch_indices' in self.metadata:
+            batch.metadata['micro_batch_indices'] = self.metadata['micro_batch_indices'][batch_idx]
+
+        return batch
 
     def slice(self, start: int, end: int) -> "SlicedDataDict":
         """Slices the batch from start to end.
@@ -389,10 +412,9 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             if torch.is_tensor(v) and len(v.shape) >= dim + 1:
                 self.data[k] = torch.narrow(v, dim=dim, start=0, length=truncated_len)
 
-    def make_microbatch_iterator_from_indices(
-        self, microbatch_indices,
-    ) -> Iterator["SlicedDataDict"]:
-        for start, end in microbatch_indices:
+    def make_microbatch_iterator_from_indices(self) -> Iterator["SlicedDataDict"]:
+        assert "micro_batch_indices" in self.metadata        
+        for start, end in self.metadata['micro_batch_indices']:
             yield self.slice(start, end)    
         
     def make_microbatch_iterator(
