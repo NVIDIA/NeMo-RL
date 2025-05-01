@@ -244,7 +244,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             (batch_size + shards - 1) // shards
             if allow_uneven_shards
             else batch_size // shards
-        ) 
+        )
 
         # if using dynamic microbatching, preprocess the data by sorting the data 
         # by the sequence lengths. This ensures each DP rank receives samples of about 
