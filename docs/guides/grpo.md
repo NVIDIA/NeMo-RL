@@ -2,7 +2,7 @@
 
 ## Quickstart: Launch a GRPO Run
 
-If you want to get running quickly, the script [examples/run_grpo_math.py](../../examples/run_grpo_math.py) has an example implementation of using GRPO to train a model on math problems. This script can either be launched locally or via Slurm. For details on how to set up Ray and launch a job using Slurm, refer to the [cluster documentation](../cluster.md).
+To get started quickly, use the script [examples/run_grpo_math.py](../../examples/run_grpo_math.py), which demonstrates how to train a model on math problems using GRPO. You can launch this script locally or via Slurm. For detailed instructions on setting up Ray and launching a job with Slurm, refer to the [cluster documentation](../cluster.md).
 
 We recommend launching the job using `uv`:
 
@@ -13,8 +13,6 @@ uv run examples/run_grpo_math.py --config <PATH TO YAML CONFIG> {overrides}
 If not specified, `config` will default to [examples/configs/grpo.yaml](../../examples/configs/grpo_math_1B.yaml)
 
 **Reminder**: Don't forget to set your HF_HOME, WANDB_API_KEY, and HF_DATASETS_CACHE (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
-
-## Now, for the details:
 
 In this guide, we'll walk through how we handle
 
@@ -53,7 +51,8 @@ class DatumSpec(TypedDict):
 
 #### Data Processors
 
-We name all distinct "environments your model wants to optimize against" "tasks". So you might define a "math" task or a "code" task.
+We refer to each distinct environment your model aims to optimize against as a "task." For example, you might define tasks like "math" or "code."
+
 For each task, you should provide a data processor that reads from your dataset and returns a [DatumSpec](../../nemo_rl/data/interfaces.py)
 
 ```python
@@ -76,7 +75,7 @@ GRPO expects datasets to have the following form:
 {"task_name": "math", /* actual data */}
 ```
 
-Then, you can set data up as such:
+Then, you can set the data up as follows:
 
 ```python
 base_dataset = load_dataset("json", data_files=data_config["dataset_name"])["train"]
@@ -96,7 +95,7 @@ dataset = AllTaskProcessedDataset(
 )
 ```
 
-Notice that you provide a mapping of tasks to their processors so the dataset knows what to use when processing samples.
+Ensure you provide a mapping of tasks to their processors so the dataset knows which processor to use when handling samples.
 
 ### Policy Model
 

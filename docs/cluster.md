@@ -1,13 +1,10 @@
-# Cluster start
+# Set Up Clusters
 
-- [Cluster start](#cluster-start)
-  - [Slurm](#slurm)
-    - [Batched Job Submission](#batched-job-submission)
-    - [Interactive Launching](#interactive-launching)
-    - [Slurm UV\_CACHE\_DIR](#slurm-uv_cache_dir)
-  - [Kubernetes](#kubernetes)
+This guide explains how to initialize NeMo RL clusters.
 
-## Slurm
+## Slurm (Batched and Interactive)
+
+ The following code provides instructions on how to use Slurm to run batched job submissions and run jobs interactively.
 
 ### Batched Job Submission
 
@@ -35,7 +32,7 @@ Which will print the `SLURM_JOB_ID`:
 ```text
 Submitted batch job 1980204
 ```
-Make note of the the job submission number. Once the job begins you can track it's process in the driver logs which you can `tail`:
+Make note of the the job submission number. Once the job begins, you can track its process in the driver logs which you can `tail`:
 ```sh
 tail -f 1980204-logs/ray-driver.log
 ```
@@ -43,10 +40,10 @@ tail -f 1980204-logs/ray-driver.log
 ### Interactive Launching
 
 :::{tip}
-A key advantage of running interactively on the head node is the ability to execute multiple multi-node jobs without needing to requeue in the SLURM job queue. This means during debugging sessions, you can avoid submitting a new `sbatch` command each time and instead debug and re-submit your NeMo-RL job directly from the interactive session.
+A key advantage of running interactively on the head node is the ability to execute multiple multi-node jobs without needing to requeue in the Slurm job queue. This means that during debugging sessions, you can avoid submitting a new `sbatch` command each time. Instead, you can debug and re-submit your NeMo RL job directly from the interactive session.
 :::
 
-To run interactively, launch the same command as the [Batched Job Submission](#batched-job-submission) except omit the `COMMAND` line:
+To run interactively, launch the same command as [Batched Job Submission](#batched-job-submission), but omit the `COMMAND` line:
 ```sh
 # Run from the root of NeMo-RL repo
 NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
@@ -66,12 +63,12 @@ Which will print the `SLURM_JOB_ID`:
 ```text
 Submitted batch job 1980204
 ```
-Once the ray cluster is up, a script should be created to attach to the ray head node,
-which you can use launch experiments.
+Once the Ray cluster is up, a script should be created to attach to the Ray head node,
+which you can use to launch experiments.
 ```sh
 bash 1980204-attach.sh
 ```
-Now that you are on the head node, you can launch the command like so:
+Now that you are on the head node, you can launch the command as follows:
 ```sh
 uv run ./examples/run_grpo_math.py
 ```

@@ -1,4 +1,6 @@
-# Testing NeMo-RL
+# Test NeMo RL
+
+This guide outlines how to test NeMo RL using unit and functional tests, detailing steps for local or Docker-based execution, dependency setup, and metric tracking to ensure effective and reliable testing.
 
 ## Unit Tests
 
@@ -12,16 +14,16 @@ uv run --group test bash tests/run_unit.sh
 ```
 
 :::{note}
-Tests can also be run on SLURM with `ray.sub`, but note that some tests will be skipped
+Tests can also be run on Slurm with `ray.sub`, but note that some tests will be skipped
 due to no GPUs being located on the head node. To run the full suite of tests, please
 launch on a regular GPU allocation.
 :::
 
-### Running Unit Tests in a Hermetic Environment
+### Run Unit Tests in a Hermetic Environment
 
 For environments lacking necessary dependencies (e.g., `gcc`, `nvcc`)
 or where environmental configuration may be problematic, tests can be run
-in docker with this script:
+in Docker with this script:
 
 ```sh
 CONTAINER=... bash tests/run_unit_in_docker.sh
@@ -29,9 +31,10 @@ CONTAINER=... bash tests/run_unit_in_docker.sh
 
 The required `CONTAINER` can be built by following the instructions in the [docker documentation](docker.md).
 
-### Tracking metrics in unit tests
+### Track Metrics in Unit Tests
 
 Unit tests may also log metrics to a fixture. The fixture is called `tracker` and has the following API:
+
 ```python
 # Track an arbitrary metric (must be json serializable)
 tracker.track(metric_name, metric_value)
@@ -44,6 +47,7 @@ tracker.get_max_mem()
 Including the `tracker` fixture also tracks the elapsed time for the test implicitly.
 
 Here is an example test:
+
 ```python
 def test_exponentiate(tracker):
     starting_mem = tracker.get_max_mem()
@@ -58,6 +62,7 @@ def test_exponentiate(tracker):
 ```
 
 Which would produce this file in `tests/unit/unit_results.json`:
+
 ```json
 {
   "exit_status": 0,
@@ -94,7 +99,7 @@ jq -r '[.start_time, .git_commit, .metrics["test_hf_ray_policy::test_hf_policy_g
 ```
 :::
 
-## Functional tests
+## Functional Tests
 
 :::{important}
 Functional tests may require multiple GPUs to run. See each script to understand the requirements.
@@ -119,11 +124,11 @@ whether they pass or fail. Here is an example:
 └────────┴────────────────────────────────┴───────────────────┴─────────┘
 ```
 
-### Running Functional Tests in a Hermetic Environment
+### Run Functional Tests in a Hermetic Environment
 
 For environments lacking necessary dependencies (e.g., `gcc`, `nvcc`)
 or where environmental configuration may be problematic, tests can be run
-in docker with this script:
+in Docker with this script:
 
 ```sh
 CONTAINER=... bash run_functional_in_docker.sh functional/sft.sh

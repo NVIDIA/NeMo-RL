@@ -1,6 +1,10 @@
 # Evaluation
 
+This document explains how to use an evaluation script for assessing model capabilities.
+
 ## Start Evaluation
+
+To run the evaluation, you can use the default configuration file or specify a custom one.
 
 ### Start Script
 
@@ -52,11 +56,12 @@ score=0.10 (3.0/30)
 ============================================================
 ```
 
-## Configuration
+## Example Configuration File
 
-An example Evaluation configuration file can be found [here](../../examples/configs/eval.yaml).
+You can find an example evaluation configuration file [here](../../examples/configs/eval.yaml).
 
 ### Prompt Template Configuration
+
 Always remember to use the same `prompt_file` and `system_prompt_file` that were used during training.
 
 For open-source models, we recommend setting `prompt_file=null` and `system_prompt_file=null` to allow them to use their native chat templates.
