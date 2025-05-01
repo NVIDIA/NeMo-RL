@@ -112,13 +112,15 @@ class HfPolicy(PolicyInterface, GenerationInterface):
     def _shard_data(
         self, 
         data: BatchedDataDict[GenerationDatumSpec],
-        batch_size: int = None, 
+        batch_size: int = None,
+        max_tokens_per_microbatch: int = None,
     ):
         if self.cfg['dynamic_batching']:
             dynamic_batching_cfg = {
-                'sequence_lengths_per_input': data['input_lengths'],
-                'max_tokens_per_microbatch': self.cfg["dynamic_batching_max_tokens_per_micro_batch"]
+                'input_lengths_key': 'input_lengths',
+                'max_tokens_per_microbatch': max_tokens_per_microbatch
             }
+
             sharded_data = data.shard_by_batch_size(
                 self.dp_size, 
                 batch_size=batch_size, 
@@ -144,7 +146,11 @@ class HfPolicy(PolicyInterface, GenerationInterface):
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
 
-        sharded_data = self._shard_data(data, batch_size=None)
+        sharded_data = self._shard_data(
+            data, 
+            batch_size=None,
+            max_tokens_per_microbatch=self.cfg['dynamic_batching_logprob_mb_tokens'],
+        )
         futures = self.worker_group.run_all_workers_multiple_data(
             "get_logprobs", 
             sharded_data, 
@@ -162,7 +168,11 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         Returns: Identical to get_logprobs.
         """
-        sharded_data = self._shard_data(data, batch_size=None)
+        sharded_data = self._shard_data(
+            data, 
+            batch_size=None,
+            max_tokens_per_microbatch=self.cfg['dynamic_batching_logprob_mb_tokens'],
+        )
         futures = self.worker_group.run_all_workers_multiple_data(
             "get_reference_policy_logprobs",
             sharded_data,
@@ -190,7 +200,10 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         micro_batch_size = mbs or self.cfg["train_micro_batch_size"]
         # Shard and replicate the batch
         sharded_data = self._shard_data(
-            data, batch_size=self.cfg["train_global_batch_size"])
+            data, 
+            batch_size=self.cfg["train_global_batch_size"],
+            max_tokens_per_microbatch=self.cfg['dynamic_batching_train_mb_tokens'],
+        )
 
         # Train each shard in parallel
         futures = self.worker_group.run_all_workers_multiple_data(

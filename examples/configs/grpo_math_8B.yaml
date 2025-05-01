@@ -21,7 +21,8 @@ policy:
   dtensor_cfg:
     enabled: False
   dynamic_batching: false
-  dynamic_batching_max_tokens_per_micro_batch: 4096
+  dynamic_batching_train_mb_tokens: 4096
+  dynamic_batching_logprob_mb_tokens: 8192
 
   optimizer:
     name: "torch.optim.AdamW"

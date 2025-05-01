@@ -261,15 +261,6 @@ class DTensorPolicyWorker:
         """Return information about the GPU being used by this worker."""
         return get_gpu_info(self.model)
 
-    def remove_sequence_padding(self, data):
-        sequence_dim = 1
-        orig_seqlen = data["input_ids"].shape[sequence_dim]
-        padded_seqlen = ((max(data["input_lengths"]) + 64 - 1) // 64) * 64
-        padded_seqlen = min(padded_seqlen, orig_seqlen)
-        data.truncate_tensors(dim=sequence_dim, truncated_len=padded_seqlen)
-
-        return data
-
     def train(
         self,
         data: BatchedDataDict,
@@ -359,14 +350,16 @@ class DTensorPolicyWorker:
                 # so its safe to not check for the case where the last data slice is smaller than mbs
                 if self.cfg['dynamic_batching']:
                     num_microbatches = len(batch.metadata['micro_batch_indices'])
-                    mb_iterator = batch.make_microbatch_iterator_from_indices()
+                    mb_iterator = batch.make_microbatch_iterator_with_dynamic_shapes(
+                        max_sequence_length=data['input_ids'].shape[1],
+                        round_seq_len_multiple=64,
+                        input_lengths_key='input_lengths',
+                    )
                 else:
                     num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
                     mb_iterator = batch.make_microbatch_iterator(mbs)
 
                 for mb in mb_iterator:      
-                    mb = self.remove_sequence_padding(mb)
-
                     input_lengths = mb.get("input_lengths")
                     input_ids = mb["input_ids"]
                     batch_size, seq_len = input_ids.shape
@@ -518,13 +511,15 @@ class DTensorPolicyWorker:
             data.to("cuda")
             if self.cfg['dynamic_batching']:
                 data.metadata['micro_batch_indices'] = data.metadata['micro_batch_indices'][0]
-                mb_iterator = data.make_microbatch_iterator_from_indices()
+                mb_iterator = data.make_microbatch_iterator_with_dynamic_shapes(
+                    max_sequence_length=data['input_ids'].shape[1],
+                    round_seq_len_multiple=64,
+                    input_lengths_key='input_lengths',
+                )
             else:
                 mb_iterator = data.make_microbatch_iterator(logprob_batch_size)
 
             for lp_batch in mb_iterator:
-                lp_batch = self.remove_sequence_padding(lp_batch)
-
                 input_ids = lp_batch.get("input_ids").cuda()
                 input_lengths = lp_batch.get("input_lengths")
 
@@ -598,7 +593,6 @@ class DTensorPolicyWorker:
             if padding_needed > 0:
                 lp = torch.nn.functional.pad(lp, (0, padding_needed), mode='constant', value=0.0)
             all_log_probs_padded.append(lp)
-
         return_data["logprobs"] = torch.cat(all_log_probs_padded, dim=0).cpu()
 
         return return_data
