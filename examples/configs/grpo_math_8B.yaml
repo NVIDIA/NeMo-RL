@@ -35,12 +35,12 @@ policy:
       kwargs:
         start_factor: 0.1
         end_factor: 1.0
-        total_iters: 50
+        total_iters: 13
     - name: "torch.optim.lr_scheduler.ConstantLR"
       kwargs:
         factor: 1.0
         total_iters: 10000000000
-    - milestones: [50]
+    - milestones: [13]
 
   generation:
     backend: "vllm"
