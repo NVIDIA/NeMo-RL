@@ -1,4 +1,4 @@
-# Chat Datasets Format
+# Data Format
 
 This guide outlines the required data format for Hugging Face chat datasets and demonstrates how to use chat templates with Hugging Face tokenizers to add special tokens or task-specific information.
 
