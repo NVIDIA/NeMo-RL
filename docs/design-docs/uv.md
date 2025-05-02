@@ -8,6 +8,8 @@ We use the `uv` Python package installer for managing dependencies in NeMo RL.
 
 ## Why `uv`?
 
+`uv` brings the following key advantages to our Python development workflow:
+
 ### Speed and Efficiency
 
 - Written in Rust, making it significantly faster than traditional Python package managers.
