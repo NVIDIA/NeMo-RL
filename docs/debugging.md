@@ -43,7 +43,7 @@ ssh -L $LOCAL_PORT:localhost:$DASHBOARD_PORT -N node-12
 ssh -L 52640:localhost:8265 -N node-12
 ```
 
-### [Step 2]: Open the Ray Debugger Extension
+### Open the Ray Debugger Extension
 
 In VS Code/Cursor, open the Ray Debugger extension by clicking on the Ray icon in the activity bar or by searching for "View: Show Ray Debugger" in the command palette (Ctrl+Shift+P or Cmd+Shift+P).
 
