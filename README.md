@@ -2,13 +2,14 @@
 
 <!-- markdown all in one -->
 - [Nemo RL: A Scalable and Efficient Post-Training Library](#nemo-rl-a-scalable-and-efficient-post-training-library)
+  - [📣 News](#-news)
   - [Features](#features)
   - [Prerequisites](#prerequisites)
   - [GRPO](#grpo)
     - [GRPO Single Node](#grpo-single-node)
     - [GRPO Multi-node](#grpo-multi-node)
       - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
-    - [GRPO Multi-Turn/Tool-Use](#grpo-multi-turn)
+      - [GRPO Multi-Turn](#grpo-multi-turn)
   - [Supervised Fine-Tuning (SFT)](#supervised-fine-tuning-sft)
     - [SFT Single Node](#sft-single-node)
     - [SFT Multi-node](#sft-multi-node)
@@ -63,6 +64,40 @@ Clone **NeMo RL**.
 git clone git@github.com:NVIDIA/NeMo-RL.git nemo-rl
 cd nemo-rl
 ```
+
+<!--
+# TODO: Replace the above instructions once we have a real mcore example
+```sh
+git clone git@github.com:NVIDIA/NeMo-RL.git nemo-rl
+cd nemo-rl
+
+# If you are using the Megatron backend, download the pinned versions of Megatron-LM and NeMo submodules 
+# by running:
+# git submodule update --init --recursive
+
+# Different branches of the repo can have different pinned versions of these third-party submodules. Ensure 
+# submodules are automatically updated after switching branches or pulling updates by configuring git with:
+# git config submodule.recurse true
+
+# **NOTE**: this setting will not download **new** or remove **old** submodules with the branch's changes.
+# You will have to run the full `git submodule update --init --recursive` command in these situations.
+```
+
+If you are using the Megatron backend on bare-metal (outside of a container), you may
+need to install the cudnn headers as well. Here is how you can check as well as install them:
+```sh
+# Check if you have libcudnn installed
+dpkg -l | grep cudnn.*cuda
+
+# Find the version you need here: https://developer.nvidia.com/cudnn-downloads?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=20.04&target_type=deb_network
+# As an example, these are the "Linux Ubuntu 20.04 x86_64" instructions
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt-get update
+sudo apt-get install cudnn-cuda-12
+```
+
+-->
 
 Install `uv`.
 ```sh

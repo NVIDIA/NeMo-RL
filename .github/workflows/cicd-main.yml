@@ -110,9 +110,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
       - name: Check lint
         run: |
-          pip install pre-commit
+          pip install pre-commit==3.6.0
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
   
@@ -136,6 +138,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
       - name: build docs
         run: |
           pip install uv
@@ -186,6 +190,7 @@ jobs:
           time uv run --no-sync bash ./tests/functional/grpo_multiturn.sh
           time uv run --no-sync bash ./tests/functional/dpo.sh
           time uv run --no-sync bash ./tests/functional/eval.sh
+          time uv run --no-sync bash ./tests/functional/test_mcore_extra_installed_correctly.sh
         else
           echo Skipping functional tests for level ${{ needs.pre-flight.outputs.test_level }}
         fi

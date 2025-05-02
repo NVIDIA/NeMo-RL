@@ -30,7 +30,7 @@ from nemo_rl.distributed.virtual_cluster import init_ray
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 
-_TEST_ASSETS_DIR = os.path.join(dir_path, "test_assets")
+TEST_ASSETS_DIR = os.path.join(dir_path, "test_assets")
 UNIT_RESULTS_FILE = os.path.join(dir_path, "unit_results.json")
 UNIT_RESULTS_FILE_DATED = os.path.join(
     dir_path, f"unit_results/{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -40,19 +40,19 @@ UNIT_RESULTS_FILE_DATED = os.path.join(
 # Mapping between asset and absolute path (each are populated from a session level fixture)
 class TEST_ASSETS:
     TINY_LLAMA_MODEL_PATH = os.path.join(
-        _TEST_ASSETS_DIR, "tiny_llama_with_llama3.2_tokenizer"
+        TEST_ASSETS_DIR, "tiny_llama_with_llama3.2_tokenizer"
     )
     TINY_LLAMA_TIED_MODEL_PATH = os.path.join(
-        _TEST_ASSETS_DIR, "tiny_llama_tied_with_llama3.2_tokenizer"
+        TEST_ASSETS_DIR, "tiny_llama_tied_with_llama3.2_tokenizer"
     )
     TINY_QWEN2_MODEL_PATH = os.path.join(
-        _TEST_ASSETS_DIR, "tiny_qwen2_with_qwen2_tokenizer"
+        TEST_ASSETS_DIR, "tiny_qwen2_with_qwen2_tokenizer"
     )
     TINY_QWEN3_MODEL_PATH = os.path.join(
-        _TEST_ASSETS_DIR, "tiny_qwen3_with_qwen3_tokenizer"
+        TEST_ASSETS_DIR, "tiny_qwen3_with_qwen3_tokenizer"
     )
     TINY_GEMMA3_MODEL_PATH = os.path.join(
-        _TEST_ASSETS_DIR, "tiny_gemma3_with_gemma3_tokenizer"
+        TEST_ASSETS_DIR, "tiny_gemma3_with_gemma3_tokenizer"
     )
 
 
