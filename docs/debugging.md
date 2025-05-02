@@ -49,7 +49,7 @@ In VS Code/Cursor, open the Ray Debugger extension by clicking on the Ray icon i
 
 ![Ray Debugger Extension Step 1](./assets/ray-debug-step1.png)
 
-### [Step 3]: Add the Ray Cluster
+### Add the Ray Cluster
 
 Click on the "Add Cluster" button in the Ray Debugger panel.
 
