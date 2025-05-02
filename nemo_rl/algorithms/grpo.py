@@ -205,7 +205,7 @@ def setup(
         * cluster_config["num_nodes"],
         use_gpus=True,
         num_gpus_per_node=cluster_config["gpus_per_node"],
-        max_colocated_worker_groups=2 if colocated_inference else 1,
+        max_colocated_worker_groups=2 if colocated_inference else 1,  # TODO: 3 for cuda
     )
     print(f"  ✓ Ray cluster initialized with {cluster_config['num_nodes']} nodes")
 

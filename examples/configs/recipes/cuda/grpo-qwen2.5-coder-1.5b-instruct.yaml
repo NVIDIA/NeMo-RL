@@ -1,0 +1,119 @@
+# One full GRPO step is num_prompts_per_step (64) * num_generations_per_prompt (32) = 2048 samples
+# rollout size (2048) / train_global_batch_size (512) = 4 optimizer steps per GRPO step
+
+# num_gpus = num_nodes (16) * gpus_per_node (8) = 128
+# samples per forward+backward pass = num_gpus (128) * train_micro_batch_size (1) = 128 samples per pass
+# train_global_batch_size (512) / samples per pass (128) = 4 gradient accumulation steps
+
+
+grpo:
+  num_prompts_per_step: 1  # 64 (changed) # batch size for training_dataloader
+  num_generations_per_prompt: 8  # 32 (changed) # repeat and interleave, effective batch size becomes num_prompts_per_step * num_generations_per_prompt
+  max_rollout_turns: 1  # for multi-turn conversation
+  max_num_steps: 500
+  normalize_rewards: true
+  use_leave_one_out_baseline: true
+  val_period: 1000  # 10 (changed)
+  val_at_start: false
+  max_val_samples: 256
+  val_batch_size: 256
+loss_fn:
+  reference_policy_kl_penalty: 0.0  # 0.01 (changed)
+  ratio_clip_min: 0.2
+  ratio_clip_max: 0.2
+  use_on_policy_kl_approximation: false
+  use_importance_sampling_correction: false  # TODO: better to set true?
+checkpointing:
+  enabled: false  # true (changed)
+  checkpoint_dir: results/grpo-qwen2.5-coder-1.5b-instruct-cuda
+  metric_name: val_reward
+  higher_is_better: true
+  keep_top_k: 3
+  save_period: 10
+policy:
+  model_name: Qwen/Qwen2.5-Coder-1.5B-Instruct
+  tokenizer:
+    name: Qwen/Qwen2.5-Coder-1.5B-Instruct
+  train_global_batch_size: 8  # 512 (changed) # Gradient accumulation used if train_global_batch_size / (num_gpus * train_micro_batch_size) > 1
+  train_micro_batch_size: 1  # Batch size per GPU
+  generation_batch_size: 32
+  logprob_batch_size: 2
+  max_total_sequence_length: 16384
+  precision: bfloat16
+  fsdp_offload_enabled: false
+  activation_checkpointing_enabled: false
+  refit_buffer_size_gb: 4
+  dtensor_cfg:
+    enabled: true
+    cpu_offload: false
+    sequence_parallel: true
+    activation_checkpointing: true
+    tensor_parallel_size: 8  # TODO: set differently? 4?
+  make_sequence_length_divisible_by: 8
+  max_grad_norm: 1
+  optimizer:
+    name: torch.optim.AdamW
+    kwargs:
+      lr: 3e-07  # TODO: sweep?
+      weight_decay: 0.01
+      betas:
+        - 0.9
+        - 0.999
+      eps: 1e-08
+      foreach: false
+      fused: false
+  scheduler:
+    - name: torch.optim.lr_scheduler.LinearLR
+      kwargs:
+        start_factor: 0.1
+        end_factor: 1
+        total_iters: 50
+    - name: torch.optim.lr_scheduler.ConstantLR
+      kwargs:
+        factor: 1
+        total_iters: 10000000000
+    - milestones:
+        - 50
+  generation:
+    backend: vllm
+    max_new_tokens: 16384
+    temperature: 1
+    top_p: 1
+    top_k: null
+    stop_token_ids:
+      - 151643
+    stop_strings: null
+    vllm_cfg:
+      tensor_parallel_size: 4
+      gpu_memory_utilization: 0.6
+      max_model_len: 16384
+      load_format: dummy
+      skip_tokenizer_init: true
+    pad_token_id: 151643
+    model_name: Qwen/Qwen2.5-Coder-1.5B-Instruct
+data:
+  max_input_seq_length: 16384
+  prompt_file: examples/prompts/python2cudac.txt
+  system_prompt_file: null
+  dataset_name: python2cudac
+  dataset_path: nemo_rl/data/custom_datasets/cuda_problems_tiny.json
+  duplicate_train_data: true
+env:
+  cuda:
+    num_workers: 8
+logger:
+  log_dir: logs/grpo-qwen2.5-coder-1.5b-instruct-cuda
+  num_val_samples_to_print: 0
+  wandb_enabled: true
+  tensorboard_enabled: false
+  monitor_gpus: true
+  wandb:
+    project: nemorl-toygrpo
+    name: grpo-qwen2.5-coder-1.5b-instruct-cuda
+  tensorboard: {}
+  gpu_monitoring:
+    collection_interval: 10
+    flush_interval: 10
+cluster:
+  gpus_per_node: 8
+  num_nodes: 1 # 16 (changed)  # TODO: set
