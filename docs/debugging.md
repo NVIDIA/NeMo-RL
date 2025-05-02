@@ -20,7 +20,7 @@ to properly jump to the breakpoint on each worker.
 
 ### Port-forwarding from the Head Node
 
-On the login node, we can query the nodes used by the interactive `ray.sub` submission like so:
+From the SLURM login node, query the nodes used by the interactive `ray.sub` job as follows:
 
 ```sh
 teryk@slurm-login:~$ squeue --me
