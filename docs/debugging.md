@@ -1,6 +1,6 @@
 # Debugging in NeMo RL
 
-## Debugging in the driver script
+## Debugging in the Driver Script
 
 You will notice that setting breakpoints in the driver script (outside of `@ray.remote`),
 will not pause the program. To enable this behavior, you should set the `RAY_DEBUG` environment
