@@ -1,7 +1,5 @@
 # Padding in NeMo RL
 
-## Overview
-
 This document explains padding in NeMo RL and why consistent padding is critical for the framework.
 
 ## Padding Approach
