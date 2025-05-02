@@ -15,7 +15,7 @@ to properly jump to the breakpoint on each worker.
 
 ### Prerequisites
 * Install [Ray Debugger VS Code/Cursor extension](https://docs.ray.io/en/latest/ray-observability/ray-distributed-debugger.html).
-* Launched [interactive cluster](./cluster.md#interactive-launching) with `ray.sub`
+* Launch the [interactive cluster](./cluster.md#interactive-launching) with `ray.sub`.
 * Launch VS Code/Cursor on the SLURM login node (where `squeue`/`sbatch` is available).
 
 ### Port-forwarding from the Head Node
