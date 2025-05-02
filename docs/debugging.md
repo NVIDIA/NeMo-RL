@@ -16,7 +16,7 @@ Since ray programs can spawn many workers/actors, we need to use the Ray Distrib
 to properly jump to the breakpoint on each worker.
 
 ### Prerequisites
-* Install [Ray Debugger VS Code/Cursor extension](https://docs.ray.io/en/latest/ray-observability/ray-distributed-debugger.html)
+* Install [Ray Debugger VS Code/Cursor extension](https://docs.ray.io/en/latest/ray-observability/ray-distributed-debugger.html).
 * Launched [interactive cluster](./cluster.md#interactive-launching) with `ray.sub`
 * VS Code/Cursor launched on the SLURM login node (where `squeue`/`sbatch` are available)
 
