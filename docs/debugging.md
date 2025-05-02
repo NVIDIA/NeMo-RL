@@ -20,7 +20,7 @@ to properly jump to the breakpoint on each worker.
 * Launched [interactive cluster](./cluster.md#interactive-launching) with `ray.sub`
 * Launch VS Code/Cursor on the SLURM login node (where `squeue`/`sbatch` is available).
 
-### [Step 1] Port-forwarding from the head node
+### Port-forwarding from the Head Node
 
 On the login node, we can query the nodes used by the interactive `ray.sub` submission like so:
 
