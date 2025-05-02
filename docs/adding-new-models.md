@@ -66,7 +66,7 @@ When investigating discrepancies beyond the acceptable threshold, focus on these
 When validating Hugging Face-based models, perform the following checks:
 
 - **Compare log probabilities**  
-  Ensure the generation log probabilities from inference backends like **vLLM** match those computed by HuggingFace. This comparison helps diagnose potential mismatches.
+  Ensure the generation log probabilities from inference backends like **vLLM** match those computed by Hugging Face. This comparison helps diagnose potential mismatches.
 
 - **Test parallelism**  
   Verify consistency with other parallelism settings.
