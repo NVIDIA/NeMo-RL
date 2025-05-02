@@ -78,7 +78,7 @@ uv run ./examples/run_grpo_math.py
 There several choices for `UV_CACHE_DIR` when using `ray.sub`:
 
 1. (default) `UV_CACHE_DIR` defaults to `$SLURM_SUBMIT_DIR/uv_cache` when not specified the shell environment, and is mounted to head and worker nodes to serve as a persistent cache between runs.
-2. Use the warm uv cache from our docker images
+2. Use the warm uv cache from our docker images:
     ```sh
     ...
     UV_CACHE_DIR=/home/ray/.cache/uv \
