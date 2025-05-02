@@ -1,5 +1,5 @@
 # Debugging in NeMo RL
-
+This guide explains how to debug NeMo RL applications, covering two scenarios. It details debugging the main driver script by setting the RAY_DEBUG=legacy environment variable, and outlines the procedure for debugging distributed Ray worker/actor processes using the Ray Distributed Debugger within a SLURM environment.
 ## Debugging in the Driver Script
 
 You will notice that setting breakpoints in the driver script (outside of `@ray.remote`),
