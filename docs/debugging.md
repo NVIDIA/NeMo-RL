@@ -10,7 +10,7 @@ to legacy:
 RAY_DEBUG=legacy uv run ....
 ```
 
-## Debugging in the worker/actors (on SLURM)
+## Debugging in the Worker/Actors (on SLURM)
 
 Since ray programs can spawn many workers/actors, we need to use the Ray Distributed Debugger
 to properly jump to the breakpoint on each worker.
