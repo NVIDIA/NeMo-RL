@@ -111,4 +111,4 @@ def grpo_train(
         training_data = calculate_grpo_training_data(generations, logprobs, reference_logprobs, rewards)
         policy.train(generations, logprobs, reference_logprobs, GRPOLossFn)
 ```
-For a complete implementation of GRPO, including validation, checkpointing, memory movement, and the data processing steps not detailed here, see [grpo_train](../../nemo_rl/algorithms/grpo.py)
+For a complete implementation of GRPO, including validation, checkpointing, memory movement, and the data processing steps not detailed here, see [grpo_train](../../nemo_rl/algorithms/grpo.py).
