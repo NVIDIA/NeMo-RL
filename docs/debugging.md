@@ -61,7 +61,7 @@ Enter the address and port you set up in the port forwarding step. If you follow
 ![Ray Debugger Extension Step 3](./assets/ray-debug-step3.png)
 
 
-### [Step 4]: Add a breakpoint and run your program
+### Add a Breakpoint and Run Your Program
 
 All breakpoints that are reached while the program is running will be visible in the Ray Debugger Panel dropdown for the cluster `127.0.0.1:52640`. Click
 `Start Debugging` to jump to one worker's breakpoint.
