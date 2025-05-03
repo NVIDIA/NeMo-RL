@@ -4,7 +4,13 @@ FROM ${BASE_IMAGE} AS base
 # It is more convenient for users to run as root
 USER root
 
-RUN apt-get update && apt-get install -y --no-install-recommends jq curl git
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    jq \
+    curl \
+    git \
+    gcc \
+    && rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
 
 # Install uv and python
 ARG UV_VERSION=0.7.2
