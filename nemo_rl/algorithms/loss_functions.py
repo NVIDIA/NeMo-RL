@@ -175,9 +175,8 @@ class ClippedPGLossFn(LossFunction):
         # Determine which value to use for clipping (max for pessimistic estimate)
         clip_loss = torch.max(loss1, loss2)
 
-        # Dual-clipping for negative advantages (if enabled)
+        # Dual-clipping see https://arxiv.org/pdf/1912.09729
         if self.ratio_clip_c is not None:
-            # The lower bound of the ratio for dual-clip PPO, See https://arxiv.org/pdf/1912.09729
             assert self.ratio_clip_c > 1, (
                 "ratio_clip_c must exceed 1 representing a lower bound of the ratios"
             )
