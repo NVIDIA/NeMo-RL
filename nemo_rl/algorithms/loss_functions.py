@@ -73,12 +73,22 @@ class ClippedPGLossFn(LossFunction):
     For REINFORCE/RLOO (when disable_ppo_ratio=True), the formula simplifies to:
     L(θ) = E_t [ π_θ(a_t|s_t) * A_t ] - β * KL(π_θ || π_ref)
 
+    According to the Dual-clipping paper (https://arxiv.org/pdf/1912.09729),
+    the paper imposes an additional upper bound on the probability ratio, where curr_lp >> prev_lp
+    to prevent excessive policy updates when dealing with strongly negative advantages,
+    the loss function is modified to the following when A_t < 0:
+    L(θ) = E_t [ max(min(r_t(θ) * A_t, clip(r_t(θ), 1-ε, 1+ε) * A_t), c * A_t) ] - β * KL(π_θ || π_ref)
+
+    where:
+    - c is the dual-clip parameter (ratio_clip_c) and must be greater than 1 and set as 3 empirically
+
     Due to potential numerical instability, we cast the logits to float32 before computing the loss.
     """
 
     def __init__(self, cfg: ClippedPGLossConfig):
         self.ratio_clip_min = cfg["ratio_clip_min"]
         self.ratio_clip_max = cfg["ratio_clip_max"]
+        self.ratio_clip_c = cfg.get("ratio_clip_c", None)
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.disable_ppo_ratio = cfg.get("disable_ppo_ratio", False)
         self.use_on_policy_kl_approximation = cfg["use_on_policy_kl_approximation"]
@@ -162,6 +172,20 @@ class ClippedPGLossFn(LossFunction):
         loss1 = -advantages * ratios
         loss2 = -advantages * ratios_clamped
 
+        # Determine which value to use for clipping (max for pessimistic estimate)
+        clip_loss = torch.max(loss1, loss2)
+
+        # Dual-clipping for negative advantages (if enabled)
+        if self.ratio_clip_c is not None:
+            # The lower bound of the ratio for dual-clip PPO, See https://arxiv.org/pdf/1912.09729
+            assert self.ratio_clip_c > 1, (
+                "ratio_clip_c must exceed 1 representing a lower bound of the ratios"
+            )
+            loss3 = -advantages * self.ratio_clip_c
+            clip_loss = torch.where(
+                advantages < 0, torch.min(clip_loss, loss3), clip_loss
+            )
+
         if self.use_importance_sampling_correction:
             # See: docs/guides/grpo.md#importance-sampling-correction
             actor_importance_weights = torch.exp(prev_logprobs - generation_logprobs)
@@ -170,9 +194,7 @@ class ClippedPGLossFn(LossFunction):
             )
         else:
             actor_importance_weights = torch.ones_like(prev_logprobs)
-        actor_loss = masked_mean(
-            actor_importance_weights * torch.max(loss1, loss2), mask
-        )
+        actor_loss = masked_mean(actor_importance_weights * clip_loss, mask)
         loss = actor_loss + kl
         with torch.no_grad():
             probs_ratio = masked_mean(ratios.detach(), mask).item()
