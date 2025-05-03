@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=nvcr.io/nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+ARG BASE_IMAGE=nvcr.io/nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
 FROM ${BASE_IMAGE} AS base
 
 # It is more convenient for users to run as root
@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     curl \
     git \
-    gcc \
     && rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
