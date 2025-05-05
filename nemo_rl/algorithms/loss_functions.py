@@ -179,7 +179,7 @@ class ClippedPGLossFn(LossFunction):
         # Dual-clipping see https://arxiv.org/pdf/1912.09729
         if self.ratio_clip_c is not None:
             assert self.ratio_clip_c > 1, (
-                "ratio_clip_c must exceed 1 representing a lower bound of the ratios"
+                f"ratio_clip_c must exceed 1 representing a lower bound of the ratios, got {self.ratio_clip_c}."
             )
             loss3 = -advantages * self.ratio_clip_c
             clip_loss = torch.where(
