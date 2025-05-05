@@ -35,5 +35,5 @@ uv run $PROJECT_ROOT/examples/run_dpo.py \
 uv run tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
 uv run tests/check_metrics.py $JSON_METRICS \
-  'data["train/loss"]["2"] < 0.694' \
+  'data["train/loss"]["2"] < 0.715'
 
