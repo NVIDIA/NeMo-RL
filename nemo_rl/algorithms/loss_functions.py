@@ -73,14 +73,15 @@ class ClippedPGLossFn(LossFunction):
     For REINFORCE/RLOO (when disable_ppo_ratio=True), the formula simplifies to:
     L(θ) = E_t [ π_θ(a_t|s_t) * A_t ] - β * KL(π_θ || π_ref)
 
-    According to the Dual-clipping paper (https://arxiv.org/pdf/1912.09729),
-    the paper imposes an additional upper bound on the probability ratio, where curr_lp >> prev_lp
-    to prevent excessive policy updates when dealing with strongly negative advantages,
-    the loss function is modified to the following when A_t < 0:
+    Also supports "Dual-Clipping" from https://arxiv.org/pdf/1912.09729, which
+    imposes an additional upper bound on the probability ratio when advantages are negative.
+    This prevents excessive policy updates. $rA << 0$ -> $cA$(clipped) 
+    The loss function is modified to the following when A_t < 0:
     L(θ) = E_t [ max(min(r_t(θ) * A_t, clip(r_t(θ), 1-ε, 1+ε) * A_t), c * A_t) ] - β * KL(π_θ || π_ref)
 
     where:
-    - c is the dual-clip parameter (ratio_clip_c) and must be greater than 1 and set as 3 empirically
+    - c is the dual-clip parameter (ratio_clip_c), which must be greater than 1 and is
+      usually set as 3 empirically.
 
     Due to potential numerical instability, we cast the logits to float32 before computing the loss.
     """
