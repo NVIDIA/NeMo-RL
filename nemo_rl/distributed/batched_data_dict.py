@@ -32,6 +32,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         super().__init__(*args, **kwargs)
         self.metadata = {
             "is_sorted" : False,
+            "is_chunked" : False,
             "micro_batch_indices": None
         }
 
@@ -246,23 +247,24 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             else batch_size // shards
         )
 
+
+        # unsort if already sorted to ensure chunking occurs on the original ordering
+        if self.metadata['is_sorted']:
+            indices = range(total_batch_size)
+            unsorted = sorted(zip(self.metadata['sort_indices'], indices), key=lambda pair: pair[0])
+            unsorted_indices = [idx[1] for idx in unsorted]
+
+            for k,v in self.data.items():
+                if torch.is_tensor(v):
+                    sorted_v = v.index_select(dim=0, index=torch.IntTensor(unsorted_indices))
+                else:
+                    sorted_v = [v[i] for i in unsorted_indices]
+                self.data[k] = sorted_v
+
         # if using dynamic microbatching, preprocess the data by sorting the data 
         # by the sequence lengths. This ensures each DP rank receives samples of about 
         # equal sequence lengths which improves load balancing
         if dynamic_batching_cfg is not None:
-            # unsort if already sorted to ensure chunking occurs on the original ordering
-            if self.metadata['is_sorted']:
-                indices = range(total_batch_size)
-                unsorted = sorted(zip(self.metadata['sort_indices'], indices), key=lambda pair: pair[0])
-                unsorted_indices = [idx[1] for idx in unsorted]
-
-                for k,v in self.data.items():
-                    if torch.is_tensor(v):
-                        sorted_v = v.index_select(dim=0, index=torch.IntTensor(unsorted_indices))
-                    else:
-                        sorted_v = [v[i] for i in unsorted_indices]
-                    self.data[k] = sorted_v
-
             batch_sorted_indices = []
             for chunk_idx in range(num_chunks):
                 chunk_start = chunk_idx * batch_size
@@ -366,6 +368,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             for shard in aggregated_shards:
                 shard.metadata['is_sorted'] = True
                 shard.metadata['micro_batch_indices'] = micro_batch_indices
+
         return aggregated_shards    
 
     def get_batch(self, batch_idx, batch_size) -> "SlicedDataDict":
@@ -382,7 +385,8 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         end = batch_size * (batch_idx+1)
         batch = self.slice(start, end)
         if self.metadata['micro_batch_indices'] is not None:
-            batch.metadata['micro_batch_indices'] = self.metadata['micro_batch_indices'][batch_idx]
+            batch.metadata['is_sorted'] = True
+            batch.metadata['micro_batch_indices'] = [self.metadata['micro_batch_indices'][batch_idx]]
 
         return batch
 
@@ -433,7 +437,9 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         sequence_dim = 1,
     ) -> Iterator["SlicedDataDict"]:
         assert "micro_batch_indices" in self.metadata  
-        for start, end in self.metadata['micro_batch_indices']:
+        assert len(self.metadata['micro_batch_indices']) == 1
+
+        for start, end in self.metadata['micro_batch_indices'][0]:
             mb = self.slice(start, end)
             # trucate to the longest sequence to minimize padding
             padded_seqlen = (

@@ -349,14 +349,12 @@ class DTensorPolicyWorker:
                 # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
                 # so its safe to not check for the case where the last data slice is smaller than mbs
                 if self.cfg['dynamic_batching']:
-                    num_microbatches = len(batch.metadata['micro_batch_indices'])
                     mb_iterator = batch.make_microbatch_iterator_with_dynamic_shapes(
                         max_sequence_length=data['input_ids'].shape[1],
                         round_seq_len_multiple=64,
                         input_lengths_key='input_lengths',
                     )
                 else:
-                    num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
                     mb_iterator = batch.make_microbatch_iterator(mbs)
 
                 for mb in mb_iterator:      
@@ -402,7 +400,7 @@ class DTensorPolicyWorker:
                     ## scale by the number of global batches so we get the correct
                     ## value when summing metrics across all microbatches
                     for k in loss_metrics.keys():
-                        loss_metrics[k] /= num_global_batches
+                        loss_metrics[k] *= batch_size / local_gbs
                     num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
                     loss_metrics["normalization_factor"] = (
@@ -417,7 +415,7 @@ class DTensorPolicyWorker:
 
                         # when FSDP reduces the gradients over the DP dim, they're automatically averaged
                         # but we want to sum them so we cancel out the average here
-                        loss *= self.dp_size
+                        loss *= (batch_size / mbs) * self.dp_size
                         loss.backward()
                     if num_valid_samples > 0:
                         mb_losses.append(loss.item())
@@ -510,7 +508,6 @@ class DTensorPolicyWorker:
         with unshard_fsdp2_model(self.model), torch.no_grad():
             data.to("cuda")
             if self.cfg['dynamic_batching']:
-                data.metadata['micro_batch_indices'] = data.metadata['micro_batch_indices'][0]
                 mb_iterator = data.make_microbatch_iterator_with_dynamic_shapes(
                     max_sequence_length=data['input_ids'].shape[1],
                     round_seq_len_multiple=64,
