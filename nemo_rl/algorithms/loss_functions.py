@@ -75,7 +75,7 @@ class ClippedPGLossFn(LossFunction):
 
     Also supports "Dual-Clipping" from https://arxiv.org/pdf/1912.09729, which
     imposes an additional upper bound on the probability ratio when advantages are negative.
-    This prevents excessive policy updates. $rA << 0$ -> $cA$(clipped) 
+    This prevents excessive policy updates. $rA << 0$ -> $cA$(clipped)
     The loss function is modified to the following when A_t < 0:
     L(θ) = E_t [ max(min(r_t(θ) * A_t, clip(r_t(θ), 1-ε, 1+ε) * A_t), c * A_t) ] - β * KL(π_θ || π_ref)
 
