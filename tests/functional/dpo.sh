@@ -20,6 +20,7 @@ mkdir -p $EXP_DIR $LOG_DIR
 
 cd $PROJECT_ROOT
 uv run $PROJECT_ROOT/examples/run_dpo.py \
+    policy.model_name=Qwen/Qwen3-0.6B \
     cluster.gpus_per_node=2 \
     dpo.max_num_steps=3 \
     dpo.val_batches=1 \

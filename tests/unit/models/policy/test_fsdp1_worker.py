@@ -30,8 +30,10 @@ from nemo_rl.models.policy.hf_policy import HfPolicy
 from tests.unit.test_utils import nll_loss, simple_loss
 
 basic_llama_test_config: PolicyConfig = {
-    "model_name": "meta-llama/Llama-3.2-1B",
-    "tokenizer": {"name": "meta-llama/Llama-3.2-1B"},
+    "model_name": "Qwen/Qwen3-0.6B",
+    "tokenizer": {
+        "name": "Qwen/Qwen3-0.6B",
+    },
     "generation_batch_size": 1,  # Small batch size for testing
     "train_global_batch_size": 4,
     "train_micro_batch_size": 1,
@@ -116,14 +118,14 @@ def test_input_data(tokenizer):
     ]
 
     expected_generations = [
-        "Write a story about a magical forest. The forest is magical because it is full of magical creatures. The creatures are",
-        "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis is the process by which plants",
-        "What are the benefits of exercise? The benefits of exercise are many and varied. It is a great way to improve",
-        "Describe the water cycle in your own words.\nDescribe the water cycle in your own words.\nDescribe the",
-        "What is the capital of France? A. Paris B. New York C. Washington D. Baton Rouge\nA",
-        "Who is the president of the USA? Who is the president of the USA? Who is the president of the USA?",
-        "What is the capital of the moon? A. Houston B. New York C. Washington D. Denver\nA.",
-        "Where is the sun? Where is the moon? Where is the earth? Where is the sky? Where",
+        "Write a story about a magical forest where the trees are made of stars and the ground is made of light. The",
+        "Explain how photosynthesis works in the context of the environment and the role of the sun in it.\nAnswer",
+        "What are the benefits of exercise? What are the risks of exercise? What are the benefits and risks of physical activity",
+        "Describe the water cycle and its importance in the environment.\nAnswer:\nThe **water cycle** is a",
+        "What is the capital of France? The capital of France is Paris. The answer is Paris. The answer is Paris",
+        "Who is the president of the USA? The answer is the president of the United States of America, which is the president",
+        "What is the capital of the moon? The answer is...? Let me think. I know that the moon is a",
+        "Where is the sun? Where is the moon? Where is the earth? Where is the sun in the",
     ]
 
     # Tokenize the prompts
@@ -464,8 +466,8 @@ def test_hf_policy_training(training_setup, tracker, num_gpus, config_name):
             "FSDP offload after training should be less than 1.2GB)"
         )
     else:
-        assert after_training_mem_allocated > 10_000, (
-            f"Memory after training with {config_name} config should be more than 10GB"
+        assert after_training_mem_allocated > 5_000, (
+            f"Memory after training with {config_name} config should be more than 5GB"
         )
 
     assert after_offload_mem_allocated < 1_200, (
@@ -722,8 +724,8 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
     config["generation"]["stop_strings"] = ["because it is", "A. Houston"]
 
     # Ensure we can get same output
-    assert config["model_name"] == "meta-llama/Llama-3.2-1B", (
-        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    assert config["model_name"] == "Qwen/Qwen3-0.6B", (
+        "Model name should be Qwen/Qwen3-0.6B to get expected output"
     )
 
     # Create policy
@@ -746,14 +748,14 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
     # Check result
     generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
     assert generated_texts == [
-        "Write a story about a magical forest. The forest is magical because it is",
-        "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis is the process",
-        "What are the benefits of exercise? The benefits of exercise are many",
-        "Describe the water cycle in your own words.\nDescribe the water cycle in your own words.\nDescribe the",
-        "What is the capital of France? A. Paris B. New York C. Washington D. Baton Rouge\nA",
-        "Who is the president of the USA? Who is the president of the USA? Who is the president of the USA?",
-        "What is the capital of the moon? A. Houston",
-        "Where is the sun? Where is the moon? Where is the earth? Where is the sky? Where",
+        "Write a story about a magical forest where the trees are made of stars and the ground is made of light. The",
+        "Explain how photosynthesis works in the context of the environment and the role of the sun in it.\nAnswer",
+        "What are the benefits of exercise? What are the risks of exercise? What are the benefits and risks of physical activity",
+        "Describe the water cycle and its importance in the environment.\nAnswer:\nThe **water cycle** is a",
+        "What is the capital of France? The capital of France is Paris. The answer is Paris. The answer is Paris",
+        "Who is the president of the USA? The answer is the president of the United States of America, which is the president",
+        "What is the capital of the moon? The answer is...? Let me think. I know that the moon is a",
+        "Where is the sun? Where is the moon? Where is the earth? Where is the sun in the",
     ], "Output should be the same as the expected output"
 
     # Clean up after the test

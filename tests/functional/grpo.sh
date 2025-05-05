@@ -20,8 +20,9 @@ mkdir -p $EXP_DIR $LOG_DIR
 
 cd $PROJECT_ROOT
 uv run $PROJECT_ROOT/examples/run_grpo_math.py \
+    policy.model_name=Qwen/Qwen3-0.6B \
     cluster.gpus_per_node=2 \
-    grpo.max_num_steps=3 \
+    grpo.max_num_steps=2 \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \

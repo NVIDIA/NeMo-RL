@@ -30,9 +30,9 @@ from nemo_rl.models.policy import PolicyConfig
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
-    "model_name": "meta-llama/Llama-3.2-1B",  # Small model for testing
+    "model_name": "Qwen/Qwen3-0.6B",  # Small model for testing
     "tokenizer": {
-        "name": "meta-llama/Llama-3.2-1B",
+        "name": "Qwen/Qwen3-0.6B",
     },
     "dtype": "bfloat16",
     "max_new_tokens": 10,
@@ -411,13 +411,13 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
         ]
 
         expected_generations = [
-            "Write a story about a magical forest. The forest is magical because it is full of",
-            "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis",
-            "What are the benefits of exercise? The benefits of exercise are many and varied. It",
-            "Describe the water cycle in your own words.\nDescribe the water cycle in",
-            "What is the capital of France? A. Paris B. New York C. Washington",
-            "Who is the president of the USA? Who is the president of the USA? Who is",
-            "What is the capital of the moon? A. Houston, Texas B. New York City",
+            "Write a story about a magical forest where the trees are made of glass and the ground",
+            "Explain how photosynthesis works in the context of the environment and the role of",
+            "What are the benefits of exercise? What are the risks of exercise? What are the",
+            "Describe the water cycle and its importance in the environment.\nAnswer:\nThe",
+            "What is the capital of France? The capital of France is Paris. The answer is",
+            "Who is the president of the USA? The answer is the president of the United States of",
+            "What is the capital of the moon? The answer is...? The answer is...?",
             "Where is the sun? Where is the moon? Where is the earth?",
         ]
 
@@ -641,8 +641,8 @@ def test_vllm_generate_text(cluster, tokenizer):
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
 
     # Ensure we can get same output
-    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
-        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    assert vllm_config["model_name"] == "Qwen/Qwen3-0.6B", (
+        "Model name should be Qwen/Qwen3-0.6B to get expected output"
     )
     assert vllm_config["vllm_cfg"]["tensor_parallel_size"] == 1, (
         "Tensor parallel size should be 1 to get expected output"
@@ -654,8 +654,8 @@ def test_vllm_generate_text(cluster, tokenizer):
     # Generate and check result
     output = vllm_generation.generate_text(test_prompts, greedy=True)
     assert output["texts"] == [
-        " Kelsey and I am a 2018 graduate",
-        " Paris. The city is located in the north of",
+        " Lina. I'm a 22-year",
+        " Paris. The capital of France is also the capital",
     ], "Output should be the same as the expected output"
 
     # Clean up
@@ -778,8 +778,8 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=False)
 
     # Ensure we can get same peak memory
-    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
-        "Model name should be meta-llama/Llama-3.2-1B to get expected peak memory"
+    assert vllm_config["model_name"] == "Qwen/Qwen3-0.6B", (
+        "Model name should be Qwen/Qwen3-0.6B to get expected peak memory"
     )
 
     # Create policies
@@ -843,8 +843,8 @@ def test_vllm_generation_with_stop(
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=is_eval)
 
     # Ensure we can get same output
-    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
-        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    assert vllm_config["model_name"] == "Qwen/Qwen3-0.6B", (
+        "Model name should be Qwen/Qwen3-0.6B to get expected output"
     )
     assert vllm_config["vllm_cfg"]["tensor_parallel_size"] == 1, (
         "Tensor parallel size should be 1 to get expected output"
@@ -875,8 +875,8 @@ def test_vllm_generation_with_stop(
     output_ids = outputs["output_ids"]
     generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
     assert generated_texts == [
-        "Hello, my name is Kelsey and I am a",
-        "The capital of France is Paris. The city",
+        "Hello, my name is Lina. I'm a 22-year",
+        "The capital of France is Paris. The capital of France is also the capital",
     ], "Output should be the same as the expected output"
 
     # test generate_text
@@ -887,8 +887,8 @@ def test_vllm_generation_with_stop(
     test_prompts = BatchedDataDict({"prompts": test_prompts})
     output = vllm_generation.generate_text(test_prompts, greedy=True)
     assert output["texts"] == [
-        " Kelsey and I am a",
-        " Paris. The city",
+        " Lina. I'm a 22-year",
+        " Paris. The capital of France is also the capital",
     ], "Output should be the same as the expected output"
 
     # Clean up

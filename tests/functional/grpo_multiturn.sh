@@ -20,6 +20,7 @@ mkdir -p $EXP_DIR $LOG_DIR
 
 cd $PROJECT_ROOT
 uv run $PROJECT_ROOT/examples/run_grpo_sliding_puzzle.py \
+    policy.model_name=Qwen/Qwen3-0.6B \
     cluster.gpus_per_node=2 \
     grpo.max_rollout_turns=10 \
     grpo.max_num_steps=3 \

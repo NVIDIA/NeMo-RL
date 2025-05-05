@@ -79,7 +79,7 @@ exclude = '''
 '''
 
 [tool.pytest.ini_options]
-addopts = "--cov=nemo_rl --cov-report=term --cov-report=json -s -rA -x"
+addopts = "--durations=15 -s -rA -x"
 testpaths = ["tests"]
 python_files = "test_*.py"
 

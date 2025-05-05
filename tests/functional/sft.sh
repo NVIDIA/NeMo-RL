@@ -23,7 +23,7 @@ mkdir -p $EXP_DIR $LOG_DIR
 
 cd $PROJECT_ROOT
 uv run $PROJECT_ROOT/examples/run_sft.py \
-    policy.model_name=meta-llama/Llama-3.2-1B \
+    policy.model_name=Qwen/Qwen3-0.6B \
     cluster.gpus_per_node=2 \
     sft.max_num_steps=10 \
     sft.val_batches=1 \
