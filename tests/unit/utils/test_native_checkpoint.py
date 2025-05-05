@@ -61,6 +61,9 @@ simple_policy_config = {
         "tensor_parallel_size": 1,
     },
     "max_grad_norm": 1.0,
+    "generation": {
+        "temperature": 1.0,
+    },
 }
 
 

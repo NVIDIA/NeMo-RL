@@ -375,9 +375,11 @@ class DTensorPolicyWorker:
 
                     # Update parameters
                     self.optimizer.step()
-                    self.scheduler.step()
 
                 losses.append(torch.tensor(mb_losses).sum().item())
+
+            # increment scheduler after all batches in rollout are processed
+            self.scheduler.step()
 
             # Compute global loss across all ranks
             with torch.no_grad():
