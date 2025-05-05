@@ -126,6 +126,20 @@ where:
 - $\beta$ is the KL penalty coefficient
 - $\pi_{\text{ref}}$ is the reference policy
 
+Also supports "Dual-Clipping" from https://arxiv.org/pdf/1912.09729, which
+imposes an additional upper bound on the probability ratio when advantages are negative.
+This prevents excessive policy updates. $rA \ll 0$ -> $cA$(clipped).
+The loss function is modified to the following when A_t < 0:
+
+$$
+L(\theta) = E_t \Big[ \max \Big( \min \big(r_t(\theta) A_t, \text{clip}(r_t(\theta), 1-\varepsilon, 1+\varepsilon) A_t \big), c A_t \Big) \Big] - \beta D_{\text{KL}} (\pi_\theta \| \pi_\text{ref})
+$$
+
+where:
+- c is the dual-clip parameter (ratio_clip_c), which must be greater than 1 and is
+    usually set as 3 empirically
+- $r_t(\theta)$ is the ratio $\frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}$ that measures how much the policy has change
+
 #### Improvements to the GRPO loss formulation for stability and accuracy
 
 #### On-Policy KL Approximation
