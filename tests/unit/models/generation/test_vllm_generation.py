@@ -36,7 +36,7 @@ basic_vllm_test_config: VllmConfig = {
     },
     "dtype": "bfloat16",
     "max_new_tokens": 10,
-    "temperature": 1.0,
+    "temperature": 0.8,
     "top_p": 1.0,
     "top_k": None,
     "stop_token_ids": None,
@@ -85,6 +85,9 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
         },
         "max_grad_norm": 1.0,
         "make_sequence_length_divisible_by": 1,
+        "generation": {
+            "temperature": 0.8,
+        },
     }
 
 
