@@ -27,7 +27,7 @@ FROM base AS hermetic
 WORKDIR /opt/nemo-rl
 
 # First copy only the dependency files
-COPY --chown=ray --chmod=755 pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock ./
 
 ENV UV_PROJECT_ENVIRONMENT=/opt/nemo_rl_venv
 ENV VIRTUAL_ENV=/opt/nemo_rl_venv
