@@ -35,6 +35,7 @@ policy:
       kwargs:
         start_factor: 0.1
         end_factor: 1.0
+        # The scheduler iteration is per GPRO step and is decoupled with the optimizer step (may be >=1 per GPRO step)
         total_iters: 13
     - name: "torch.optim.lr_scheduler.ConstantLR"
       kwargs:
