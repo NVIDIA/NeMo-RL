@@ -2,7 +2,7 @@
 
 <!-- markdown all in one -->
 - [Nemo RL: A Scalable and Efficient Post-Training Library](#nemo-rl-a-scalable-and-efficient-post-training-library)
-  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
   - [Prerequisites](#prerequisites)
     - [GRPO](#grpo)
       - [GRPO Single Node](#grpo-single-node)
@@ -30,7 +30,7 @@ What you can expect:
 - **Flexibility** with a modular design that allows easy integration and customization.
 - **Comprehensive documentation** that is both detailed and user-friendly, with practical examples.
 
-## Table of Contents
+## Features
 
 ✅ _Available now_ | 🔜 _Coming in v0.3_
 
