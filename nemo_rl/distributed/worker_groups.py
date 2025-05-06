@@ -180,9 +180,10 @@ class RayWorkerBuilder:
                     venv_name=f"{unwrapped_cls.__module__}.{unwrapped_cls.__name__}",
                 )
                 options["runtime_env"]["py_executable"] = venv_python
-            return worker_class.options(**options).remote(
+            worker = worker_class.options(**options).remote(
                 *self.init_args, **worker_kwargs
             )
+            return worker
 
     def __init__(self, ray_actor_class_str: str, *args, **kwargs):
         self.ray_actor_class_str = ray_actor_class_str
@@ -218,40 +219,7 @@ class RayWorkerBuilder:
             A Ray actor reference to the created worker
         """
         # Set up worker arguments and resources
-        # worker_class = self.ray_actor_class
-        # worker_kwargs = dict(self.kwargs)
         options = deepcopy(extra_options)
-
-        #         # Use the worker's configuration interface if available
-        # if hasattr(worker_class, "configure_worker"):
-        # # Get complete worker configuration from the worker class
-        # resources, env_vars, init_kwargs = worker_class.configure_worker(
-        # num_gpus=num_gpus,
-        # bundle_indices=bundle_indices,
-        # )
-
-        # # Apply resource configuration
-        # if resources and "num_gpus" in resources:
-        # num_gpus = resources["num_gpus"]
-
-        # # Apply environment variables if provided
-        # if env_vars:
-        # if "runtime_env" not in options:
-        # options["runtime_env"] = {}
-        # for k, v in env_vars.items():
-        # options["runtime_env"]["env_vars"][k] = v
-
-        # # Apply initialization parameters
-        # if init_kwargs:
-        # worker_kwargs.update(init_kwargs)
-
-        # # Create options for Ray actor
-        # options["scheduling_strategy"] = PlacementGroupSchedulingStrategy(
-        # placement_group=placement_group,
-        # placement_group_bundle_index=placement_group_bundle_index,
-        # placement_group_capture_child_tasks=True,
-        # )
-        # options["num_gpus"] = num_gpus
 
         # If the user hasn't specified a py_executable, use the worker class's default
         initializer_options = {}
@@ -278,7 +246,7 @@ class RayWorkerBuilder:
         isolated_initializer = self.IsolatedWorkerInitializer.options(
             **initializer_options
         ).remote(self.ray_actor_class_str, *self.args, **self.kwargs)
-        return ray.get(
+        worker = ray.get(
             isolated_initializer.create_worker.remote(
                 placement_group,
                 placement_group_bundle_index,
@@ -287,7 +255,9 @@ class RayWorkerBuilder:
                 **options,
             )
         )
-        # return worker_class.options(**options).remote(*self.args, **worker_kwargs)
+        # We hold onto a reference to the initializer actor to avoid gc (would kill the child, 'real' actor)
+        worker._RAY_INITIALIZER_ACTOR_REF_TO_AVOID_GC = isolated_initializer
+        return worker
 
 
 class RayWorkerGroup:

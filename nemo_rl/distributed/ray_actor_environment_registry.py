@@ -15,7 +15,7 @@ import collections
 
 from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 
-DEFAULT_ACTOR_ENVIRONMENT = PY_EXECUTABLES.BASE
+DEFAULT_ACTOR_ENVIRONMENT = PY_EXECUTABLES.SYSTEM
 ACTOR_ENVIRONMENT_REGISTRY = {
     "nemo_rl.models.generation.vllm.VllmGenerationWorker": PY_EXECUTABLES.VLLM,
     "nemo_rl.models.policy.dtensor_policy_worker.DTensorPolicyWorker": PY_EXECUTABLES.BASE,
