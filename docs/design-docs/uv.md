@@ -70,7 +70,7 @@ When a NeMo RL job is started:
 1. The driver script creates several {py:class}`RayWorkerGroup <nemo_rl.distributed.worker_groups.RayWorkerGroup>`s.
 2. Each worker group will create their workers which are wrapped in a {py:class}`RayWorkerBuilder <nemo_rl.distributed.worker_groups.RayWorkerBuilder>` where the fully qualified name (FQN) of the worker class is passed as a string.
 3. {py:class}`RayWorkerBuilder <nemo_rl.distributed.worker_groups.RayWorkerBuilder>` launches the worker under {py:class}`RayWorkerBuilder <nemo_rl.distributed.worker_groups.RayWorkerBuilder. IsolatedWorkerInitializer>` which allows us to initialize the class without importing packages not available in the base environment.
-3. Before the worker class is instantiated by the `RayWorkerBuilder`, if (1) A `PY_EXECUTABLE` is defined on the worker class (decorated with `@ray.remote` and set in the [registry](../../nemo_rl/distributed/ray_actor_environment_registry.py)) and (2) it starts with `uv`; a `venv` is created with all the dependencies it needs and the `runtime_env["py_executable"]` is replaced with the `venv`'s python interpreter.
+4. Before the worker class is instantiated by the `RayWorkerBuilder`, the FQN is used to lookup -- in a [global registry](../../nemo_rl/distributed/ray_actor_environment_registry.py))) -- to determine which member of `PY_EXECUTABLES` should be used to launch that set of workers. If the chosen `PY_EXECUTABLES.*` starts with `uv`; a `venv` is created with all the dependencies it needs and the `runtime_env["py_executable"]` is replaced with the `venv`'s python interpreter.
 
 This approach allows a fast start-up and maintains dependency isolation. It also has the added benefit of having all the virtual environments local under `./venvs`.
 
