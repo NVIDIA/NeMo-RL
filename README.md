@@ -53,13 +53,13 @@ What you can expect:
 
 ## Prerequisites
 
-Clone **NeMo RL**
+Clone **NeMo RL**.
 ```sh
 git clone git@github.com:NVIDIA/nemo-rl.git
 cd nemo-rl
 ```
 
-Install `uv`
+Install `uv`.
 ```sh
 # For faster setup and environment isolation, we use `uv`
 pip install uv
