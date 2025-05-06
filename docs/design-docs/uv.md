@@ -50,10 +50,10 @@ We provide several predefined Python executable configurations in {py:class}`PY_
 class PY_EXECUTABLES:
     SYSTEM = sys.executable
 
-    # Use NeMo-RL direct dependencies.
+    # Use NeMo RL direct dependencies.
     BASE = "uv run --locked"
 
-    # Use NeMo-RL direct dependencies and vllm.
+    # Use NeMo RL direct dependencies and vllm.
     VLLM = "uv run --locked --extra vllm"
 ```
 

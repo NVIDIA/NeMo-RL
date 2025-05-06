@@ -16,7 +16,7 @@ If not specified, `config` will default to [examples/configs/sft.yaml](../../exa
 
 ## Example Configuration File
 
-NeMo-RL allows users to configure experiments using `yaml` config files. An example SFT configuration file can be found [here](../../examples/configs/sft.yaml).
+NeMo RL allows users to configure experiments using `yaml` config files. An example SFT configuration file can be found [here](../../examples/configs/sft.yaml).
 
 To override a value in the config, either update the value in the `yaml` file directly, or pass the override via the command line. For example:
 

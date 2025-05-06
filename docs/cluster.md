@@ -9,7 +9,7 @@ This guide explains how to initialize NeMo RL clusters.
 ### Batched Job Submission
 
 ```sh
-# Run from the root of NeMo-RL repo
+# Run from the root of NeMo RL repo
 NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
 
 COMMAND="uv run ./examples/run_grpo_math.py" \
@@ -45,7 +45,7 @@ A key advantage of running interactively on the head node is the ability to exec
 
 To run interactively, launch the same command as [Batched Job Submission](#batched-job-submission), but omit the `COMMAND` line:
 ```sh
-# Run from the root of NeMo-RL repo
+# Run from the root of NeMo RL repo
 NUM_ACTOR_NODES=1  # Total nodes requested (head is colocated on ray-worker-0)
 
 CONTAINER=YOUR_CONTAINER \
