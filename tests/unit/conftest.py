@@ -497,12 +497,13 @@ def tiny_qwen3_model_path():
     del model, tokenizer
     yield model_path
 
+
 @pytest.fixture(scope="session", autouse=True)
 def tiny_gemma3_model_path():
     """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
     import shutil
 
-    from transformers import AutoTokenizer, Gemma3TextConfig, Gemma3ForCausalLM
+    from transformers import AutoTokenizer, Gemma3ForCausalLM, Gemma3TextConfig
 
     model_path = TEST_ASSETS.TINY_GEMMA3_MODEL_PATH
     # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
