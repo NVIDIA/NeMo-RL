@@ -8,7 +8,7 @@ To run the evaluation, you can use the default configuration file or specify a c
 
 ### Start Script
 
-**Evaluating Standard Models:**
+**Evaluate Standard Models:**
 
 To run evaluation using a model directly from Hugging Face Hub or a local path already in HF format, use the `run_eval.py` script.
 
