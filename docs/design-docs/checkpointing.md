@@ -8,3 +8,12 @@ A checkpoint converter is provided to convert a Torch distributed checkpoint che
 uv run examples/convert_dcp_to_hf.py --config=<YAML CONFIG USED DURING TRAINING> <ANY CONFIG OVERRIDES USED DURING TRAINING> --dcp-ckpt-path=<PATH TO DIST CHECKPOINT TO CONVERT> --hf-ckpt-path=<WHERE TO SAVE HF CHECKPOINT>
 ```
 
+Usually Hugging Face checkpoints keep the weights and tokenizer together (which we also recommend for provenance). You can copy it afterwards. Here's an end-to-end example:
+
+```sh
+# Change to your appropriate checkpoint directory
+CKPT_DIR=results/sft/step_10
+
+uv run examples/convert_dcp_to_hf.py --config=$CKPT_DIR/config.yaml --dcp-ckpt-path=$CKPT_DIR/policy/weights --hf-ckpt-path=${CKPT_DIR}-hf
+rsync -ahP $CKPT_DIR/policy/tokenizer ${CKPT_DIR}-hf/
+```
