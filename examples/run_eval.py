@@ -30,7 +30,7 @@ from nemo_rl.data.datasets import AllTaskProcessedDataset
 from nemo_rl.data.interfaces import TaskDataSpec
 from nemo_rl.data.llm_message_utils import remap_dataset_keys
 from nemo_rl.distributed.ray_actor_environment_registry import (
-    ACTOR_ENVIRONMENT_REGISTRY,
+    get_actor_python_env,
 )
 from nemo_rl.distributed.virtual_cluster import init_ray
 from nemo_rl.environments.math_environment import MathEnvironment
@@ -77,9 +77,9 @@ def setup_data(tokenizer: AutoTokenizer, data_config: MathDataConfig, env_config
 
     math_env = MathEnvironment.options(
         runtime_env={
-            "py_executable": ACTOR_ENVIRONMENT_REGISTRY[
+            "py_executable": get_actor_python_env(
                 "nemo_rl.environments.math_environment.MathEnvironment"
-            ]
+            )
         }
     ).remote(env_configs["math"])
 

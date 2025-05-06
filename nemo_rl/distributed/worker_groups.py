@@ -24,7 +24,7 @@ from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
 from nemo_rl.distributed.batched_data_dict import SlicedDataDict
 from nemo_rl.distributed.ray_actor_environment_registry import (
-    ACTOR_ENVIRONMENT_REGISTRY,
+    get_actor_python_env,
 )
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.utils.venvs import create_local_venv
@@ -87,8 +87,8 @@ class MultiWorkerFuture:
 class RayWorkerBuilder:
     @ray.remote
     class IsolatedWorkerInitializer:
-        def __init__(self, ray_actor_class_str: str, *init_args, **init_kwargs):
-            self.ray_actor_class_str = ray_actor_class_str
+        def __init__(self, ray_actor_class_fqn: str, *init_args, **init_kwargs):
+            self.ray_actor_class_fqn = ray_actor_class_fqn
             self.init_args = init_args
             self.init_kwargs = init_kwargs
 
@@ -121,7 +121,7 @@ class RayWorkerBuilder:
                 A Ray actor reference to the created worker
             """
             # Set up worker arguments and resources
-            module_name, class_name = self.ray_actor_class_str.rsplit(".", 1)
+            module_name, class_name = self.ray_actor_class_fqn.rsplit(".", 1)
             module = importlib.import_module(module_name)
             worker_class = getattr(module, class_name)
             worker_kwargs = dict(self.init_kwargs)
@@ -161,9 +161,9 @@ class RayWorkerBuilder:
             if not options.get("runtime_env", {}).get("py_executable", None):
                 if "runtime_env" not in options:
                     options["runtime_env"] = {}
-                options["runtime_env"]["py_executable"] = ACTOR_ENVIRONMENT_REGISTRY[
-                    self.ray_actor_class_str
-                ]
+                options["runtime_env"]["py_executable"] = get_actor_python_env(
+                    self.ray_actor_class_fqn
+                )
 
             if (
                 options.get("runtime_env", {})
@@ -185,8 +185,8 @@ class RayWorkerBuilder:
             )
             return worker
 
-    def __init__(self, ray_actor_class_str: str, *args, **kwargs):
-        self.ray_actor_class_str = ray_actor_class_str
+    def __init__(self, ray_actor_class_fqn: str, *args, **kwargs):
+        self.ray_actor_class_fqn = ray_actor_class_fqn
         self.args = args
         self.kwargs = kwargs
 
@@ -226,9 +226,9 @@ class RayWorkerBuilder:
         if not options.get("runtime_env", {}).get("py_executable", None):
             if "runtime_env" not in options:
                 options["runtime_env"] = {}
-            options["runtime_env"]["py_executable"] = ACTOR_ENVIRONMENT_REGISTRY[
-                self.ray_actor_class_str
-            ]
+            options["runtime_env"]["py_executable"] = get_actor_python_env(
+                self.ray_actor_class_fqn
+            )
 
         if options.get("runtime_env", {}).get("py_executable", "n/a").startswith("uv"):
             # If the py_executable begins with uv it signals that we need to create a
@@ -238,14 +238,14 @@ class RayWorkerBuilder:
             # unwrapped_cls = worker_class.__ray_actor_class__
             venv_python = create_local_venv(
                 py_executable=options["runtime_env"]["py_executable"],
-                venv_name=self.ray_actor_class_str,  # f"{unwrapped_cls.__module__}.{unwrapped_cls.__name__}",
+                venv_name=self.ray_actor_class_fqn,
             )
             options["runtime_env"]["py_executable"] = venv_python
 
         initializer_options = {"runtime_env": options["runtime_env"]}
         isolated_initializer = self.IsolatedWorkerInitializer.options(
             **initializer_options
-        ).remote(self.ray_actor_class_str, *self.args, **self.kwargs)
+        ).remote(self.ray_actor_class_fqn, *self.args, **self.kwargs)
         worker = ray.get(
             isolated_initializer.create_worker.remote(
                 placement_group,

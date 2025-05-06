@@ -29,7 +29,7 @@ from nemo_rl.data.hf_datasets.deepscaler import DeepScalerDataset
 from nemo_rl.data.hf_datasets.openmathinstruct2 import OpenMathInstruct2Dataset
 from nemo_rl.data.interfaces import DatumSpec, LLMMessageLogType, TaskDataSpec
 from nemo_rl.distributed.ray_actor_environment_registry import (
-    ACTOR_ENVIRONMENT_REGISTRY,
+    get_actor_python_env,
 )
 from nemo_rl.distributed.virtual_cluster import init_ray
 from nemo_rl.environments.math_environment import MathEnvironment
@@ -196,9 +196,9 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig, env_configs):
 
     math_env = MathEnvironment.options(
         runtime_env={
-            "py_executable": ACTOR_ENVIRONMENT_REGISTRY[
+            "py_executable": get_actor_python_env(
                 "nemo_rl.environments.math_environment.MathEnvironment"
-            ],
+            ),
             "env_vars": dict(os.environ),  # Pass thru all user environment variables
         }
     ).remote(env_configs["math"])
