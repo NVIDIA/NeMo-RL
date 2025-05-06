@@ -180,19 +180,6 @@ class VllmGenerationWorker:
             # For non-TP mode, explicitly set executor to None to avoid Ray issues
             vllm_kwargs["distributed_executor_backend"] = None
 
-        # Monkey patch `initialize_dummy_weights` to be a no-op during the LLM initialization.
-        # This is to address an issue where `initialize_dummy_weights` incorrectly sets the dummy weights to buffers
-        # that do not get loaded by the HF state_dict.
-        # (https://github.com/vllm-project/vllm/blob/8fc88d63f1163f119dd740b1666069535f052ff3/vllm/model_executor/models/gemma3.py#L372)
-        from vllm.model_executor.model_loader import loader
-
-        _orig_initialize_dummy_weights = loader.initialize_dummy_weights
-        if not os.environ.get("NRL_VLLM_ALLOW_DUMMY_INIT"):
-            print(
-                "Monkey patching vllm's initialize_dummy_weights to be no-op during LLM initializtion.",
-                "To enable dummy weights initialization, set NRL_VLLM_ALLOW_DUMMY_INIT=1",
-            )
-            loader.initialize_dummy_weights = lambda *args, **kwargs: None
         self.llm = vllm.LLM(
             model=self.model_name,
             # Training pipeline will set this to "dummy" and eval will load real weights using 'auto'
@@ -212,7 +199,6 @@ class VllmGenerationWorker:
             disable_log_stats=True,
             **vllm_kwargs,
         )
-        loader.initialize_dummy_weights = _orig_initialize_dummy_weights
 
     def llm(self):
         return self.llm

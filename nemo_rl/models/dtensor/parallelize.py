@@ -93,13 +93,21 @@ def _parallelize_gemma3(
     if isinstance(model, Gemma3ForConditionalGeneration):
         layers = model.language_model.model.layers
         model_prefix = "language_model.model"
+        num_attention_heads = model.config.text_config.num_attention_heads
+        num_key_value_heads = model.config.text_config.num_key_value_heads
     else:
         layers = model.model.layers
         model_prefix = "model"
+        num_attention_heads = model.config.num_attention_heads
+        num_key_value_heads = model.config.num_key_value_heads
 
     if tp_mesh.size() > 1:
-        # TODO: add asserts
-        # num_key_value_groups % TP_size == 0 ?
+        assert num_key_value_heads % tp_mesh.size() == 0, (
+            f"num_key_value_heads ({num_key_value_heads}) must be divisible by TP size ({tp_mesh.size()})"
+        )
+        assert num_attention_heads % tp_mesh.size() == 0, (
+            f"num_attention_heads ({num_attention_heads}) must be divisible by TP size ({tp_mesh.size()})"
+        )
 
         # For gemma3 models, we don't include the model.embed_tokens and lm_head in the 
         # parallelization plans because they have tied weights.
