@@ -94,7 +94,7 @@ To run GRPO on a single GPU for `Qwen/Qwen2.5-1.5B`:
 uv run python examples/run_grpo_math.py
 ```
 
-By default, this uses the configuration in `examples/configs/grpo_math_1B.yaml`. You can customize parameters with command-line overrides. For example, to run on 8 gpus,
+By default, this uses the configuration in `examples/configs/grpo_math_1B.yaml`. You can customize parameters with command-line overrides. For example, to run on 8 GPUs,
 
 ```sh
 # Run the GRPO math example using a 1B parameter model using 8 GPUs
