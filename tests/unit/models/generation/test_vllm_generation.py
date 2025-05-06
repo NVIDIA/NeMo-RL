@@ -281,7 +281,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     hf_config = get_basic_hf_test_config(enable_dtensor=False)
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-    print(f"refitting vllm policy...")
+    print("refitting vllm policy...")
     refit_policy_generation(hf_policy, policy)
 
     try:
@@ -444,7 +444,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
         print("Creating HF policy...")
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-        print(f"refitting vllm policy...")
+        print("refitting vllm policy...")
         refit_policy_generation(hf_policy, vllm_policy)
 
         # Step 1: Use vLLM for generation
@@ -717,9 +717,9 @@ def test_vllm_weight_update_and_prefix_cache_reset(
         )
 
         print("Updating vLLM weights from HF policy...")
-        param_keys = hf_policy.prepare_weights_for_ipc()
-        for key, _ in param_keys:
-            ipc_handles = hf_policy.get_weights_ipc_handles([key])
+        grouped_param_keys = hf_policy.prepare_weights_for_ipc()
+        for keys in grouped_param_keys:
+            ipc_handles = hf_policy.get_weights_ipc_handles(keys)
             update_success = vllm_policy.update_weights(ipc_handles)
             assert update_success, "Weight update should succeed"
         print("vLLM weights successfully updated.")
@@ -857,7 +857,7 @@ def test_vllm_generation_with_stop(
         hf_config = get_basic_hf_test_config(enable_dtensor=enable_dtensor)
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-        print(f"refitting vllm policy...")
+        print("refitting vllm policy...")
         refit_policy_generation(hf_policy, vllm_generation)
 
     # test generate

@@ -775,7 +775,7 @@ class FSDP1PolicyWorker:
         if refit_buffer_size_gb is not None:
             total_available_bytes = refit_buffer_size_gb * (1024**3)
         else:
-            from nemo_reinforcer.utils.nvml import get_free_memory_bytes
+            from nemo_rl.utils.nvml import get_free_memory_bytes
 
             # Get current device index from torch
             device_idx = torch.cuda.current_device()
