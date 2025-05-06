@@ -106,5 +106,5 @@ While it is feasible to monitor using remote workers, the implementation require
 * Logging behaves consistently across TensorBoard and Wandb.
 * Workers that spawn other workers accurately report the total resource usage of any grandchild workers.
 
-Due to these complexities, we opted for a simpler approach: collecting metrics directly on the driver.
+Due to these complexities, we opted for a simpler approach: collecting metrics exposed by the Ray metrics server from the driver.
 :::
