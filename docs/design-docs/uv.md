@@ -36,9 +36,11 @@ We use the `uv` Python package installer for managing dependencies in NeMo RL.
 
 ## Implementation in NeMo RL
 
+This section outlines how workers define their required executables, details the available predefined configurations (like BASE or VLLM), and explains how to customize these setups for specific needs, ensuring consistency across actors.
+
 ### Worker Configuration
 
-In our codebase, workers (classes decorated with `@ray.remote`, e.g., `HFPolicyWorker`) define a `DEFAULT_PY_EXECUTABLE` which specifies what dependencies the worker needs. This allows different parts of our application to have their own tailored environments.
+In our codebase, workers (classes decorated with `@ray.remote`, e.g., `HFPolicyWorker`) define a `DEFAULT_PY_EXECUTABLE` that specifies what dependencies the worker needs. This allows different parts of our application to have their own tailored environments.
 
 ### Supported Python Executables
 
