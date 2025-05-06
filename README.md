@@ -10,8 +10,8 @@
         - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
   - [Quickstart](#quickstart)
   - [Supervised Fine-Tuning (SFT)](#supervised-fine-tuning-sft)
-      - [Run Single Node SFT](#run-single-node-sft)
-      - [SFT Multi-node](#sft-multi-node)
+    - [Run Single Node SFT](#run-single-node-sft)
+    - [SFT Multi-node](#sft-multi-node)
     - [DPO](#dpo)
       - [DPO Single Node](#dpo-single-node)
       - [DPO Multi-node](#dpo-multi-node)
@@ -171,7 +171,7 @@ Before running any experiments, remember to set your `HF_HOME` environment varia
 
 We provide an example SFT experiment using the [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
 
-#### Run Single Node SFT
+### Run Single Node SFT
 
 The default SFT configuration is set to run on a single GPU. To start the experiment:
 
@@ -193,7 +193,7 @@ uv run python examples/run_sft.py \
 
 Refer to `examples/configs/sft.yaml` for a full list of parameters that can be overridden.
 
-#### SFT Multi-node
+### SFT Multi-node
 
 ```sh
 # Run from the root of NeMo RL repo

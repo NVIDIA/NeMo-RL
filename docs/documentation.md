@@ -1,10 +1,10 @@
 # Documentation Development
 
 - [Documentation Development](#documentation-development)
-  - [Building](#building)
+  - [Build the Documentation](#build-the-documentation)
   - [Live Building](#live-building)
-  - [Running Tests in Python Docstrings](#running-tests-in-python-docstrings)
-  - [Writing Tests in Python Docstrings](#writing-tests-in-python-docstrings)
+  - [Run Tests in Python Docstrings](#run-tests-in-python-docstrings)
+  - [Write Tests in Python Docstrings](#write-tests-in-python-docstrings)
 
 
 ## Build the Documentation
