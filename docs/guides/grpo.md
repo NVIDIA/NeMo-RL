@@ -16,7 +16,7 @@ If not specified, `config` will default to [examples/configs/grpo.yaml](../../ex
 
 **Reminder**: Don't forget to set your HF_HOME, WANDB_API_KEY, and HF_DATASETS_CACHE (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
 
-In this guide, we'll walk through how we handle
+In this guide, we'll walk through how we handle:
 
 * Data
 * Model training
