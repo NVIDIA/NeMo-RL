@@ -40,6 +40,7 @@ from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM
 
 from nemo_rl.distributed.model_utils import from_parallel_logits_to_logprobs
 
+
 class RotaryEmbedParallel(SequenceParallel):
     """Custom SequenceParallel class for Qwen2 / Gemma3 rotary embeddings because the input is a tuple."""
 
@@ -77,6 +78,7 @@ class RotaryEmbedParallel(SequenceParallel):
     def _prepare_output_fn(use_local_output, mod, outputs, device_mesh):
         return type(outputs)([o.to_local() if use_local_output else o for o in outputs])
 
+
 def _parallelize_gemma3(
     model: Union[Gemma3ForCausalLM, Gemma3ForConditionalGeneration],
     dp_mesh: DeviceMesh,
@@ -109,7 +111,7 @@ def _parallelize_gemma3(
             f"num_attention_heads ({num_attention_heads}) must be divisible by TP size ({tp_mesh.size()})"
         )
 
-        # For gemma3 models, we don't include the model.embed_tokens and lm_head in the 
+        # For gemma3 models, we don't include the model.embed_tokens and lm_head in the
         # parallelization plans because they have tied weights.
         base_model_tp_plan = {
             f"{model_prefix}.layers.*.self_attn.q_proj": ColwiseParallel(),
@@ -128,12 +130,18 @@ def _parallelize_gemma3(
                 use_local_output=False,
             ),
             f"{model_prefix}.rotary_emb": RotaryEmbedParallel(use_local_output=True),
-            f"{model_prefix}.rotary_emb_local": RotaryEmbedParallel(use_local_output=True),
+            f"{model_prefix}.rotary_emb_local": RotaryEmbedParallel(
+                use_local_output=True
+            ),
             f"{model_prefix}.layers.*.input_layernorm": SequenceParallel(),
-            f"{model_prefix}.layers.*.self_attn.o_proj": RowwiseParallel(output_layouts=Shard(1)),
+            f"{model_prefix}.layers.*.self_attn.o_proj": RowwiseParallel(
+                output_layouts=Shard(1)
+            ),
             f"{model_prefix}.layers.*.post_attention_layernorm": SequenceParallel(),
             f"{model_prefix}.layers.*.pre_feedforward_layernorm": SequenceParallel(),
-            f"{model_prefix}.layers.*.mlp.down_proj": RowwiseParallel(output_layouts=Shard(1)),
+            f"{model_prefix}.layers.*.mlp.down_proj": RowwiseParallel(
+                output_layouts=Shard(1)
+            ),
             f"{model_prefix}.layers.*.post_feedforward_layernorm": SequenceParallel(),
             f"{model_prefix}.norm": SequenceParallel(),
             f"{model_prefix}.lm_head": PrepareModuleInput(
@@ -226,7 +234,6 @@ def _parallelize_llama(
     )
 
 
-
 def _parallelize_qwen(
     model: Union[Qwen2ForCausalLM, Qwen3ForCausalLM],
     dp_mesh: DeviceMesh,
@@ -237,6 +244,7 @@ def _parallelize_qwen(
     activation_checkpointing: bool = False,
 ):
     """Parallelizes a Qwen2ForCausalLM model across data and tensor parallel dimensions."""
+
     class Qwen3QKNorm(SequenceParallel):
         @staticmethod
         def _prepare_input_fn(sequence_sharding, mod, inputs, device_mesh):
