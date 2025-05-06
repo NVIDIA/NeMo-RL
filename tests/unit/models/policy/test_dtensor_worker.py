@@ -298,6 +298,10 @@ def training_setup(request, two_gpu_virtual_cluster):
         (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 1, True, False, True),
         (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 1, False, True, True),
         (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 1, True, True, True),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, True, True, False),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, True, False, True),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, False, True, True),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, True, True, True),
     ],
     indirect=True,
 )
@@ -427,6 +431,8 @@ def logprob_setup(request, two_gpu_virtual_cluster):
         (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, False, True, True),
         (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 2, False, True, False),
         (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 2, False, False, False),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 2, False, True, False),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 2, False, False, False),
     ],
     indirect=True,
 )
