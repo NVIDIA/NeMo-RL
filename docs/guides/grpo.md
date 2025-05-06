@@ -1,7 +1,7 @@
-# An in-depth walkthrough of GRPO in NeMo-RL
 # An in-depth Walkthrough of GRPO in NeMo RL
 
-This guide details the Generative Reversal Policy Optimization (GRPO) implementation within NeMo RL. We'll walk through essential aspects including data handling, policy model training, fast generation, and the specifics of the GRPO loss function and its enhancements. 
+This guide details the Group Relative Policy Optimization(GRPO) implementation within NeMo RL. We'll walk through essential aspects including data handling, policy model training, fast generation, and the specifics of the GRPO loss function and its enhancements. 
+
 ## Quickstart: Launch a GRPO Run
 
 To get started quickly, use the script [examples/run_grpo_math.py](../../examples/run_grpo_math.py), which demonstrates how to train a model on math problems using GRPO. You can launch this script locally or via Slurm. For detailed instructions on setting up Ray and launching a job with Slurm, refer to the [cluster documentation](../cluster.md).
@@ -12,7 +12,7 @@ We recommend launching the job using `uv`:
 uv run examples/run_grpo_math.py --config <PATH TO YAML CONFIG> {overrides}
 ```
 
-If not specified, `config` will default to [examples/configs/grpo.yaml](../../examples/configs/grpo_math_1B.yaml)
+If not specified, `config` will default to [examples/configs/grpo.yaml](../../examples/configs/grpo_math_1B.yaml).
 
 **Reminder**: Don't forget to set your HF_HOME, WANDB_API_KEY, and HF_DATASETS_CACHE (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
 
