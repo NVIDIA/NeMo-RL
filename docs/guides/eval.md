@@ -23,7 +23,7 @@ uv run python examples/run_eval.py --config path/to/custom_config.yaml
 uv run python examples/run_eval.py generation.model_name="Qwen/Qwen2.5-Math-7B-Instruct"
 ```
 
-**Evaluating Models Trained with DCP Checkpoints (GRPO/SFT):**
+**Evaluate Models Trained with DCP Checkpoints (GRPO/SFT):**
 
 If you have trained a model using GRPO or SFT and saved the checkpoint in the Pytorch DCP format, you first need to convert it to the Hugging Face format before running evaluation.
 
