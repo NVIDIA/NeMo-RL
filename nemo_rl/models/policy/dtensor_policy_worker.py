@@ -406,6 +406,7 @@ class DTensorPolicyWorker:
                     loss_metrics["normalization_factor"] = (
                         total_valid_tokens_or_seqs.cpu()
                     )
+                    loss_metrics["micro_batch_size"] = batch_size
 
                     # Backward pass
                     if not eval_mode:

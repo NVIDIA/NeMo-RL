@@ -559,16 +559,23 @@ def grpo_train(
 
         print("\n📊 Training Results:")
         metrics = {
-            "loss": train_results["loss"].numpy(),
-            "reward": rewards.numpy(),
-            "grad_norm": train_results["grad_norm"].numpy(),
+            "loss": train_results["loss"].numpy().mean().item(),
+            "reward": rewards.numpy().mean().item(),
+            "grad_norm": train_results["grad_norm"].numpy().mean().item(),
         }
-        metrics.update(train_results["all_mb_metrics"])
-        for k, v in metrics.items():
-            if k in {"lr", "reward", "normalization_factor"}:
-                metrics[k] = np.mean(v).item()
+
+        mb_metrics = train_results['all_mb_metrics']
+        mb_metrics_stat = {}
+        for k, v in mb_metrics.items():
+            if k in {"lr", "reward", "normalization_factor", "micro_batch_size"}:
+                if 'micro_batch_size' in mb_metrics:
+                    mb_metrics_stat[k] = np.average(
+                        v, weights=mb_metrics['micro_batch_size']).item()
+                else:
+                    mb_metrics_stat[k] = np.mean(v).item()
             else:
-                metrics[k] = np.sum(v).item()
+                mb_metrics_stat[k] = np.sum(v).item()
+        metrics.update(mb_metrics_stat)
         metrics.update(rollout_metrics)
 
         timing_metrics = timer.get_timing_metrics(reduction_op="sum")
