@@ -1,4 +1,4 @@
-# Token Generation
+# Generation Interface
 
 This document explains the token generation interface and various backends for the NeMo RL framework. The generation system is designed with a unified interface that allows different backends (like VLLM, Hugging Face, SGLang, and TRT-LLM) to provide token generation capabilities while adhering to the same API.
 
