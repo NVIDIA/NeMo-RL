@@ -23,7 +23,6 @@ policy:
     enabled: False
 
   dynamic_batching:
-    enable: False
     train_mb_tokens: 4096
     logprob_mb_tokens: 8192
 

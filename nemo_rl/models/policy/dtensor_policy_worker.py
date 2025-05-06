@@ -348,7 +348,7 @@ class DTensorPolicyWorker:
                 # Calculate number of microbatches to process
                 # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
                 # so its safe to not check for the case where the last data slice is smaller than mbs
-                if self.cfg['dynamic_batching']['enable']:
+                if self.cfg['dynamic_batching']['enabled']:
                     mb_iterator = batch.make_microbatch_iterator_with_dynamic_shapes(
                         max_sequence_length=data['input_ids'].shape[1],
                         round_seq_len_multiple=self.cfg['dynamic_batching']['sequence_length_round'],
@@ -505,7 +505,7 @@ class DTensorPolicyWorker:
 
         with unshard_fsdp2_model(self.model), torch.no_grad():
             data.to("cuda")
-            if self.cfg['dynamic_batching']['enable']:
+            if self.cfg['dynamic_batching']['enabled']:
                 mb_iterator = data.make_microbatch_iterator_with_dynamic_shapes(
                     max_sequence_length=data['input_ids'].shape[1],
                     round_seq_len_multiple=self.cfg['dynamic_batching']['sequence_length_round'],
