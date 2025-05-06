@@ -32,7 +32,6 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         super().__init__(*args, **kwargs)
         self.metadata = {
             "is_sorted" : False,
-            "is_chunked" : False,
             "micro_batch_indices": None
         }
 
@@ -424,18 +423,35 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 ]
         return repeated_batch
 
-    def truncate_tensors(self, dim, truncated_len):
+    def truncate_tensors(self, dim: int, truncated_len: int):
+        """Truncates tensors in this dict of a given dim to a given length.
+        """
+
         for k,v in self.items():
             if torch.is_tensor(v) and len(v.shape) >= dim + 1:
                 self.data[k] = torch.narrow(v, dim=dim, start=0, length=truncated_len)
 
     def make_microbatch_iterator_with_dynamic_shapes(
         self,
-        max_sequence_length,
-        round_seq_len_multiple,
-        input_lengths_key,
-        sequence_dim = 1,
+        max_sequence_length: int,
+        round_seq_len_multiple: int,
+        input_lengths_key: str,
+        sequence_dim: int = 1,
     ) -> Iterator["SlicedDataDict"]:
+        """Makes an interator that yields microbatchs, microbatches are dynamic in order to
+        accomodate a target number of tokens. This requires the data dict to be created from
+        'shard_by_batch_size() with the 'dynamic_batching_cfg' arg passed.
+
+        Args:
+            max_sequence_length: the maximum sequence length of the dynamically shaped microbatch
+            round_seq_len_multiple: round the dynamic sequence length the next nearest multiple of this value
+            input_lengths_key: the key in the data dict that gives the sequence lengths of each datum
+            sequence_dim: the index of the sequence dim for all tensors in the data dict
+
+        Returns:
+            Iterator["SlicedDataDict"]: An iterator that yield dynamic microbatches
+        """
+
         assert "micro_batch_indices" in self.metadata  
         assert len(self.metadata['micro_batch_indices']) == 1
 
@@ -451,7 +467,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             yield mb
         
     def make_microbatch_iterator(
-        self, microbatch_size: int = None, 
+        self, microbatch_size: int
     ) -> Iterator["SlicedDataDict"]:
         """Make an iterator over the batch that yields microbatches of size microbatch_size."""
         bsize = self.size

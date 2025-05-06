@@ -18,11 +18,14 @@ policy:
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
   refit_buffer_size_gb: 4 # used for refitting inference engine, the unit is GB
+
   dtensor_cfg:
     enabled: False
-  dynamic_batching: false
-  dynamic_batching_train_mb_tokens: 4096
-  dynamic_batching_logprob_mb_tokens: 8192
+
+  dynamic_batching:
+    enable: False
+    train_mb_tokens: 4096
+    logprob_mb_tokens: 8192
 
   optimizer:
     name: "torch.optim.AdamW"

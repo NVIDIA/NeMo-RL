@@ -119,10 +119,10 @@ class HfPolicy(PolicyInterface, GenerationInterface):
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
-        if self.cfg['dynamic_batching']:
+        if self.cfg['dynamic_batching']['enabled']:
             dynamic_batching_cfg = {
                 'input_lengths_key': 'input_lengths',
-                'max_tokens_per_microbatch': self.cfg["dynamic_batching_logprob_mb_tokens"]
+                'max_tokens_per_microbatch': self.cfg['dynamic_batching']['logprob_mb_tokens']
             }
         else:
             dynamic_batching_cfg = None
@@ -148,10 +148,10 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         Returns: Identical to get_logprobs.
         """
-        if self.cfg['dynamic_batching']:
+        if self.cfg['dynamic_batching']['enabled']:
             dynamic_batching_cfg = {
                 'input_lengths_key': 'input_lengths',
-                'max_tokens_per_microbatch': self.cfg["dynamic_batching_logprob_mb_tokens"]
+                'max_tokens_per_microbatch': self.cfg['dynamic_batching']['logprob_mb_tokens']
             }
         else:
             dynamic_batching_cfg = None
@@ -185,10 +185,10 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         batch_size = gbs or self.cfg["train_global_batch_size"]
         micro_batch_size = mbs or self.cfg["train_micro_batch_size"]
         # Shard and replicate the batch
-        if self.cfg['dynamic_batching']:
+        if self.cfg['dynamic_batching']['enabled']:
             dynamic_batching_cfg = {
                 'input_lengths_key': 'input_lengths',
-                'max_tokens_per_microbatch': self.cfg["dynamic_batching_train_mb_tokens"],
+                'max_tokens_per_microbatch': self.cfg['dynamic_batching']['train_mb_tokens']
             }
         else:
             dynamic_batching_cfg = None

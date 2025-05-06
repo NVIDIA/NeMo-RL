@@ -348,10 +348,10 @@ class DTensorPolicyWorker:
                 # Calculate number of microbatches to process
                 # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
                 # so its safe to not check for the case where the last data slice is smaller than mbs
-                if self.cfg['dynamic_batching']:
+                if self.cfg['dynamic_batching']['enable']:
                     mb_iterator = batch.make_microbatch_iterator_with_dynamic_shapes(
                         max_sequence_length=data['input_ids'].shape[1],
-                        round_seq_len_multiple=64,
+                        round_seq_len_multiple=self.cfg['dynamic_batching']['sequence_length_round'],
                         input_lengths_key='input_lengths',
                     )
                 else:
@@ -472,10 +472,7 @@ class DTensorPolicyWorker:
 
             return metrics
 
-    def get_logprobs(
-        self, 
-        data: BatchedDataDict, 
-        micro_batch_size: int = None,
+    def get_logprobs(self, data: BatchedDataDict, micro_batch_size: int = None,
     ) -> BatchedDataDict:
         """Get the logprobs of the model for a batch of data.
 
@@ -508,10 +505,10 @@ class DTensorPolicyWorker:
 
         with unshard_fsdp2_model(self.model), torch.no_grad():
             data.to("cuda")
-            if self.cfg['dynamic_batching']:
+            if self.cfg['dynamic_batching']['enable']:
                 mb_iterator = data.make_microbatch_iterator_with_dynamic_shapes(
                     max_sequence_length=data['input_ids'].shape[1],
-                    round_seq_len_multiple=64,
+                    round_seq_len_multiple=self.cfg['dynamic_batching']['sequence_length_round'],
                     input_lengths_key='input_lengths',
                 )
             else:
@@ -631,9 +628,7 @@ class DTensorPolicyWorker:
                     val.copy_(curr_buffers[k])
 
     def get_reference_policy_logprobs(
-        self, 
-        data: BatchedDataDict, 
-        micro_batch_size: int = None,
+        self, data: BatchedDataDict, micro_batch_size: int = None
     ) -> BatchedDataDict:
         """Get the logprobs from the reference policy for a batch of data.
 
