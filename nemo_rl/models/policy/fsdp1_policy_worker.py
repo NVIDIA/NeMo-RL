@@ -154,7 +154,7 @@ class FSDP1PolicyWorker:
 
         # used for streaming update inference engine weights
         self._held_sharded_state_dict_reference = None
-        self._held_streamed_param_reference = None
+        self._held_streamed_param_reference = {}
 
         # register_fsdp_forward_method(self.model, "generate")
         if init_optimizer:
@@ -812,11 +812,11 @@ class FSDP1PolicyWorker:
         from torch.multiprocessing.reductions import reduce_tensor
 
         # Clean up the held tensors to reduce peak memory
-        if self._held_streamed_param_reference is not None:
+        if self._held_streamed_param_reference:
             del self._held_streamed_param_reference
-            self._held_streamed_param_reference = None
+            self._held_streamed_param_reference = {}
 
-        converted_params = {}
+        all_handles = []
         for key in keys:
             # Get full_tensor for dtensor (GPU > 1)
             tensor = self._held_sharded_state_dict_reference[key]
@@ -824,21 +824,22 @@ class FSDP1PolicyWorker:
                 full_tensor = tensor.full_tensor()
             else:
                 full_tensor = tensor
+
             # Convert parameters to the configured dtype
-            converted_params[key] = full_tensor.to(self.dtype, non_blocking=True)
+            full_tensor = full_tensor.to(self.dtype, non_blocking=True)
 
-        # Temporary record the full tensor for cleanup
-        # It is needed for cleanup the last full_tensor in the refit process
-        self._held_streamed_param_reference = converted_params
+            # Temporary record the full tensor for cleanup
+            # It is needed for cleanup the last full_tensor in the refit process
+            self._held_streamed_param_reference[key] = full_tensor
 
-        # Get device UUID for IPC
-        device_uuid = self.report_device_id()
-        # Create handles for the tensors
-        all_handles = []
-        for key, p in converted_params.items():
-            handle = reduce_tensor(p.detach())
+            # Create handle for the tensor
+            handle = reduce_tensor(full_tensor.detach())
             all_handles.append((key, handle))
 
+            # Reduce fragmentation to improve performance
+            torch.cuda.synchronize()
+
+        device_uuid = self.report_device_id()
         return {device_uuid: all_handles}
 
     def prepare_for_lp_inference(self):
@@ -894,9 +895,9 @@ class FSDP1PolicyWorker:
         if self._held_sharded_state_dict_reference is not None:
             del self._held_sharded_state_dict_reference
             self._held_sharded_state_dict_reference = None
-        if self._held_streamed_param_reference is not None:
+        if self._held_streamed_param_reference:
             del self._held_streamed_param_reference
-            self._held_streamed_param_reference = None
+            self._held_streamed_param_reference = {}
 
         gc.collect()
         torch.cuda.empty_cache()
