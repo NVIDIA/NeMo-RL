@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from copy import deepcopy
 
 import pytest
+import ray
 import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer
@@ -25,7 +25,7 @@ from nemo_rl.models.generation.interfaces import configure_generation_config
 from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy.hf_policy import HfPolicy, PolicyConfig
 from nemo_rl.tools.generation import generate_with_code_and_tools
-from nemo_rl.tools.tools import BM25Retriever
+from nemo_rl.tools.tools import BM25Retriever, StatefulCodeExecutor
 
 MODEL_NAME = "meta-llama/Llama-3.2-1B"
 
@@ -254,6 +254,37 @@ def test_hf_execute_code(cluster, tokenizer):
 
     # Clean up
     hf_policy.shutdown()
+
+
+def test_untrusted_code(cluster):
+    """Test whether the code executor can block untrusted code."""
+    executor = StatefulCodeExecutor.remote()
+
+    # accessing temporary files shouldn't be blocked
+    code = (
+        "with open('allowed_file.txt', 'w') as fout:\n"
+        "    fout.write('some content')\n"
+        "with open('allowed_file.txt') as fin:\n"
+        "    content = fin.read()\n"
+        "content"
+    )
+    result = ray.get(executor.__call__.remote(code))
+    assert result == "some content"
+
+    # accessing other files should be blocked
+    code = "with open('/etc/passwd', 'r') as fin:\n    fin.read()"
+    result = ray.get(executor.__call__.remote(code))
+    assert isinstance(result, PermissionError)
+
+    # importing non-sensitive modules shouldn't be blocked
+    code = "import math\nround(math.sqrt(8))"
+    result = ray.get(executor.__call__.remote(code))
+    assert result == 3
+
+    # importing sensitive modules should be blocked
+    code = "import os"
+    result = ray.get(executor.__call__.remote(code))
+    assert isinstance(result, PermissionError)
 
 
 @pytest.mark.timeout(150)

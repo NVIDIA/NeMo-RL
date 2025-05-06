@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import ast
+import builtins
 import math
+import os
+import tempfile
 from collections import Counter
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
 import ray
@@ -36,6 +40,12 @@ class StatefulCodeExecutor(ToolInterface):
 
     def __init__(self, context: Dict[str, Any] = {}):
         self.context = context.copy()
+        self.tmp_dir = tempfile.TemporaryDirectory()
+
+        builtin_dict = {k: getattr(builtins, k) for k in dir(builtins)}
+        builtin_dict["open"] = self.safe_open
+        builtin_dict["__import__"] = self.safe_import
+        self.sandbox = {"__builtins__": builtin_dict}
 
     def __call__(self, code: str) -> Optional[str]:
         tree = ast.parse(code)
@@ -51,12 +61,48 @@ class StatefulCodeExecutor(ToolInterface):
         try:
             # isolate the code in a sandbox with globals={}
             # capture local variables in self.context
-            # TODO: isolate file systems
-            exec(code, {}, self.context)
-            if expr:
-                return eval(expr, {}, self.context)
+            with self.change_temporary_dir():
+                exec(code, self.sandbox, self.context)
+                if expr:
+                    return eval(expr, self.sandbox, self.context)
         except Exception as err:
             return err
+
+    @contextmanager
+    def change_temporary_dir(self):
+        current_dir = os.getcwd()
+        os.chdir(self.tmp_dir.name)
+        try:
+            yield
+        finally:
+            os.chdir(current_dir)
+
+    def safe_open(self, file, *args, **kwargs):
+        real_file = os.path.realpath(file)
+        tmp_dir = os.path.realpath(self.tmp_dir.name)
+        if os.path.commonpath([real_file, tmp_dir]) != tmp_dir:
+            # real_file is not inside tmp_dir
+            raise PermissionError(
+                "Access beyond the temporary working directory is blocked"
+            )
+        return open(file, *args, **kwargs)
+
+    def safe_import(self, name, *args, **kwargs):
+        risky_modules = {
+            "os",
+            "shutil",  # erase filesystem
+            "sys",
+            "signal",  # exit the current program
+            "socket",  # network communication
+            "subprocess",
+            "threading",
+            "multiprocessing",  # spawn threads or processes
+            "builtins",
+            "importlib",  # bypass current blockers
+        }
+        if name in risky_modules:
+            raise PermissionError("Importing system and network modules is blocked")
+        return builtins.__import__(name, *args, **kwargs)
 
 
 class BM25Retriever(ToolInterface):
