@@ -68,7 +68,7 @@ If you need a different Python executable configuration, you can override the de
 When a NeMo RL job is started:
 
 1. The driver script creates several {py:class}`RayWorkerGroup <nemo_rl.distributed.worker_groups.RayWorkerGroup>`s.
-2. Each worker group will create their workers which are wrapped in a {py:class}`RayWorkerBuilder <nemo_rl.distributed.worker_groups.RayWorkerBuilder>`
+2. Each worker group will create their workers which are wrapped in a {py:class}`RayWorkerBuilder <nemo_rl.distributed.worker_groups.RayWorkerBuilder>`.
 3. Before the worker class is instantiated by the `RayWorkerBuilder`, if (1) `DEFAULT_PY_EXECUTABLE` is defined on the worker class (decorated with `@ray.remote`) and (2) it starts with `uv`; a `venv` is created with all the dependencies it needs and the `runtime_env["py_executable"]` is replaced with the `venv`'s python interpreter.
 
 This approach allows a fast start-up and maintains dependency isolation. It also has the added benefit of having all the virtual environments local under `./venvs`.
