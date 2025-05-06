@@ -87,8 +87,10 @@ class MultiWorkerFuture:
 class RayWorkerBuilder:
     @ray.remote
     class IsolatedWorkerInitializer:
-        def __init__(self, ray_actor_class_str: str):
+        def __init__(self, ray_actor_class_str: str, *init_args, **init_kwargs):
             self.ray_actor_class_str = ray_actor_class_str
+            self.init_args = init_args
+            self.init_kwargs = init_kwargs
 
         def create_worker(
             self,
@@ -96,8 +98,7 @@ class RayWorkerBuilder:
             placement_group_bundle_index: int,
             num_gpus: int,
             bundle_indices: Optional[tuple] = None,
-            init_args: Optional[tuple] = None,
-            **extra_options: Dict[str, Any],
+            **extra_options: Optional[Dict[str, Any]],
         ):
             """Create a Ray worker with the specified configuration.
 
@@ -123,7 +124,7 @@ class RayWorkerBuilder:
             module_name, class_name = self.ray_actor_class_str.rsplit(".", 1)
             module = importlib.import_module(module_name)
             worker_class = getattr(module, class_name)
-            worker_kwargs = dict(self.kwargs)
+            worker_kwargs = dict(self.init_kwargs)
             options = deepcopy(extra_options)
 
             # Use the worker's configuration interface if available
@@ -179,7 +180,9 @@ class RayWorkerBuilder:
                     venv_name=f"{unwrapped_cls.__module__}.{unwrapped_cls.__name__}",
                 )
                 options["runtime_env"]["py_executable"] = venv_python
-            return worker_class.options(**options).remote(*init_args, **worker_kwargs)
+            return worker_class.options(**options).remote(
+                *self.init_args, **worker_kwargs
+            )
 
     def __init__(self, ray_actor_class_str: str, *args, **kwargs):
         self.ray_actor_class_str = ray_actor_class_str
@@ -272,9 +275,16 @@ class RayWorkerBuilder:
             options["runtime_env"]["py_executable"] = venv_python
 
         initializer_options = {"runtime_env": options["runtime_env"]}
+        isolated_initializer = self.IsolatedWorkerInitializer.options(
+            **initializer_options
+        ).remote(self.ray_actor_class_str, *self.args, **self.kwargs)
         return ray.get(
-            self.IsolatedWorkerInitializer.options(**initializer_options).remote(
-                self.ray_actor_class_str, *self.args, **self.kwargs
+            isolated_initializer.create_worker.remote(
+                placement_group,
+                placement_group_bundle_index,
+                num_gpus,
+                bundle_indices,
+                **options,
             )
         )
         # return worker_class.options(**options).remote(*self.args, **worker_kwargs)

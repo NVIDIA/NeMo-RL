@@ -491,7 +491,9 @@ class VllmGeneration(GenerationInterface):
         self.tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
 
         # Create worker builder for VllmGenerationWorker
-        worker_builder = RayWorkerBuilder(VllmGenerationWorker, config)
+        worker_builder = RayWorkerBuilder(
+            "nemo_rl.models.generation.vllm.VllmGenerationWorker", config
+        )
 
         if self.tensor_parallel_size > 1:
             # For tensor parallelism, create node-aware worker groups
