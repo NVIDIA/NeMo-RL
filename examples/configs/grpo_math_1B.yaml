@@ -51,8 +51,13 @@ policy:
     activation_checkpointing: false
     tensor_parallel_size: 1
 
+  # dynamic_batching improves performance by ensuring logprob and training microbatches
+  # have a sufficent number of tokens to maximize GPU utilization. Specifically, variable length
+  # responses are sorted by sequence length and bucketed into microbatches with a total
+  # amount of tokens is approximately close to 'train_mb_tokens' and 'logprob_mb_tokens' for the
+  # training and logprob stages respectively.
   dynamic_batching:
-    enabled: False
+    enabled: True
     train_mb_tokens: 2048
     logprob_mb_tokens: 2048
     sequence_length_round: 64

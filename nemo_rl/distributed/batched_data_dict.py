@@ -13,7 +13,7 @@
 # limitations under the License.
 from collections import UserDict
 from copy import deepcopy
-from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union
+from typing import Any, Dict, Generic, Iterator, List, Optional, TypeVar, Union, TypedDict
 
 import torch
 from typing_extensions import Self
@@ -25,6 +25,16 @@ from nemo_rl.distributed.collectives import (
 
 DictT = TypeVar("DictT", bound=Dict[str, Any])
 
+
+class DynamicBatchingCfg(TypedDict):
+    """
+        Configuration settings for dynamic batching. Pass this to 'shard_by_batch_size()' to preprocess batches for 
+        dynamic batching
+    """    
+    # Each microbatch contains at most this many tokens
+    max_tokens_per_microbatch: int
+    # The key in the data dict that specifies the sequence length per datum
+    input_lengths_key: str
 
 class BatchedDataDict(UserDict, Generic[DictT]):
 
@@ -149,7 +159,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         shards: int,
         batch_size: Optional[int] = None,
         allow_uneven_shards: bool = False,
-        dynamic_batching_cfg = None,
+        dynamic_batching_cfg: DynamicBatchingCfg = None,
     ) -> List["SlicedDataDict"]:
         """Shards a batch by first dividing it into chunks of size batch_size, then further dividing each chunk into shards equal parts. Finally aggregates the sub-shards by their position.
 
@@ -268,7 +278,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             for chunk_idx in range(num_chunks):
                 chunk_start = chunk_idx * batch_size
                 chunk_end = (chunk_idx + 1) * batch_size
-                chunk_seqlens = self.data['input_lengths'][chunk_start:chunk_end]
+                chunk_seqlens = self.data[dynamic_batching_cfg['input_lengths_key']][chunk_start:chunk_end]
                 # sort the indices by sequence lengths
                 chunk_idx_indices = sorted(range(batch_size), key=lambda i: chunk_seqlens[i])
                 chunk_idx_indices = [i + chunk_start for i in chunk_idx_indices]
