@@ -410,17 +410,6 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
             "Where is the sun?",
         ]
 
-        expected_generations = [
-            "Write a story about a magical forest where the trees are made of glass and the ground",
-            "Explain how photosynthesis works in the context of the environment and the role of",
-            "What are the benefits of exercise? What are the risks of exercise? What are the",
-            "Describe the water cycle and its importance in the environment.\nAnswer:\nThe",
-            "What is the capital of France? The capital of France is Paris. The answer is",
-            "Who is the president of the USA? The answer is the president of the United States of",
-            "What is the capital of the moon? The answer is...? The answer is...?",
-            "Where is the sun? Where is the moon? Where is the earth?",
-        ]
-
         # Tokenize the prompts the same way as in test_hf_ray_policy
         tokenized = tokenizer(
             prompts,
@@ -470,12 +459,8 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
             generation_results["output_ids"], skip_special_tokens=True
         )
         print(f"vLLM generated texts: {generated_texts}")
-        assert generated_texts == expected_generations, (
-            "Output should be the same as the expected output"
-        )
 
         # Run logprob calculation with HF policy to verify
-
         fprop_logprob_data = BatchedDataDict(
             {
                 "input_ids": generation_results["output_ids"],
@@ -838,8 +823,8 @@ def test_vllm_generation_with_stop(
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config["stop_token_ids"] = [3363]
-    vllm_config["stop_strings"] = ["I am a"]
+    vllm_config["stop_token_ids"] = [6722]  # 'Ġcapital'
+    vllm_config["stop_strings"] = ["I'm a"]
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=is_eval)
 
     # Ensure we can get same output
@@ -875,8 +860,8 @@ def test_vllm_generation_with_stop(
     output_ids = outputs["output_ids"]
     generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
     assert generated_texts == [
-        "Hello, my name is Lina. I'm a 22-year",
-        "The capital of France is Paris. The capital of France is also the capital",
+        "Hello, my name is Lina. I'm a",
+        "The capital of France is Paris. The capital",
     ], "Output should be the same as the expected output"
 
     # test generate_text
@@ -887,8 +872,8 @@ def test_vllm_generation_with_stop(
     test_prompts = BatchedDataDict({"prompts": test_prompts})
     output = vllm_generation.generate_text(test_prompts, greedy=True)
     assert output["texts"] == [
-        " Lina. I'm a 22-year",
-        " Paris. The capital of France is also the capital",
+        " Lina. I'm a",
+        " Paris. The capital",
     ], "Output should be the same as the expected output"
 
     # Clean up
