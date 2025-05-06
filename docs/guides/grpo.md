@@ -55,7 +55,7 @@ class DatumSpec(TypedDict):
 
 We refer to each distinct environment your model aims to optimize against as a "task." For example, you might define tasks like "math" or "code."
 
-For each task, you should provide a data processor that reads from your dataset and returns a [DatumSpec](../../nemo_rl/data/interfaces.py)
+For each task, you should provide a data processor that reads from your dataset and returns a [DatumSpec](../../nemo_rl/data/interfaces.py).
 
 ```python
 def my_data_processor(
@@ -67,9 +67,9 @@ def my_data_processor(
 ) -> DatumSpec:
 ```
 
-We have an example of this as `math_data_processor` in [run_grpo_math.py](../../examples/run_grpo_math.py)
+We have an example of this as `math_data_processor` in [run_grpo_math.py](../../examples/run_grpo_math.py).
 
-#### Putting it all together
+#### Put It All Together
 
 GRPO expects datasets to have the following form:
 
