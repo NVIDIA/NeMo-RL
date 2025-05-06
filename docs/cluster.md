@@ -1,6 +1,6 @@
 # Set Up Clusters
 
-This guide explains how to run NeMo RL with ray on Slurm or Kubernetes.
+This guide explains how to run NeMo RL with Ray on Slurm or Kubernetes.
 
 ## Slurm (Batched and Interactive)
 
