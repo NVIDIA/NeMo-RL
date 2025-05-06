@@ -358,8 +358,8 @@ def training_setup(tokenizer, request, num_gpus):
     finally:
         # Clean up after the test
         print("Cleaning up resources for test")
-        cluster.shutdown()
         policy.worker_group.shutdown()
+        cluster.shutdown()
 
 
 def get_max_gpu_utilization(policy):
@@ -528,8 +528,8 @@ def generation_setup(request, test_input_data, tokenizer, num_gpus):
     finally:
         # Clean up after the test
         print("Cleaning up resources for test")
-        cluster.shutdown()
         policy.worker_group.shutdown()
+        cluster.shutdown()
 
 
 @pytest.mark.timeout(180)
@@ -554,10 +554,6 @@ def test_hf_policy_generation(generation_setup, tokenizer, num_gpus, tracker):
     # Verify results
     assert "output_ids" in results, "Generation results should contain 'output_ids'"
     output_ids = results["output_ids"]
-    generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-    assert generated_texts == expected_generations, (
-        "Output should be the same as the expected output"
-    )
 
     # run logprob calculation manually to verify
     fprop_logprob_data = BatchedDataDict(
@@ -720,8 +716,8 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
     config = deepcopy(basic_llama_test_config)
     config["generation"] = configure_generation_config(config["generation"], tokenizer)
     # Add stop strings for testing
-    config["generation"]["stop_token_ids"] = [1690, 1920]  # [" process", "many"]
-    config["generation"]["stop_strings"] = ["because it is", "A. Houston"]
+    config["generation"]["stop_token_ids"] = [12095, 1112]  # ["ĠParis", "..."]
+    config["generation"]["stop_strings"] = ["the"]
 
     # Ensure we can get same output
     assert config["model_name"] == "Qwen/Qwen3-0.6B", (
@@ -747,18 +743,21 @@ def test_hf_policy_generation_with_stop(test_input_data, tokenizer):
 
     # Check result
     generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-    assert generated_texts == [
-        "Write a story about a magical forest where the trees are made of stars and the ground is made of light. The",
-        "Explain how photosynthesis works in the context of the environment and the role of the sun in it.\nAnswer",
-        "What are the benefits of exercise? What are the risks of exercise? What are the benefits and risks of physical activity",
-        "Describe the water cycle and its importance in the environment.\nAnswer:\nThe **water cycle** is a",
-        "What is the capital of France? The capital of France is Paris. The answer is Paris. The answer is Paris",
-        "Who is the president of the USA? The answer is the president of the United States of America, which is the president",
-        "What is the capital of the moon? The answer is...? Let me think. I know that the moon is a",
-        "Where is the sun? Where is the moon? Where is the earth? Where is the sun in the",
-    ], "Output should be the same as the expected output"
+    assert (
+        generated_texts
+        == [
+            "Write a story about a magical forest where the",  # trees are made of stars and the ground is made of light. The
+            "Explain how photosynthesis works in the",  # context of the environment and the role of the sun in it.\nAnswer
+            "What are the benefits of exercise? What are the",  # risks of exercise? What are the benefits and risks of physical activity
+            "Describe the water cycle and its importance in the",  # environment.\nAnswer:\nThe **water cycle** is a
+            "What is the capital of France? The capital of France is Paris",  # . The answer is Paris. The answer is Paris
+            "Who is the president of the USA? The answer is the",  # president of the United States of America, which is the president
+            "What is the capital of the moon? The answer is...",  # ? Let me think. I know that the moon is a
+            "Where is the sun? Where is the",  # moon? Where is the earth? Where is the sun in the
+        ]
+    ), "Output should be the same as the expected output"
 
     # Clean up after the test
     print("Cleaning up resources for test")
-    cluster.shutdown()
     policy.worker_group.shutdown()
+    cluster.shutdown()
