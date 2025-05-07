@@ -52,7 +52,11 @@ If you have trained a model using GRPO or SFT and saved the checkpoint in the Py
 ```
 ============================================================
 model_name='Qwen2.5-Math-1.5B-Instruct' dataset_name='aime_2024'
-score=0.10 (3.0/30)
+max_new_tokens=2048 temperature=0.0 top_p=1.0 top_k=-1
+
+metric='pass@1' num_tests_per_prompt=1
+
+score=0.1000 (3.0/30)
 ============================================================
 ```
 
