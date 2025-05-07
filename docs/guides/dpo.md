@@ -167,3 +167,7 @@ The DPO implementation in NeMo RL supports several key parameters that can be ad
 - `dpo.sft_average_log_probs`: Whether to average log probabilities over tokens in the SFT loss term
 
 These parameters can be adjusted in the config file or via command-line overrides to optimize training for your specific use case.
+
+## Evaluate trained model
+
+Upon completion of the training process, you can refer to our [evaluation guide](eval.md) to assess model capabilities.
