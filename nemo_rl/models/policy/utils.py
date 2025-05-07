@@ -15,6 +15,8 @@
 import importlib
 import os
 
+from transformers import AutoConfig
+
 
 def import_class_from_path(name):
     """Import a class from a string path (e.g. 'torch.optim.AdamW').
@@ -94,3 +96,32 @@ def get_gpu_info(model):
             if k.startswith("CUDA") or k in ["LOCAL_RANK", "RANK", "WORLD_SIZE"]
         },
     }
+
+
+def sliding_window_overwrite(model_name: str) -> dict:
+    """Returns configuration overrides to handle sliding window settings based on model rules.
+
+    Args:
+        model_name: The HuggingFace model name or path to load configuration from
+
+    Returns:
+        dict: Dictionary with overwrite values, or empty dict if no overwrites needed
+    """
+    hf_config = AutoConfig.from_pretrained(model_name)
+    overwrite_dict = {}
+
+    # Override sliding_window setting to address a HF mismatch relevant to use_sliding_window
+    # TODO(@zhiyul): remove this once the bug is fixed https://github.com/huggingface/transformers/issues/38002
+    if (
+        hasattr(hf_config, "use_sliding_window")
+        and hf_config.use_sliding_window == False
+    ):
+        assert hasattr(hf_config, "sliding_window")
+        overwrite_dict = {
+            "sliding_window": None,
+        }
+        print(
+            f"use_sliding_window=False in config - overriding sliding_window parameter to None: {overwrite_dict}"
+        )
+
+    return overwrite_dict

@@ -41,7 +41,11 @@ from nemo_rl.models.dtensor.parallelize import (
     to_local_if_dtensor,
 )
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.utils import get_gpu_info, import_class_from_path
+from nemo_rl.models.policy.utils import (
+    get_gpu_info,
+    import_class_from_path,
+    sliding_window_overwrite,
+)
 from nemo_rl.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
@@ -138,6 +142,7 @@ class DTensorPolicyWorker:
             model_name,
             device_map="cpu",  # load weights onto CPU initially
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
+            **sliding_window_overwrite(model_name),
         )
         # caching since this property is not always preserved after FSDP
         self.num_tied_weights = len(find_tied_parameters(self.model))
