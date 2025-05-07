@@ -19,6 +19,7 @@ import ray
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
+from nemo_rl.algorithms.utils import set_seed
 from nemo_rl.data import MathDataConfig
 from nemo_rl.data.datasets import AllTaskProcessedDataset, eval_collate_fn
 from nemo_rl.data.llm_message_utils import get_keys_from_message_log
@@ -36,6 +37,7 @@ from nemo_rl.models.generation.vllm import VllmGeneration
 class EvalConfig(TypedDict):
     metric: str
     num_tests_per_prompt: int
+    seed: int
 
 
 class MasterConfig(TypedDict):
@@ -75,6 +77,9 @@ def setup(
     eval_config = master_config["eval"]
     generation_config = master_config["generation"]
     cluster_config = master_config["cluster"]
+
+    # Set seed for reproducibility
+    set_seed(eval_config["seed"])
 
     # Check settings
     metric = eval_config["metric"]
