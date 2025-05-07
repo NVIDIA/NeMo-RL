@@ -25,20 +25,20 @@ cd $PROJECT_ROOT
 uv run $PROJECT_ROOT/examples/run_sft.py \
     policy.model_name=Qwen/Qwen3-0.6B \
     cluster.gpus_per_node=2 \
-    sft.max_num_steps=10 \
+    sft.max_num_steps=3 \
     sft.val_batches=1 \
+    sft.val_period=3 \
     logger.tensorboard_enabled=true \
     logger.log_dir=$LOG_DIR \
     logger.wandb_enabled=false \
     checkpointing.enabled=true \
-    checkpointing.save_period=10 \
+    checkpointing.save_period=3 \
     checkpointing.checkpoint_dir=/tmp/sft_checkpoints \
     $@ \
     2>&1 | tee $RUN_LOG
 
 uv run tests/json_dump_tb_logs.py $LOG_DIR --output_path $JSON_METRICS
 
-# TODO: loss is very noisy, this check is mainly for sanity of immediate divergence
 uv run tests/check_metrics.py $JSON_METRICS \
-  'data["train/loss"]["9"] < 1500' \
+  'data["train/loss"]["3"] < 4.4' \
 
