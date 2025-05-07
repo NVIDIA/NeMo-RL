@@ -89,7 +89,7 @@ class ClippedPGLossFn(LossFunction):
     def __init__(self, cfg: ClippedPGLossConfig):
         self.ratio_clip_min = cfg["ratio_clip_min"]
         self.ratio_clip_max = cfg["ratio_clip_max"]
-        self.ratio_clip_c = cfg.get("ratio_clip_c", None)
+        self.ratio_clip_c = cfg["ratio_clip_c"]
         self.reference_policy_kl_penalty = cfg["reference_policy_kl_penalty"]
         self.disable_ppo_ratio = cfg.get("disable_ppo_ratio", False)
         self.use_on_policy_kl_approximation = cfg["use_on_policy_kl_approximation"]
