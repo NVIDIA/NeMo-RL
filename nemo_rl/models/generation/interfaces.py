@@ -124,11 +124,13 @@ def configure_generation_config(
     # vllm setting
     if config["backend"] == "vllm":
         # set load_format
-        if (
+        if is_eval:
+            config["vllm_cfg"]["load_format"] = "auto"
+        elif (
             "load_format" not in config["vllm_cfg"]
             or config["vllm_cfg"]["load_format"] is None
         ):
-            config["vllm_cfg"]["load_format"] = "auto" if is_eval else "dummy"
+            config["vllm_cfg"]["load_format"] = "dummy"
         # set skip_tokenizer_init
         if is_eval or config["stop_strings"] is not None:
             config["vllm_cfg"]["skip_tokenizer_init"] = False

@@ -45,6 +45,7 @@ basic_vllm_test_config: VllmConfig = {
         "tensor_parallel_size": 1,
         "gpu_memory_utilization": 0.3,
         "max_model_len": 1024,
+        "load_format": "dummy",
     },
 }
 
