@@ -94,7 +94,9 @@ class FSDP1PolicyWorker:
             model_name,
             device_map="cpu",  # load weights onto CPU initially
             torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
-            **sliding_window_overwrite(model_name),  # due to https://github.com/huggingface/transformers/issues/38002
+            **sliding_window_overwrite(
+                model_name
+            ),  # due to https://github.com/huggingface/transformers/issues/38002
         )
         # caching since this property is not always preserved after FSDP
         self.num_tied_weights = len(find_tied_parameters(self.model))
@@ -104,7 +106,9 @@ class FSDP1PolicyWorker:
                 model_name,
                 device_map="cpu",  # load weights onto CPU initially
                 torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
-                **sliding_window_overwrite(model_name),
+                **sliding_window_overwrite(
+                    model_name
+                ),  # due to https://github.com/huggingface/transformers/issues/38002
             )
         else:
             self.reference_model = None
