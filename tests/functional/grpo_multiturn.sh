@@ -22,9 +22,12 @@ cd $PROJECT_ROOT
 uv run $PROJECT_ROOT/examples/run_grpo_sliding_puzzle.py \
     policy.model_name=Qwen/Qwen3-0.6B \
     cluster.gpus_per_node=2 \
-    grpo.max_rollout_turns=10 \
+    grpo.max_rollout_turns=5 \
     grpo.max_num_steps=3 \
+    grpo.num_prompts_per_step=2 \
+    grpo.num_generations_per_prompt=4 \
     policy.max_total_sequence_length=1024 \
+    policy.train_global_batch_size=4 \
     policy.train_micro_batch_size=1 \
     policy.generation.top_p=0.99 \
     policy.generation.top_k=8000 \
