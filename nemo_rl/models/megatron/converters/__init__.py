@@ -1,0 +1,46 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from enum import Enum
+
+from .common import (
+    SafeDict,
+    get_all_rank_ids_in_group,
+    get_global_layer_num,
+    get_local_layer_num,
+)
+from .llama import mcore_te_to_hf_llama
+from .qwen2 import mcore_te_to_hf_qwen2
+
+
+class ModelType(Enum):
+    LLAMA = "LlamaForCausalLM"
+    QWEN2 = "Qwen2ForCausalLM"
+
+
+REGISTRY = {
+    ModelType.LLAMA: mcore_te_to_hf_llama,
+    ModelType.QWEN2: mcore_te_to_hf_qwen2,
+}
+# Allow indexing by string name
+for key in list(REGISTRY.keys()):
+    REGISTRY[key.value] = REGISTRY[key]
+
+__all__ = [
+    "get_all_rank_ids_in_group",
+    "get_local_layer_num",
+    "get_global_layer_num",
+    "REGISTRY",
+    "SafeDict",
+]

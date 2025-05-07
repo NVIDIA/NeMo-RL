@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Tuple, TypedDict
+from typing import Any, Optional, Tuple, TypedDict
 
 import torch
 
@@ -21,6 +21,7 @@ from nemo_rl.algorithms.utils import (
     masked_mean,
 )
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.model_utils import from_parallel_logits_to_logprobs
 from nemo_rl.models.dtensor.parallelize import (
     get_logprobs_from_vocab_parallel_logits,
 )
@@ -90,6 +91,8 @@ class ClippedPGLossFn(LossFunction):
         self,
         next_token_logits: torch.Tensor,
         data: BatchedDataDict[ClippedPGLossDataDict],
+        vocab_parallel_rank: Optional[int] = None,
+        vocab_parallel_group: Optional[torch.distributed.ProcessGroup] = None,
     ) -> Tuple[torch.Tensor, dict]:
         """Clipped Policy Gradient RL loss function."""
         token_mask = data["token_mask"][:, 1:]
@@ -109,7 +112,16 @@ class ClippedPGLossFn(LossFunction):
 
         next_token_logits = next_token_logits.to(torch.float32)
 
-        if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
+        if vocab_parallel_group is not None:
+            curr_logprobs = from_parallel_logits_to_logprobs(
+                next_token_logits,
+                data["input_ids"],
+                vocab_start_index=vocab_parallel_rank * next_token_logits.shape[-1],
+                vocab_end_index=(vocab_parallel_rank + 1) * next_token_logits.shape[-1],
+                group=vocab_parallel_group,
+                inference_only=False,
+            )
+        elif isinstance(next_token_logits, torch.distributed.tensor.DTensor):
             curr_logprobs = get_logprobs_from_vocab_parallel_logits(
                 next_token_logits, data["input_ids"]
             )

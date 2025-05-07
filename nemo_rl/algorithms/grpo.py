@@ -49,6 +49,7 @@ from nemo_rl.models.generation.vllm import VllmGeneration
 from nemo_rl.models.interfaces import PolicyInterface
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.hf_policy import HfPolicy
+from nemo_rl.models.policy.megatron_policy import MegatronPolicy
 from nemo_rl.utils.checkpoint import CheckpointingConfig, CheckpointManager
 from nemo_rl.utils.logger import (
     Logger,
@@ -198,7 +199,7 @@ def setup(
     #          Cluster
     # ==========================
     print("\n▶ Setting up compute cluster...")
-    colocated_inference = generation_config["backend"] != "hf"
+    colocated_inference = generation_config["backend"] not in ["hf", "megatron"]
     cluster = RayVirtualCluster(
         name="grpo_policy_cluster",
         bundle_ct_per_node_list=[cluster_config["gpus_per_node"]]
@@ -218,30 +219,42 @@ def setup(
     backend = generation_config["backend"]
     generation_config["model_name"] = policy_config["model_name"]  # Needed for vLLM
 
-    if backend == "hf":
+    if backend in ["hf", "megatron"]:
         policy_generation = None
-        print(f"  ✓ Using HF backend for generation with {policy_config['model_name']}")
     elif backend == "vllm":
         policy_generation = VllmGeneration(cluster=cluster, config=generation_config)
         # Worker groups are not initialized until the first call to run something on workergroups.
         # vllm 0.8 fails in initialization if its called in the first training step since it has no clean view of the GPU memory (HF is sharing the same memory).
         policy_generation.finish_generation()
-        print(
-            f"  ✓ Using vLLM backend for generation with {policy_config['model_name']}"
-        )
+    else:
+        raise ValueError(f"Unknown generation backend: {backend}")
+    print(f"  ✓ Using {backend} for generation with {policy_config['model_name']}")
 
-    policy = HfPolicy(
-        cluster=cluster,
-        config=policy_config,
-        tokenizer=tokenizer,
-        weights_path=Path(last_checkpoint_path) / "policy" / "weights"
-        if last_checkpoint_path
-        else None,
-        optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
-        if last_checkpoint_path
-        else None,
-        init_optimizer=True,
-    )
+    if policy_config["training_backend"] == "hf":
+        policy = HfPolicy(
+            cluster=cluster,
+            config=policy_config,
+            tokenizer=tokenizer,
+            weights_path=Path(last_checkpoint_path) / "policy" / "weights"
+            if last_checkpoint_path
+            else None,
+            optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
+            if last_checkpoint_path
+            else None,
+            init_optimizer=True,
+        )
+    elif policy_config["training_backend"] == "megatron":
+        policy = MegatronPolicy(
+            cluster=cluster,
+            config=policy_config,
+            tokenizer=tokenizer,
+            init_optimizer=True,
+            init_reference_model=True,
+        )
+    else:
+        raise ValueError(
+            f"Unknown training backend: {policy_config['training_backend']}"
+        )
 
     loss_fn = ClippedPGLossFn(loss_config)
 

@@ -60,7 +60,11 @@ def get_device_uuid(device_idx: int) -> str:
     with nvml_context():
         try:
             handle = pynvml.nvmlDeviceGetHandleByIndex(global_device_idx)
-            return pynvml.nvmlDeviceGetUUID(handle)
+            uuid = pynvml.nvmlDeviceGetUUID(handle)
+            # Ensure the UUID is returned as a string, not bytes
+            if isinstance(uuid, bytes):
+                uuid = uuid.decode("utf-8")
+            return uuid
         except pynvml.NVMLError as e:
             raise RuntimeError(
                 f"Failed to get device UUID for device {device_idx} (global index: {global_device_idx}): {e}"
