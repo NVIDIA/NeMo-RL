@@ -33,6 +33,7 @@ policy:
       tensor_parallel_size: 1
       gpu_memory_utilization: 0.6
       max_model_len: ${policy.max_total_sequence_length}
+      load_format: dummy # auto for Gemma models due to a vllm bug
 
 data:
   add_system_prompt: false

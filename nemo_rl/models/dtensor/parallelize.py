@@ -339,7 +339,9 @@ PARALLIZE_FUNCTIONS = {
     Qwen2ForCausalLM: _parallelize_qwen,
     Qwen3ForCausalLM: _parallelize_qwen,
     LlamaForCausalLM: _parallelize_llama,
+    # gemma-3-1b-it uses Gemma3ForCausalLM since it is a text-only model
     Gemma3ForCausalLM: _parallelize_gemma3,
+    # The larger gemma models use Gemma3ForConditionalGeneration, which are for text-image input
     Gemma3ForConditionalGeneration: _parallelize_gemma3,
 }
 
