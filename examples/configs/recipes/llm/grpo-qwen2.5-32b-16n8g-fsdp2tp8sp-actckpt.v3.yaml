@@ -79,6 +79,7 @@ policy:
       tensor_parallel_size: 4
       gpu_memory_utilization: 0.6
       max_model_len: 16384
+      load_format: dummy
 data:
   max_input_seq_length: 16384
   prompt_file: examples/prompts/cot.txt

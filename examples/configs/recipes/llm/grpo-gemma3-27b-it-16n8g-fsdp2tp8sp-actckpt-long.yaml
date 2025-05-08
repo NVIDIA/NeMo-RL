@@ -2,7 +2,7 @@ grpo:
   num_prompts_per_step: 64
   num_generations_per_prompt: 32
   max_rollout_turns: 1
-  max_num_steps: 30
+  max_num_steps: 20
   normalize_rewards: true
   use_leave_one_out_baseline: true
   val_period: 10
@@ -17,31 +17,31 @@ loss_fn:
   use_importance_sampling_correction: false
 checkpointing:
   enabled: true
-  checkpoint_dir: results/grpo-qwen2.5-7b-instruct-4n8g-fsdp1
+  checkpoint_dir: results/grpo-gemma3-27b-it-16n8g-fsdp2tp8sp-actckpt-long
   metric_name: val_reward
   higher_is_better: true
   keep_top_k: 3
   save_period: 10
 policy:
-  model_name: Qwen/Qwen2.5-7B-Instruct
+  model_name: google/gemma-3-27b-it
   tokenizer:
-    name: Qwen/Qwen2.5-7B-Instruct
+    name: google/gemma-3-27b-it
   train_global_batch_size: 512
   train_micro_batch_size: 1
   generation_batch_size: 32
   logprob_batch_size: 2
-  max_total_sequence_length: 4096
+  max_total_sequence_length: 16384
   precision: bfloat16
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
   refit_buffer_size_gb: 4
   dtensor_cfg:
-    enabled: false
+    enabled: true
     cpu_offload: false
-    sequence_parallel: false
-    activation_checkpointing: false
-    tensor_parallel_size: 1
-  make_sequence_length_divisible_by: 1
+    sequence_parallel: true
+    activation_checkpointing: true
+    tensor_parallel_size: 8
+  make_sequence_length_divisible_by: 8
   max_grad_norm: 1
   optimizer:
     name: torch.optim.AdamW
@@ -59,29 +59,28 @@ policy:
       kwargs:
         start_factor: 0.1
         end_factor: 1
-        total_iters: 13
+        total_iters: 50
     - name: torch.optim.lr_scheduler.ConstantLR
       kwargs:
         factor: 1
         total_iters: 10000000000
     - milestones:
-        - 13
+        - 50
   generation:
     backend: vllm
-    max_new_tokens: 4096
+    max_new_tokens: 16384
     temperature: 1
     top_p: 1
     top_k: null
-    stop_token_ids:
-      - 151645
+    stop_token_ids: null
     stop_strings: null
     vllm_cfg:
-      tensor_parallel_size: 1
+      tensor_parallel_size: 4
       gpu_memory_utilization: 0.6
-      max_model_len: 4096
-      load_format: dummy
+      max_model_len: 16384
+      load_format: auto
 data:
-  max_input_seq_length: 4096
+  max_input_seq_length: 16384
   prompt_file: examples/prompts/cot.txt
   system_prompt_file: null
   dataset_name: OpenMathInstruct-2
@@ -89,18 +88,18 @@ env:
   math:
     num_workers: 8
 logger:
-  log_dir: logs/grpo-qwen2.5-7b-instruct-4n8g-fsdp1
+  log_dir: logs/grpo-gemma3-27b-it-16n8g-fsdp2tp8sp-actckpt-long
   num_val_samples_to_print: 0
   wandb_enabled: true
   tensorboard_enabled: true
   monitor_gpus: true
   wandb:
     project: nemo-rl
-    name: grpo-qwen2.5-7b-instruct-4n8g-fsdp1
+    name: grpo-gemma3-27b-it-16n8g-fsdp2tp8sp-actckpt-long
   tensorboard: {}
   gpu_monitoring:
     collection_interval: 10
     flush_interval: 10
 cluster:
   gpus_per_node: 8
-  num_nodes: 4
+  num_nodes: 16

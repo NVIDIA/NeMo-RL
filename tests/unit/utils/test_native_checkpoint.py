@@ -33,9 +33,9 @@ from tests.unit.test_utils import SimpleLoss
 
 # Define basic test config
 simple_policy_config = {
-    "model_name": "meta-llama/Llama-3.2-1B",  # "hf-internal-testing/tiny-random-Gemma3ForCausalLM",
+    "model_name": "Qwen/Qwen3-0.6B",  # "hf-internal-testing/tiny-random-Gemma3ForCausalLM",
     "tokenizer": {
-        "name": "meta-llama/Llama-3.2-1B",
+        "name": "Qwen/Qwen3-0.6B",
     },
     "train_global_batch_size": 4,
     "train_micro_batch_size": 1,

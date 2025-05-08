@@ -123,8 +123,9 @@ class ClippedPGLossFn(LossFunction):
             ).item()
         else:
             # first average over tokens per sample, then average over samples
+            # multiply lp_error by mask before exp to prevent inf for large lp_error values on masked tokens
             mult_prob_error = masked_mean(
-                masked_mean(torch.exp(lp_error), token_mask, dim=-1),
+                masked_mean(torch.exp(lp_error) * token_mask, token_mask, dim=-1),
                 sample_mask,
                 global_normalization_factor=total_valid_tokens_or_seqs,
             ).item()

@@ -84,11 +84,14 @@ def get_cpu_state_dict(
     for k, v in state_generator:
         val = to_local_if_dtensor(v)
 
-        cpu_tensor = torch.empty(
-            *val.shape, device="cpu", pin_memory=pin_memory, dtype=val.dtype
-        )
-        cpu_tensor.copy_(val, non_blocking=True)
-        new_state_dict[k] = cpu_tensor
+        if len(val.shape) == 0:
+            new_state_dict[k] = val.cpu()
+        else:
+            cpu_tensor = torch.empty(
+                *val.shape, device="cpu", pin_memory=pin_memory, dtype=val.dtype
+            )
+            cpu_tensor.copy_(val, non_blocking=True)
+            new_state_dict[k] = cpu_tensor
 
     torch.cuda.synchronize()
     return new_state_dict
