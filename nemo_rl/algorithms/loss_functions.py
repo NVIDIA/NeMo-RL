@@ -149,11 +149,11 @@ class ClippedPGLossFn(LossFunction):
                 next_token_logits, data["input_ids"]
             )
         else:
-            next_token_logits = next_token_logits[
+            next_token_logits_wo_last = next_token_logits[
                 :, :-1
             ]  # Remove last position's logits
             next_token_logprobs = torch.nn.functional.log_softmax(
-                next_token_logits, dim=-1
+                next_token_logits_wo_last, dim=-1
             )
             next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
             curr_logprobs = next_token_logprobs.gather(
@@ -219,31 +219,38 @@ class ClippedPGLossFn(LossFunction):
                 advantages < 0, torch.min(clip_loss, loss3), clip_loss
             )
 
+        # See: docs/guides/grpo.md#importance-sampling-correction
+        actor_importance_weights = torch.exp(prev_logprobs - generation_logprobs)
+        actor_importance_weights = torch.nan_to_num(
+            actor_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
+        )
         if self.use_importance_sampling_correction:
-            # See: docs/guides/grpo.md#importance-sampling-correction
-            actor_importance_weights = torch.exp(prev_logprobs - generation_logprobs)
-            actor_importance_weights = torch.nan_to_num(
-                actor_importance_weights, nan=0.0, posinf=0.0, neginf=0.0
-            )
+            importance_weights_to_use = actor_importance_weights
         else:
-            actor_importance_weights = torch.ones_like(prev_logprobs)
+            importance_weights_to_use = torch.ones_like(prev_logprobs)
 
         if self.loss_type == LossType.TOKEN_LEVEL:
             actor_loss = masked_mean(
-                actor_importance_weights * clip_loss,
+                importance_weights_to_use * clip_loss,
                 mask,
                 global_normalization_factor=total_valid_tokens_or_seqs,
             )
         else:
             actor_loss = masked_mean(
                 masked_mean(
-                    actor_importance_weights * clip_loss,
+                    importance_weights_to_use * clip_loss,
                     token_mask,
                     dim=-1,
                 ),
                 sample_mask,
                 global_normalization_factor=total_valid_tokens_or_seqs,
             )
+
+        # Approximating entropy as E_{s ~ \pi_{prev}(s)}[-(\pi_{curr}/\pi_{prev})log(\pi_{curr}(s))]
+        seq_entropy_approx = -masked_mean(
+            actor_importance_weights * curr_logprobs, mask
+        )
+
         loss = actor_loss + kl
         with torch.no_grad():
             if self.loss_type == LossType.TOKEN_LEVEL:
@@ -278,6 +285,7 @@ class ClippedPGLossFn(LossFunction):
                 "kl_penalty": kl.item() / self.reference_policy_kl_penalty if kl else 0,
                 "token_mult_prob_error": mult_prob_error,
                 "num_valid_samples": sample_mask.sum().item(),
+                "approx_entropy": seq_entropy_approx.item(),
             },
         )
 
