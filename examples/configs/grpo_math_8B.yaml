@@ -35,12 +35,13 @@ policy:
       kwargs:
         start_factor: 0.1
         end_factor: 1.0
-        total_iters: 50
+        # The scheduler iteration is per GPRO step and is decoupled with the optimizer step (may be >=1 per GPRO step)
+        total_iters: 13
     - name: "torch.optim.lr_scheduler.ConstantLR"
       kwargs:
         factor: 1.0
         total_iters: 10000000000
-    - milestones: [50]
+    - milestones: [13]
 
   generation:
     backend: "vllm"
@@ -54,6 +55,9 @@ policy:
       tensor_parallel_size: 1
       gpu_memory_utilization: 0.6
       max_model_len: ${policy.max_total_sequence_length}
+      # For most cases, use "dummy" to load the initial weights, since they will be overwritten during refit
+      # For Gemma models, we need to use "auto" due to a vllm bug
+      load_format: dummy
 
 cluster:
   gpus_per_node: 8

@@ -89,7 +89,7 @@ class FSDP1PolicyWorker:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
+            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/NeMo-RL/issues/13 is fixed
         )
         # caching since this property is not always preserved after FSDP
         self.num_tied_weights = len(find_tied_parameters(self.model))
@@ -98,7 +98,7 @@ class FSDP1PolicyWorker:
             self.reference_model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 device_map="cpu",  # load weights onto CPU initially
-                torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
+                torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/NeMo-RL/issues/13 is fixed
             )
         else:
             self.reference_model = None
@@ -231,7 +231,7 @@ class FSDP1PolicyWorker:
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
         if self.num_tied_weights != 0 and not skip_tie_check:
             raise ValueError(
-                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/NeMo-RL/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )
 
         if gbs is None:
@@ -290,6 +290,10 @@ class FSDP1PolicyWorker:
                         else:
                             logits = outputs.logits
 
+                    # Divide logits by temperature
+                    if "generation" in self.cfg and self.cfg["generation"] is not None:
+                        logits.div_(self.cfg["generation"]["temperature"])
+
                     loss, loss_metrics = loss_fn(logits, mb)
                     num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
@@ -325,8 +329,10 @@ class FSDP1PolicyWorker:
 
                     # Update parameters
                     self.optimizer.step()
-                    self.scheduler.step()
                 losses.append(torch.tensor(mb_losses).sum().item())
+
+            # increment scheduler after all batches in rollout are processed
+            self.scheduler.step()
 
             # Compute global loss across all ranks
             with torch.no_grad():
@@ -910,8 +916,6 @@ class FSDP1PolicyWorker:
         weights_path: str,
         optimizer_path: Optional[str] = None,
         tokenizer_path: Optional[str] = None,
-        save_torch_dist: bool = True,
-        save_hf: bool = False,
     ):
         """Save a checkpoint of the model.
 
@@ -921,19 +925,12 @@ class FSDP1PolicyWorker:
             __0_1.distcp
             __1_0.distcp
             ...
-        weights_path-hf/
-            config.json
-            generation_config.json
-            model-00001-of-<TOTAL_SHARDS>.safetensors
-            ...
-            model.safetensors.index.json
         optimizer_path/
             __0_0.distcp
             __1_0.distcp
             ...
 
-        the HuggingFace checkpoint is saved only if `save_hf` is True,
-        and the optimizer states are saved only if `optimizer` and `optimizer_path` are provided.
+        the optimizer states are saved only if `optimizer` and `optimizer_path` are provided.
         """
         save_checkpoint(
             model=self.model,
@@ -943,8 +940,6 @@ class FSDP1PolicyWorker:
             optimizer_path=optimizer_path,
             tokenizer=self.tokenizer if tokenizer_path else None,
             tokenizer_path=tokenizer_path,
-            save_torch_dist=save_torch_dist,
-            save_hf=save_hf,
         )
 
     def load_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):

@@ -154,7 +154,7 @@ jobs:
       UNIT_TEST_SCRIPT: |
         cd /opt/nemo-rl
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
-          uv run --no-sync bash -x ./tests/run_unit.sh
+          uv run --no-sync bash -x ./tests/run_unit.sh --cov=nemo_rl --cov-report=term --cov-report=json
         else
           echo Skipping unit tests for docs-only level
         fi
@@ -200,6 +200,27 @@ jobs:
         EOF
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+  coverage:
+    name: Upload coverage to Codecov
+    needs: [tests]
+    if: ${{ contains('L0 L1 L2', needs.pre-flight.outputs.test_level) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-coverage-report
+          path: .
+
+      # Disabled until we make the repo public
+      # - name: Upload to Codecov
+      #   uses: codecov/codecov-action@v4
+      #   with:
+      #     token: ${{ secrets.CODECOV_TOKEN }}
+      #     file: ./coverage.json
+      #     flags: unit-tests
+      #     verbose: true
 
   CI_QA_Gate:
     name: CI quality check

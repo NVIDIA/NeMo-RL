@@ -307,8 +307,6 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         weights_path: str,
         optimizer_path: Optional[str] = None,
         tokenizer_path: Optional[str] = None,
-        save_torch_dist: bool = True,
-        save_hf: bool = False,
     ):
         """Save a checkpoint of the model."""
         futures = self.worker_group.run_all_workers_single_data(
@@ -316,8 +314,6 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             weights_path,
             optimizer_path,
             tokenizer_path,
-            save_torch_dist,
-            save_hf,
             only_on="all_tied_workers",
         )
         ray.get(futures)

@@ -15,7 +15,7 @@ dependencies = [
     "torch==2.6.0",
     "colored==2.2.3",
     "ray[default]==2.43.0",
-    "transformers",
+    "transformers>=4.51.0",
     "wandb",
     "numpy",
     "datasets",
@@ -79,9 +79,16 @@ exclude = '''
 '''
 
 [tool.pytest.ini_options]
-addopts = "--cov=nemo_rl --cov-report=term --cov-report=json -s -rA -x"
+addopts = "--durations=15 -s -rA -x"
 testpaths = ["tests"]
 python_files = "test_*.py"
+
+[tool.coverage.run]
+concurrency = ["thread", "multiprocessing"]
+omit = ["/tmp/*"]
+
+[tool.coverage.paths]
+source = ["nemo_rl/", "/opt/nemo-rl/nemo_rl/"]
 
 [tool.ruff.lint]
 # Enable all `pydocstyle` rules, limiting to those that adhere to the

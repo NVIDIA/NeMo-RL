@@ -15,7 +15,6 @@
 """Checkpoint management utilities for HF models."""
 
 import os
-from pathlib import Path
 from typing import Any, Optional
 
 import torch
@@ -139,8 +138,6 @@ def save_checkpoint(
     optimizer_path: Optional[str] = None,
     tokenizer: Optional[Any] = None,
     tokenizer_path: Optional[str] = None,
-    save_torch_dist: bool = True,
-    save_hf: bool = False,
 ) -> None:
     """Save a checkpoint of the model and optionally optimizer state.
 
@@ -150,40 +147,17 @@ def save_checkpoint(
         optimizer: Optional optimizer to save
         scheduler: Optional scheduler to save
         optimizer_path: Path to save optimizer state (required if optimizer provided)
-        save_torch_dist: Whether to save in PyTorch distributed format
-        save_hf: Whether to save in HuggingFace format
     """
-    if save_hf:
-        if hasattr(model, "_fsdp_wrapped_module"):
-            model_state_dict = model._fsdp_wrapped_module.state_dict()
-        else:
-            model_state_dict = {
-                k: v.full_tensor()
-                if isinstance(v, torch.distributed.tensor.DTensor)
-                else v
-                for k, v in model.state_dict().items()
-            }
+    model_state = {"model": ModelState(model)}
+    dcp.save(model_state, checkpoint_id=weights_path)
 
-        if torch.distributed.get_rank() == 0:
-            # Create a new path by appending "-hf" to the weights path
-            hf_weights_path = f"{Path(weights_path)}-hf"
-
-            model.save_pretrained(
-                hf_weights_path,
-                state_dict=model_state_dict,
+    if optimizer is not None:
+        if optimizer_path is None:
+            raise ValueError(
+                "optimizer_path must be provided when saving optimizer state"
             )
-
-    if save_torch_dist:
-        model_state = {"model": ModelState(model)}
-        dcp.save(model_state, checkpoint_id=weights_path)
-
-        if optimizer is not None:
-            if optimizer_path is None:
-                raise ValueError(
-                    "optimizer_path must be provided when saving optimizer state"
-                )
-            optimizer_state = {"optim": OptimizerState(model, optimizer, scheduler)}
-            dcp.save(optimizer_state, checkpoint_id=optimizer_path)
+        optimizer_state = {"optim": OptimizerState(model, optimizer, scheduler)}
+        dcp.save(optimizer_state, checkpoint_id=optimizer_path)
 
     if tokenizer is not None:
         if tokenizer_path is None:
@@ -269,7 +243,7 @@ def convert_dcp_to_hf(
     config.save_pretrained(hf_ckpt_path)
 
     # TODO: After the following PR gets merged:
-    # https://github.com/NVIDIA/nemo-rl/pull/148/files
+    # https://github.com/NVIDIA/NeMo-RL/pull/148/files
     # tokenizer should be copied from policy/tokenizer/* instead of relying on the model name
     # We can expose a arg at the top level --tokenizer_path to plumb that through.
     # This is more stable than relying on the current NeMo-RL get_tokenizer() which can

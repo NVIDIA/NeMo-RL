@@ -1,28 +1,30 @@
-# Nemo-RL: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to >100B Parameters, scaling from 1 GPU to 100s
+# Nemo RL: A Scalable and Efficient Post-Training Library
 
 <!-- markdown all in one -->
-- [Nemo-RL: A Scalable and Efficient Post-Training Library for Models Ranging from tiny to \>100B Parameters, scaling from 1 GPU to 100s](#nemo-rl-a-scalable-and-efficient-post-training-library-for-models-ranging-from-tiny-to-100b-parameters-scaling-from-1-gpu-to-100s)
+- [Nemo RL: A Scalable and Efficient Post-Training Library](#nemo-rl-a-scalable-and-efficient-post-training-library)
   - [Features](#features)
   - [Prerequisites](#prerequisites)
-  - [Quick start](#quick-start)
-    - [GRPO](#grpo)
-      - [Single Node](#grpo-single-node)
-      - [Multi-node](#grpo-multi-node)
-        - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
-    - [SFT](#sft)
-      - [Single Node](#sft-single-node)
-      - [Multi-node](#sft-multi-node)
-    - [DPO](#dpo)
-      - [Single Node](#dpo-single-node)
-      - [Multi-node](#dpo-multi-node)
-  - [Cluster Start](#cluster-start)
+  - [GRPO](#grpo)
+    - [GRPO Single Node](#grpo-single-node)
+    - [GRPO Multi-node](#grpo-multi-node)
+      - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
+  - [Supervised Fine-Tuning (SFT)](#supervised-fine-tuning-sft)
+    - [SFT Single Node](#sft-single-node)
+    - [SFT Multi-node](#sft-multi-node)
+  - [DPO](#dpo)
+    - [DPO Single Node](#dpo-single-node)
+    - [DPO Multi-node](#dpo-multi-node)
+  - [Set Up Clusters](#set-up-clusters)
+  - [Citation](#citation)
+  - [Contributing](#contributing)
+  - [Licenses](#licenses)
 
-**Nemo-RL** is a scalable and efficient post-training library designed for models ranging from 1 GPU to thousands, and from tiny to over 100 billion parameters.
+**Nemo RL** is a scalable and efficient post-training library designed for models ranging from 1 GPU to thousands, and from tiny to over 100 billion parameters.
 
 What you can expect:
 
-- **Seamless integration with HuggingFace** for ease of use, allowing users to leverage a wide range of pre-trained models and tools.
-- **High-performance implementation with Megatron core**, supporting various parallelism techniques for large models (>100B) and large context lengths.
+- **Seamless integration with Hugging Face** for ease of use, allowing users to leverage a wide range of pre-trained models and tools.
+- **High-performance implementation with Megatron Core**, supporting various parallelism techniques for large models (>100B) and large context lengths.
 - **Efficient resource management using Ray**, enabling scalable and flexible deployment across different hardware configurations.
 - **Flexibility** with a modular design that allows easy integration and customization.
 - **Comprehensive documentation** that is both detailed and user-friendly, with practical examples.
@@ -31,32 +33,32 @@ What you can expect:
 
 ✅ _Available now_ | 🔜 _Coming in v0.3_
 
-- ✅ **Fast Generation** - vLLM backend for optimized inference
-- ✅ **HuggingFace Integration** - Works with 1-32B models (Qwen2.5, Llama)
-- ✅ **Distributed Training** - FSDP support and Ray-based infrastructure
+- ✅ **Fast Generation** - vLLM backend for optimized inference.
+- ✅ **HuggingFace Integration** - Works with 1-32B models (Qwen2.5, Llama).
+- ✅ **Distributed Training** - FSDP support and Ray-based infrastructure.
 - ✅ **Environment Support** - Support for multi-environment training.
-- ✅ **Learning Algorithms** - GRPO (Group Relative Policy Optimization), SFT (Supervised Fine-Tuning), and DPO (Direct Preference Optimization)
-- ✅ **Multi-Turn RL** - multi-turn generation and training for RL with tool use, games, etc. 
-- ✅ **Large Model Support** - Native PyTorch support for models up to 32B parameters
-- ✅ **Advanced Parallelism** - FSDP2, TP, and SP for efficient training
-- ✅ **Worker Isolation** - Process isolation between RL Actors (no worries about global state)
-- ✅ **Environment Isolation** - Dependency isolation between components
+- ✅ **Learning Algorithms** - GRPO (Group Relative Policy Optimization), SFT (Supervised Fine-Tuning), and DPO (Direct Preference Optimization).
+- ✅ **Multi-Turn RL** - multi-turn generation and training for RL with tool use, games, etc.
+- ✅ **Large Model Support** - Native PyTorch support for models up to 32B parameters.
+- ✅ **Advanced Parallelism** - FSDP2, TP, and SP for efficient training.
+- ✅ **Worker Isolation** - Process isolation between RL Actors (no worries about global state).
+- ✅ **Environment Isolation** - Dependency isolation between components.
 
-- 🔜 **(Even) Larger Model Support** - Native PyTorch & Megatron
-- 🔜 **Improved Native Performance** - Improve training time for Native Pytorch Models
-- 🔜 **Megatron Policy** - Support advanced parallelism in training with Megatron Core
-- 🔜 **Megatron Inference** - Support Megatron Inference for day-0 support for new megatron models
-- 🔜 **MoE Models** - Support DeepseekV3 and Llama4
+- 🔜 **(Even) Larger Model Support** - Native PyTorch & Megatron.
+- 🔜 **Improved Native Performance** - Improve training time for Native Pytorch Models.
+- 🔜 **Megatron Policy** - Support advanced parallelism in training with Megatron Core.
+- 🔜 **Megatron Inference** - Support Megatron Inference for day-0 support for new megatron models.
+- 🔜 **MoE Models** - Support DeepseekV3 and Llama4.
 
 ## Prerequisites
 
-Clone **NeMo RL**
+Clone **NeMo RL**.
 ```sh
-git clone git@github.com:NVIDIA/nemo-rl.git
+git clone git@github.com:NVIDIA/NeMo-RL.git
 cd nemo-rl
 ```
 
-Install `uv`
+Install `uv`.
 ```sh
 # For faster setup and environment isolation, we use `uv`
 pip install uv
@@ -72,15 +74,17 @@ pip install uv
 # Example: uv run python examples/run_grpo_math.py
 ```
 
-## Quick start
+**Important Notes:**
 
-**Reminder**: Don't forget to set your `HF_HOME`, `WANDB_API_KEY`, and `HF_DATASETS_CACHE` (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
+- Use the `uv run <command>` to execute scripts within the managed environment. This helps maintain consistency across different shells and sessions.
+- Ensure you have the necessary CUDA drivers and PyTorch installed compatible with your hardware.
+- **Reminder**: Don't forget to set your `HF_HOME`, `WANDB_API_KEY`, and `HF_DATASETS_CACHE` (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
 
-### GRPO
+## GRPO
 
 We have a reference GRPO experiment config set up trained for math benchmarks using the [OpenInstructMath2](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2) dataset.
 
-#### GRPO Single Node
+### GRPO Single Node
 
 To run GRPO on a single GPU for `Qwen/Qwen2.5-1.5B`:
 
@@ -89,7 +93,7 @@ To run GRPO on a single GPU for `Qwen/Qwen2.5-1.5B`:
 uv run python examples/run_grpo_math.py
 ```
 
-By default, this uses the configuration in `examples/configs/grpo_math_1B.yaml`. You can customize parameters with command-line overrides. For example, to run on 8 gpus,
+By default, this uses the configuration in `examples/configs/grpo_math_1B.yaml`. You can customize parameters with command-line overrides. For example, to run on 8 GPUs,
 
 ```sh
 # Run the GRPO math example using a 1B parameter model using 8 GPUs
@@ -108,10 +112,10 @@ uv run python examples/run_grpo_math.py \
   logger.num_val_samples_to_print=10 \
 ```
 
-#### GRPO Multi-node
+### GRPO Multi-node
 
 ```sh
-# Run from the root of NeMo-RL repo
+# Run from the root of NeMo RL repo
 NUM_ACTOR_NODES=2
 
 # grpo_math_8b uses Llama-3.1-8B-Instruct model
@@ -128,10 +132,10 @@ sbatch \
     ray.sub
 ```
 
-##### GRPO Qwen2.5-32B
+#### GRPO Qwen2.5-32B
 
 ```sh
-# Run from the root of NeMo-RL repo
+# Run from the root of NeMo RL repo
 NUM_ACTOR_NODES=16
 
 # Download Qwen before the job starts to avoid spending time downloading during the training loop
@@ -158,21 +162,21 @@ Reference example for training to play a Sliding Puzzle Game:
 uv run python examples/run_grpo_sliding_puzzle.py 
 ```
 
-### SFT
+## Supervised Fine-Tuning (SFT)
 
-We provide a sample SFT experiment that uses the [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
+We provide an example SFT experiment using the [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
 
-#### SFT Single Node
+### SFT Single Node
 
-The default SFT experiment is configured to run on a single GPU. To launch the experiment,
+The default SFT configuration is set to run on a single GPU. To start the experiment:
 
 ```sh
 uv run python examples/run_sft.py
 ```
 
-This trains `Llama3.2-1B` on one GPU using the SQUAD dataset.
+This fine-tunes the `Llama3.2-1B` model on the SQuAD dataset using a 1 GPU.
 
-If you have access to more GPUs, you can update the experiment accordingly. To run on 8 GPUs, we update the cluster configuration. We also switch to an 8B Llama base model and increase the batch size:
+To use multiple GPUs on a single node, you can modify the cluster configuration. This adjustment will also let you potentially increase the model and batch size:
 
 ```sh
 uv run python examples/run_sft.py \
@@ -184,10 +188,10 @@ uv run python examples/run_sft.py \
 
 Refer to `examples/configs/sft.yaml` for a full list of parameters that can be overridden.
 
-#### SFT Multi-node
+### SFT Multi-node
 
 ```sh
-# Run from the root of NeMo-RL repo
+# Run from the root of NeMo RL repo
 NUM_ACTOR_NODES=2
 
 COMMAND="uv run ./examples/run_sft.py --config examples/configs/sft.yaml cluster.num_nodes=2 cluster.gpus_per_node=8 checkpointing.checkpoint_dir='results/sft_llama8b_2nodes' logger.wandb_enabled=True logger.wandb.name='sft-llama8b'" \
@@ -203,11 +207,11 @@ sbatch \
     ray.sub
 ```
 
-### DPO
+## DPO
 
 We provide a sample DPO experiment that uses the [HelpSteer3 dataset](https://huggingface.co/datasets/nvidia/HelpSteer3) for preference-based training.
 
-#### DPO Single Node
+### DPO Single Node
 
 The default DPO experiment is configured to run on a single GPU. To launch the experiment:
 
@@ -239,12 +243,12 @@ uv run python examples/run_dpo.py \
 
 Refer to [dpo.yaml](../examples/configs/dpo.yaml) for a full list of parameters that can be overridden. For an in-depth explanation of how to add your own DPO dataset, refer to the [DPO documentation](docs/guides/dpo.md).
 
-#### DPO Multi-node
+### DPO Multi-node
 
 For distributed DPO training across multiple nodes, modify the following script for your use case:
 
 ```sh
-# Run from the root of NeMo-RL repo
+# Run from the root of NeMo RL repo
 ## number of nodes to use for your job
 NUM_ACTOR_NODES=2
 
@@ -262,19 +266,29 @@ sbatch \
     ray.sub
 ```
 
-## Cluster Start
+## Set Up Clusters
 
-Please visit [Cluster Start](docs/cluster.md) for how to get started on Slurm or Kubernetes.
+For detailed instructions on how to set up and launch NeMo RL on Slurm or Kubernetes clusters, please refer to the dedicated [Cluster Start](docs/cluster.md) documentation.
 
 ## Citation
 
-If you use NeMo-RL in your research, please cite it using the following BibTeX entry:
+If you use NeMo RL in your research, please cite it using the following BibTeX entry:
 
 ```bibtex
 @misc{nemo-rl,
-title = {NeMo-RL: A Scalable and Efficient Post-Training Library},
+title = {NeMo RL: A Scalable and Efficient Post-Training Library},
 howpublished = {\url{https://github.com/NVIDIA/NeMo-RL}},
 year = {2025},
 note = {GitHub repository},
 }
 ```
+
+## Contributing
+
+We welcome contributions to NeMo RL\! Please see our [Contributing Guidelines](https://github.com/NVIDIA/NeMo-RL/blob/main/CONTRIBUTING.md) for more information on how to get involved.
+
+## Licenses
+
+NVIDIA NeMo RL is licensed under the [Apache License 2.0](https://github.com/NVIDIA/NeMo-RL/blob/main/LICENSE).
+
+NeMo is licensed under the [NVIDIA AI PRODUCT AGREEMENT](https://www.nvidia.com/en-us/agreements/enterprise-software/product-specific-terms-for-ai-products/). By pulling and using the container, you accept the terms and conditions of this license.

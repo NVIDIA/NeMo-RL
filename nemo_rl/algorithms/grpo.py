@@ -524,12 +524,6 @@ def grpo_train(
             ):  # +1 because step is 0-indexed
                 policy.prepare_for_training()
 
-                is_last_checkpoint = (
-                    min(len(dataloader), master_config["grpo"]["max_num_steps"])
-                    - (step + 1)
-                    < master_config["checkpointing"]["save_period"]
-                )
-
                 grpo_save_state["step"] = step + 1
                 grpo_save_state["val_reward"] = val_metrics["accuracy"]
                 grpo_save_state["consumed_samples"] = consumed_samples
@@ -546,7 +540,6 @@ def grpo_train(
                         tokenizer_path=os.path.join(
                             checkpoint_path, "policy", "tokenizer"
                         ),
-                        save_hf=is_last_checkpoint,
                     )
                     torch.save(
                         dataloader.state_dict(),

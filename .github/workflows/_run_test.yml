@@ -115,6 +115,13 @@ jobs:
             umask 000
             ${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
 
+        - name: Upload coverage report
+          uses: actions/upload-artifact@v4
+          with:
+            name: unit-test-coverage-report
+            path: ${{ github.workspace }}/tests/coverage.json
+            retention-days: 7
+
         - uses: "NVIDIA/NeMo/.github/actions/cancel-workflow@main"
           if: failure()
 

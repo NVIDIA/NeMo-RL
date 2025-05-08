@@ -421,6 +421,12 @@ def get_formatted_message_log(
         new_message["token_ids"] = tokenizer(
             message_chunk, return_tensors="pt", add_special_tokens=False
         )["input_ids"][0]
+        if len(new_message["token_ids"]) == 0:
+            # if there is an empty message, the empty `token_ids` tensor ends up being in fp32,
+            # which causes `_validate_tensor_consistency` to fail. To fix this, we convert the
+            # empty tensor to int64.
+            new_message["token_ids"] = new_message["token_ids"].to(torch.int64)
+
         new_message["content"] = message_chunk
         new_message_log.append(new_message)
 

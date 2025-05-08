@@ -18,8 +18,10 @@ import pytest
 import torch
 from transformers import AutoTokenizer
 
+from nemo_rl.data.hf_datasets import COMMON_CHAT_TEMPLATES
 from nemo_rl.data.interfaces import LLMMessageLogType, TaskDataSpec
 from nemo_rl.data.llm_message_utils import (
+    _validate_tensor_consistency,
     add_loss_mask_to_message_log,
     batched_message_log_to_flat_message,
     get_first_index_that_differs,
@@ -404,6 +406,39 @@ def test_get_formatted_message_log_qwen(
     actual_text = [m["content"] for m in result]
 
     assert actual_text == expected_text
+
+
+def test_formatted_message_log_empty_message():
+    message_logs = [
+        [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": ""},
+        ],
+        [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello!"},
+        ],
+    ]
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct")
+    tokenizer.chat_template = COMMON_CHAT_TEMPLATES.passthrough_prompt_response
+    task_data_spec = TaskDataSpec(task_name="test")
+    result = [
+        get_formatted_message_log(
+            message_log,
+            tokenizer,
+            task_data_spec,
+            add_bos_token=False,
+            add_eos_token=False,
+        )
+        for message_log in message_logs
+    ]
+    flat_result = [message_log_to_flat_messages(m) for m in result]
+    for k in flat_result[0].keys():
+        if isinstance(flat_result[0][k], torch.Tensor):
+            # make sure validate_tensor_consistency does not raise an error when one of the messages is empty
+            _validate_tensor_consistency(
+                [flat_result[i][k] for i in range(len(flat_result))]
+            )
 
 
 def test_add_loss_mask_to_chat_message_log(
