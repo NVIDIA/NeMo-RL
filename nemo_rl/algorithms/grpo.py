@@ -171,7 +171,7 @@ def setup(
     dataloader = StatefulDataLoader(
         dataset,
         batch_size=grpo_config["num_prompts_per_step"],
-        shuffle=False,
+        shuffle=data_config["shuffle"],
         collate_fn=rl_collate_fn,
     )
     if last_checkpoint_path is not None:

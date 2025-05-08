@@ -23,6 +23,7 @@ class DataConfig(TypedDict):
     val_dataset_name: Optional[str]
     add_bos: Optional[bool]
     add_eos: Optional[bool]
+    shuffle: Optional[bool]
 
 
 class MathDataConfig(DataConfig):
