@@ -247,9 +247,10 @@ class ClippedPGLossFn(LossFunction):
             )
 
         # Approximating entropy as E_{s ~ \pi_{prev}(s)}[-(\pi_{curr}/\pi_{prev})log(\pi_{curr}(s))]
-        seq_entropy_approx = -masked_mean(
-            actor_importance_weights * curr_logprobs, mask
-        )
+        with torch.no_grad():
+            seq_entropy_approx = -masked_mean(
+                torch.exp(curr_logprobs - generation_logprobs) * curr_logprobs, mask
+            )
 
         loss = actor_loss + kl
         with torch.no_grad():
