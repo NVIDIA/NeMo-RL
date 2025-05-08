@@ -15,7 +15,7 @@
     - [DPO Single Node](#dpo-single-node)
     - [DPO Multi-node](#dpo-multi-node)
   - [Evaluation](#evaluation)
-    - [Convert Model Format](#convert-model-format-optional)
+    - [Convert Model Format (Optional)](#convert-model-format-optional)
     - [Run Evaluation](#run-evaluation)
   - [Set Up Clusters](#set-up-clusters)
   - [Citation](#citation)
@@ -244,7 +244,7 @@ uv run python examples/run_dpo.py \
   logger.wandb.name="llama-dpo-sft"
 ```
 
-Refer to [dpo.yaml](examples/configs/dpo.yaml) for a full list of parameters that can be overridden. For an in-depth explanation of how to add your own DPO dataset, refer to the [DPO documentation](docs/guides/dpo.md).
+Refer to `examples/configs/dpo.yaml` for a full list of parameters that can be overridden. For an in-depth explanation of how to add your own DPO dataset, refer to the [DPO documentation](docs/guides/dpo.md).
 
 ### DPO Multi-node
 
@@ -313,7 +313,7 @@ uv run python examples/run_eval.py \
 ```
 *Note: The evaluation results may vary slightly due to many factors. (e.g., sampling parameters, random seed, inference engine's version and settings, etc.)*
 
-Refer to [eval.yaml](examples/configs/eval.yaml) for a full list of parameters that can be overridden. For an in-depth explanation of evaluation, refer to the [Evaluation documentation](docs/guides/eval.md).
+Refer to `examples/configs/eval.yaml` for a full list of parameters that can be overridden. For an in-depth explanation of evaluation, refer to the [Evaluation documentation](docs/guides/eval.md).
 
 ## Set Up Clusters
 
