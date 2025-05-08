@@ -64,8 +64,8 @@ def init_ray(log_dir: Optional[str] = None):
     """Initialise Ray.
 
     Try to attach to an existing local cluster.
-    If that cluster uses the same CUDA_VISIBLE_DEVICES tag as the current process we will reuse it.
-    Else, we will detach and start a fresh local cluster.
+    If that cluster uses the same CUDA_VISIBLE_DEVICES or Slurm managed tag we will reuse it.
+    Otherwise, we will detach and start a fresh local cluster.
     """
     if "UV_CACHE_DIR" not in os.environ:
         logging.warning("UV_CACHE_DIR is not set, using default cache dir")
@@ -78,7 +78,10 @@ def init_ray(log_dir: Optional[str] = None):
     }
 
     cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "ALL")
+    # sort cvd to ensure consistent tag
+    cvd = ",".join(sorted(cvd.split(",")))
     cvd_tag = f"nrl_tag_{cvd.replace(',', '_')}"
+    SLURM_MANAGED_TAG = "slurm_managed_ray_cluster"
 
     # Try to attach to an existing cluster
     try:
@@ -90,14 +93,28 @@ def init_ray(log_dir: Optional[str] = None):
             _temp_dir=os.path.abspath(log_dir) if log_dir else None,
         )
 
-        # Only reuse if the tag matches
-        if cvd_tag in ray.cluster_resources():
-            logger.info(f"Connected to existing Ray cluster: {ray.cluster_resources()}")
+        cluster_res = ray.cluster_resources()
+
+        # Reuse if the driver's cvd_tag matches a tag in the cluster.
+        # This is for reusing a previously self-started local cluster.
+        if cvd_tag in cluster_res:
+            logger.info(
+                f"Connected to existing Ray cluster (driver CVD_TAG '{cvd_tag}' matched): {cluster_res}"
+            )
             return
 
+        # Reuse if it's an externally managed SLURM cluster.
+        if SLURM_MANAGED_TAG in cluster_res:
+            logger.info(
+                f"Connected to existing SLURM-managed Ray cluster (tag '{SLURM_MANAGED_TAG}' found): {cluster_res}"
+            )
+            return
+
+        # If neither reuse condition is met, but we connected to *something*
         logger.info(
-            "Existing Ray cluster found but CUDA_VISIBLE_DEVICES differs "
-            "(tag mismatch). Starting a new local cluster..."
+            f"Existing Ray cluster found ({cluster_res}) but it does not meet reuse criteria. "
+            f"Driver's cvd_tag: '{cvd_tag}'. Expected SLURM tag: '{SLURM_MANAGED_TAG}'. "
+            "Starting a new local cluster..."
         )
         ray.shutdown()
 
@@ -110,6 +127,10 @@ def init_ray(log_dir: Optional[str] = None):
 
     except ConnectionError:
         logger.debug("No existing Ray cluster found, will start a new one.")
+        # If ConnectionError, proceed to start a new local cluster without further action here.
+        # Clear driver-side package cache so working_dir is re-uploaded
+        ray.shutdown()
+        pass
 
     # Start a brand-new local cluster
     # Reuse `runtime_env` but drop `working_dir` to avoid packaging the whole repo (prevents ray OSError: Failed to download runtime_env file package issue)
