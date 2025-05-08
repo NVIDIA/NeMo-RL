@@ -246,7 +246,7 @@ class ClippedPGLossFn(LossFunction):
                 global_normalization_factor=total_valid_tokens_or_seqs,
             )
 
-        # Approximating entropy as E_{s ~ \pi_{prev}(s)}[-(\pi_{curr}/\pi_{prev})log(\pi_{curr}(s))]
+        # Approximating entropy as E_{s ~ \pi_{gen}(s)}[-(\pi_{curr}/\pi_{gen})log(\pi_{curr}(s))]
         with torch.no_grad():
             seq_entropy_approx = -masked_mean(
                 torch.exp(curr_logprobs - generation_logprobs) * curr_logprobs, mask
