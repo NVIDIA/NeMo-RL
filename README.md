@@ -4,17 +4,16 @@
 - [Nemo RL: A Scalable and Efficient Post-Training Library](#nemo-rl-a-scalable-and-efficient-post-training-library)
   - [Features](#features)
   - [Prerequisites](#prerequisites)
-    - [GRPO](#grpo)
-      - [GRPO Single Node](#grpo-single-node)
-      - [GRPO Multi-node](#grpo-multi-node)
-        - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
-  - [Quickstart](#quickstart)
+  - [GRPO](#grpo)
+    - [GRPO Single Node](#grpo-single-node)
+    - [GRPO Multi-node](#grpo-multi-node)
+      - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
   - [Supervised Fine-Tuning (SFT)](#supervised-fine-tuning-sft)
-    - [Run Single Node SFT](#run-single-node-sft)
+    - [SFT Single Node](#sft-single-node)
     - [SFT Multi-node](#sft-multi-node)
-    - [DPO](#dpo)
-      - [DPO Single Node](#dpo-single-node)
-      - [DPO Multi-node](#dpo-multi-node)
+  - [DPO](#dpo)
+    - [DPO Single Node](#dpo-single-node)
+    - [DPO Multi-node](#dpo-multi-node)
   - [Set Up Clusters](#set-up-clusters)
   - [Citation](#citation)
   - [Contributing](#contributing)
@@ -81,11 +80,11 @@ pip install uv
 - Ensure you have the necessary CUDA drivers and PyTorch installed compatible with your hardware.
 - **Reminder**: Don't forget to set your `HF_HOME`, `WANDB_API_KEY`, and `HF_DATASETS_CACHE` (if needed). You'll need to do a `huggingface-cli login` as well for Llama models.
 
-### GRPO
+## GRPO
 
 We have a reference GRPO experiment config set up trained for math benchmarks using the [OpenInstructMath2](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2) dataset.
 
-#### GRPO Single Node
+### GRPO Single Node
 
 To run GRPO on a single GPU for `Qwen/Qwen2.5-1.5B`:
 
@@ -113,7 +112,7 @@ uv run python examples/run_grpo_math.py \
   logger.num_val_samples_to_print=10 \
 ```
 
-#### GRPO Multi-node
+### GRPO Multi-node
 
 ```sh
 # Run from the root of NeMo RL repo
@@ -133,7 +132,7 @@ sbatch \
     ray.sub
 ```
 
-##### GRPO Qwen2.5-32B
+#### GRPO Qwen2.5-32B
 
 ```sh
 # Run from the root of NeMo RL repo
@@ -163,15 +162,11 @@ Reference example for training to play a Sliding Puzzle Game:
 uv run python examples/run_grpo_sliding_puzzle.py 
 ```
 
-## Quickstart
-
-Before running any experiments, remember to set your `HF_HOME` environment variable and your `WANDB_API_KEY` if you intend to use Weights & Biases for logging. For accessing Llama models, you might also need to log in using `huggingface-cli login`.
-
 ## Supervised Fine-Tuning (SFT)
 
 We provide an example SFT experiment using the [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
 
-### Run Single Node SFT
+### SFT Single Node
 
 The default SFT configuration is set to run on a single GPU. To start the experiment:
 
@@ -212,11 +207,11 @@ sbatch \
     ray.sub
 ```
 
-### DPO
+## DPO
 
 We provide a sample DPO experiment that uses the [HelpSteer3 dataset](https://huggingface.co/datasets/nvidia/HelpSteer3) for preference-based training.
 
-#### DPO Single Node
+### DPO Single Node
 
 The default DPO experiment is configured to run on a single GPU. To launch the experiment:
 
@@ -248,7 +243,7 @@ uv run python examples/run_dpo.py \
 
 Refer to [dpo.yaml](../examples/configs/dpo.yaml) for a full list of parameters that can be overridden. For an in-depth explanation of how to add your own DPO dataset, refer to the [DPO documentation](docs/guides/dpo.md).
 
-#### DPO Multi-node
+### DPO Multi-node
 
 For distributed DPO training across multiple nodes, modify the following script for your use case:
 
@@ -290,10 +285,10 @@ note = {GitHub repository},
 
 ## Contributing
 
-We welcome contributions to NeMo RL\! Please see our [Contributing Guidelines](https://github.com/NVIDIA/NeMo-RL/blob/main/CONTRIBUTING.md) for more information on how to get involved.
+We welcome contributions to NeMo RL\! Please see our [Contributing Guidelines](https://github.com/NVIDIA/nemo-rl/blob/main/CONTRIBUTING.md) for more information on how to get involved.
 
 ## Licenses
 
-NVIDIA NeMo RL is licensed under the [Apache License 2.0](https://github.com/NVIDIA/NeMo-RL/blob/main/LICENSE).
+NVIDIA NeMo RL is licensed under the [Apache License 2.0](https://github.com/NVIDIA/nemo-rl/blob/main/LICENSE).
 
 NeMo is licensed under the [NVIDIA AI PRODUCT AGREEMENT](https://www.nvidia.com/en-us/agreements/enterprise-software/product-specific-terms-for-ai-products/). By pulling and using the container, you accept the terms and conditions of this license.
