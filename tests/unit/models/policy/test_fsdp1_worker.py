@@ -823,8 +823,8 @@ def test_loss_independent_of_microbatch_size(num_gpus, tokenizer):
     nll_loss_fn = NLLLoss()
     pg_loss_fn = ClippedPGLossFn(
         {
-            "ratio_eps_min": 0.2,
-            "ratio_eps_max": 0.2,
+            "ratio_clip_min": 0.2,
+            "ratio_clip_max": 0.2,
             "reference_policy_kl_penalty": 0.1,
             "disable_ppo_ratio": False,
             "use_on_policy_kl_approximation": False,
@@ -846,6 +846,7 @@ def test_loss_independent_of_microbatch_size(num_gpus, tokenizer):
     # Compute loss with mbs2
     config = basic_llama_test_config
     config["train_micro_batch_size"] = 2
+    config["generation"] = configure_generation_config(config["generation"], tokenizer)
 
     print("Creating training HfPolicy...")
     policy_mbs2 = HfPolicy(
