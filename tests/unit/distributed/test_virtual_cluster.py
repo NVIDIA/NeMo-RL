@@ -149,3 +149,39 @@ def test_ray_reinit_on_cuda_devices_change():
         second_init_call = mock_ray_init.call_args_list[1]
         assert "resources" in second_init_call[1]
         assert "nrl_tag_1" in second_init_call[1]["resources"]
+
+
+def test_ray_uses_same_cluster_for_permuted_cuda_devices():
+    """Test that Ray cluster is reused if CUDA_VISIBLE_DEVICES order changes but set of devices is the same."""
+
+    with (
+        patch("ray.init") as mock_ray_init,
+        patch("ray.shutdown") as mock_ray_shutdown,
+        patch("ray.cluster_resources") as mock_cluster_resources,
+    ):
+        # Expected sorted tag
+        expected_tag = "nrl_tag_0_2"
+
+        # First call with CUDA_VISIBLE_DEVICES="0,2"
+        mock_cluster_resources.return_value = {"GPU": 2, expected_tag: 1}
+        with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "0,2"}, clear=True):
+            from nemo_rl.distributed.virtual_cluster import init_ray
+
+            init_ray()
+
+        assert mock_ray_init.call_count == 1
+        assert mock_ray_init.call_args_list[0][1]["address"] == "auto"
+        assert mock_ray_shutdown.call_count == 0
+        mock_ray_init.reset_mock()
+        mock_ray_shutdown.reset_mock()
+
+        # Second call with CUDA_VISIBLE_DEVICES="2,0"
+        mock_cluster_resources.return_value = {"GPU": 2, expected_tag: 1}
+        with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "2,0"}, clear=True):
+            from nemo_rl.distributed.virtual_cluster import init_ray
+
+            init_ray()
+
+        assert mock_ray_init.call_count == 1
+        assert mock_ray_init.call_args_list[0][1]["address"] == "auto"
+        assert mock_ray_shutdown.call_count == 0
