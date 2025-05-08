@@ -40,10 +40,9 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.metadata = {
-            "is_sorted" : False,
-            "micro_batch_indices": None
-        }
+        self.is_sorted = False
+        self.micro_batch_indices = None
+        self.sort_indices = None
 
     @classmethod
     def from_batches(
@@ -258,9 +257,9 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
 
         # unsort if already sorted to ensure chunking occurs on the original ordering
-        if self.metadata['is_sorted']:
+        if self.is_sorted:
             indices = range(total_batch_size)
-            unsorted = sorted(zip(self.metadata['sort_indices'], indices), key=lambda pair: pair[0])
+            unsorted = sorted(zip(self.sort_indices, indices), key=lambda pair: pair[0])
             unsorted_indices = [idx[1] for idx in unsorted]
 
             for k,v in self.data.items():
@@ -297,8 +296,8 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                     sorted_v = [v[i] for i in batch_sorted_indices]
                 self.data[k] = sorted_v
 
-            self.metadata['is_sorted'] = True
-            self.metadata['sort_indices'] = batch_sorted_indices
+            self.is_sorted = True
+            self.sort_indices = batch_sorted_indices
 
         aggregated_shards = [SlicedDataDict() for _ in range(shards)]
 
@@ -375,8 +374,8 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 micro_batch_indices.append(chunk_micro_batch_indices)
 
             for shard in aggregated_shards:
-                shard.metadata['is_sorted'] = True
-                shard.metadata['micro_batch_indices'] = micro_batch_indices
+                shard.is_sorted = True
+                shard.micro_batch_indices = micro_batch_indices
 
         return aggregated_shards    
 
@@ -393,9 +392,9 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         start = batch_size * batch_idx
         end = batch_size * (batch_idx+1)
         batch = self.slice(start, end)
-        if self.metadata['micro_batch_indices'] is not None:
-            batch.metadata['is_sorted'] = True
-            batch.metadata['micro_batch_indices'] = [self.metadata['micro_batch_indices'][batch_idx]]
+        if self.micro_batch_indices is not None:
+            batch.is_sorted = True
+            batch.micro_batch_indices = [self.micro_batch_indices[batch_idx]]
 
         return batch
 
@@ -462,10 +461,10 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             Iterator["SlicedDataDict"]: An iterator that yield dynamic microbatches
         """
 
-        assert "micro_batch_indices" in self.metadata  
-        assert len(self.metadata['micro_batch_indices']) == 1
+        assert self.micro_batch_indices is not None and \
+            len(self.micro_batch_indices) == 1
 
-        for start, end in self.metadata['micro_batch_indices'][0]:
+        for start, end in self.micro_batch_indices[0]:
             mb = self.slice(start, end)
             # trucate to the longest sequence to minimize padding
             padded_seqlen = (
