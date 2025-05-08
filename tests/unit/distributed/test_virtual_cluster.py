@@ -112,3 +112,40 @@ def test_env_max_retries_exhausted():
         mock_sleep.assert_any_call(2)  # 2^1
         mock_sleep.assert_any_call(4)  # 2^2
         mock_sleep.assert_any_call(8)  # 2^3
+
+
+def test_ray_reinit_on_cuda_devices_change():
+    """Test that Ray cluster is reinitialized when CUDA_VISIBLE_DEVICES changes."""
+
+    with (
+        patch("ray.init") as mock_ray_init,
+        patch("ray.shutdown") as mock_ray_shutdown,
+        patch("ray.cluster_resources") as mock_cluster_resources,
+    ):
+        # First call with CUDA_VISIBLE_DEVICES=0
+        mock_cluster_resources.return_value = {"GPU": 1, "nrl_tag_0": 1}
+        with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "0"}, clear=True):
+            from nemo_rl.distributed.virtual_cluster import init_ray
+
+            init_ray()
+
+        assert mock_ray_init.call_count == 1
+        assert mock_ray_shutdown.call_count == 0
+        mock_ray_init.reset_mock()
+        mock_ray_shutdown.reset_mock()
+
+        # Second call with CUDA_VISIBLE_DEVICES=1
+        mock_cluster_resources.return_value = {"GPU": 1, "nrl_tag_0": 1}
+        with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "1"}, clear=True):
+            init_ray()
+
+        # Ray should be shutdown and reinitialized since the tag doesn't match
+        assert (
+            mock_ray_init.call_count == 2
+        )  # Once for initial connect, once for reinit
+        assert mock_ray_shutdown.call_count == 1  # Should shutdown after tag mismatch
+
+        # Verify that the second init call included the new tag
+        second_init_call = mock_ray_init.call_args_list[1]
+        assert "resources" in second_init_call[1]
+        assert "nrl_tag_1" in second_init_call[1]["resources"]
