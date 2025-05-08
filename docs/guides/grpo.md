@@ -168,6 +168,6 @@ By multiplying the first term of the loss function by the importance weights $\f
 
 To enable the importance sampling correction, set the config `use_importance_sampling_correction=True` in the `ClippedPGLossConfig`. By default, we set this config to False to align with standard GRPO.
 
-## Evaluate trained model
+## Evaluate the Trained Model
 
 Upon completion of the training process, you can refer to our [evaluation guide](eval.md) to assess model capabilities.

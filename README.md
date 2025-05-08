@@ -284,7 +284,7 @@ uv run python examples/convert_dcp_to_hf.py \
     --dcp-ckpt-path results/grpo/step_170/policy/weights/ \
     --hf-ckpt-path results/grpo/hf
 ```
-*Note: Adjust the paths according to your training output directory structure.*
+> **Note:** Adjust the paths according to your training output directory structure.
 
 For an in-depth explanation of checkpointing, refer to the [Checkpointing documentation](docs/design-docs/checkpointing.md).
 
@@ -311,7 +311,7 @@ uv run python examples/run_eval.py \
     eval.num_tests_per_prompt=16 \
     cluster.gpus_per_node=8
 ```
-*Note: The evaluation results may vary slightly due to many factors. (e.g., sampling parameters, random seed, inference engine's version and settings, etc.)*
+> **Note:** Evaluation results may vary slightly due to various factors, such as sampling parameters, random seed, inference engine version, and inference engine settings.
 
 Refer to `examples/configs/eval.yaml` for a full list of parameters that can be overridden. For an in-depth explanation of evaluation, refer to the [Evaluation documentation](docs/guides/eval.md).
 

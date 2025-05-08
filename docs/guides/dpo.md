@@ -168,6 +168,6 @@ The DPO implementation in NeMo RL supports several key parameters that can be ad
 
 These parameters can be adjusted in the config file or via command-line overrides to optimize training for your specific use case.
 
-## Evaluate trained model
+## Evaluate the Trained Model
 
 Upon completion of the training process, you can refer to our [evaluation guide](eval.md) to assess model capabilities.

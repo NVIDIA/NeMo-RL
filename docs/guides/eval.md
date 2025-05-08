@@ -2,7 +2,9 @@
 
 This document explains how to use an evaluation script for assessing model capabilities.
 
-## Prepare For Evaluation
+## Prepare for Evaluation
+
+To prepare for evaluation, first ensure your model is in the correct format, which may involve an optional conversion of PyTorch DCP checkpoints to the Hugging Face format. Following this, you need to prepare the evaluation configuration, which includes defining prompt templates and any custom settings required to run the evaluation.
 
 ### Convert DCP to HF (Optional)
 If you have trained a model and saved the checkpoint in the Pytorch DCP format, you first need to convert it to the Hugging Face format before running evaluation.
@@ -16,14 +18,14 @@ uv run python examples/convert_dcp_to_hf.py \
     --dcp-ckpt-path results/grpo/step_170/policy/weights/ \
     --hf-ckpt-path results/grpo/hf
 ```
-*Note: Adjust the paths according to your training output directory structure.*
+> **Note:** Adjust the paths according to your training output directory structure.
 
 Once the conversion is complete, you can override the `generation.model_name` to point to the directory containing the converted HF model in [this section](#run-evaluation-script).
 
-### Prepare Configuration
-**Override with custom settings**
+### Prepare the Evaluation Configuration
+**Override with Custom Settings**
 
-To run the evaluation, you can use the [default configuration file](../../examples/configs/eval.yaml) or specify a custom one or override some settings via command line.
+To run the evaluation, you can use the [default configuration file](../../examples/configs/eval.yaml). Alternatively, you can specify a custom one or override some settings via the command line.
 
 The default configuration employs greedy sampling to evaluate Qwen2.5-Math-1.5B-Instruct on AIME-2024.
 
@@ -33,11 +35,11 @@ Always remember to use the same prompt and chat_template that were used during t
 
 For open-source models, we recommend setting `tokenizer.chat_template=default`, `data.prompt_file=null` and `data.system_prompt_file=null` to allow them to use their native chat templates.
 
-## Run Evaluation Script
+## Run the Evaluation Script
 
-We will use the `run_eval.py` script to run evaluation using a model directly from Hugging Face Hub or a local path already in HF format.
+We will use the `run_eval.py` script to run an evaluation using a model directly from the Hugging Face Hub or from a local path that is already in Hugging Face format.
 
-Note that the evaluation script only supports for the HF format model. If you haven't converted your DCP format model, you should back to [Convert DCP to HF](#convert-dcp-to-hf-optional) and follow the guide to convert your model.
+Note that the evaluation script only supports the Hugging Face format model. If you haven't converted your DCP format model, you should back to [Convert DCP to HF](#convert-dcp-to-hf-optional) and follow the guide to convert your model.
 
 ```sh
 # Run evaluation script with default config (examples/configs/eval.yaml)
@@ -62,7 +64,7 @@ uv run python examples/run_eval.py \
     eval.num_tests_per_prompt=16 \
     cluster.gpus_per_node=8
 ```
-*Note: The evaluation results may vary slightly due to many factors. (e.g., sampling parameters, random seed, inference engine's version and settings, etc.)*
+> **Note:** Evaluation results may vary slightly due to various factors, such as sampling parameters, random seed, inference engine version, and inference engine settings.
 
 ## Example Evaluation Output
 

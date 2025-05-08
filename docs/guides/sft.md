@@ -77,6 +77,6 @@ By default, NeMo RL has support for `Squad` and `OpenAssistant` datasets. Both o
 Adding a new dataset is a straightforward process.
 As long as your custom dataset has the `formatted_ds` and `task_spec` attributes described above, it can serve as a drop-in replacement for Squad and OpenAssistant.
 
-## Evaluate trained model
+## Evaluate the Trained Model
 
 Upon completion of the training process, you can refer to our [evaluation guide](eval.md) to assess model capabilities.
