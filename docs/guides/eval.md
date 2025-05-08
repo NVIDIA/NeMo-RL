@@ -25,7 +25,7 @@ Once the conversion is complete, you can override the `generation.model_name` to
 
 To run the evaluation, you can use the [default configuration file](../../examples/configs/eval.yaml) or specify a custom one or override some settings via command line.
 
-The default configuration file will use greedy sampling strategy to evaluate Qwen2.5-Math-1.5B-Instruct on AIME-2024.
+The default configuration employs greedy sampling to evaluate Qwen2.5-Math-1.5B-Instruct on AIME-2024.
 
 **Prompt Template Configuration**
 
@@ -37,7 +37,7 @@ For open-source models, we recommend setting `tokenizer.chat_template=default`, 
 
 We will use the `run_eval.py` script to run evaluation using a model directly from Hugging Face Hub or a local path already in HF format.
 
-Note that the eval script only supports for the HF format model. If you haven't converted your DCP format model, you should back to [Convert DCP to HF](#convert-dcp-to-hf-optional) and follow the guide to convert your model.
+Note that the evaluation script only supports for the HF format model. If you haven't converted your DCP format model, you should back to [Convert DCP to HF](#convert-dcp-to-hf-optional) and follow the guide to convert your model.
 
 ```sh
 # Run evaluation script with default config (examples/configs/eval.yaml)
@@ -62,6 +62,7 @@ uv run python examples/run_eval.py \
     eval.num_tests_per_prompt=16 \
     cluster.gpus_per_node=8
 ```
+*Note: The evaluation results may vary slightly due to many factors. (e.g., sampling parameters, random seed, inference engine's version and settings, etc.)*
 
 ## Example Evaluation Output
 
