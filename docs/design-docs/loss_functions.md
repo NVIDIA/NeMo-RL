@@ -92,7 +92,7 @@ loss_with_microbatching = (
     + loss_fn(next_token_losses[1:], microbatch_2_data, total_valid_tokens_or_seqs)
 )
 
-assert loss_no_microbatching == loss_with_microbatching
+torch.testing.assert_close(loss_no_microbatching, loss_with_microbatching)
 ```
 
 <!-- This testoutput is intentionally empty-->
