@@ -25,9 +25,9 @@ For our simple example above, this would look like:
 from typing import Tuple
 
 import torch
-from nemo_reinforcer.algorithms.interfaces import LossFunction
-from nemo_reinforcer.algorithms.loss_functions import LossType
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.algorithms.interfaces import LossFunction
+from nemo_rl.algorithms.loss_functions import LossType
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 
 
 class SimpleAverageLoss(LossFunction):
