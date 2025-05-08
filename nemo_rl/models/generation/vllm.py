@@ -187,7 +187,7 @@ class VllmGenerationWorker:
             skip_tokenizer_init=self.cfg["vllm_cfg"]["skip_tokenizer_init"],
             tensor_parallel_size=self.cfg["vllm_cfg"]["tensor_parallel_size"],
             gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
-            # Disable prefix caching for devices with compute capability < 8 due to vllm segfault.
+            # Disable prefix caching for devices with compute capability < 8 (Volta) due to vllm segfault.
             enable_prefix_caching=torch.cuda.get_device_capability()[0] >= 8,
             dtype=self.cfg["vllm_cfg"]["precision"],
             seed=seed,
