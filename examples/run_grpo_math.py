@@ -25,6 +25,7 @@ from nemo_rl.algorithms.grpo import MasterConfig, grpo_train, setup
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data import DataConfig
 from nemo_rl.data.datasets import AllTaskProcessedDataset
+from nemo_rl.data.hf_datasets.deepscaler import DeepScalerDataset
 from nemo_rl.data.hf_datasets.openmathinstruct2 import OpenMathInstruct2Dataset
 from nemo_rl.data.interfaces import DatumSpec, LLMMessageLogType, TaskDataSpec
 from nemo_rl.distributed.virtual_cluster import init_ray
@@ -52,7 +53,7 @@ def parse_args():
 # ===============================================================================
 
 
-def openinstructmath2_data_processor(
+def hf_data_processor(
     datum_dict: Dict[str, Any],
     task_data_spec: TaskDataSpec,
     tokenizer,
@@ -179,13 +180,16 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig, env_configs):
     if data_config["dataset_name"] == "OpenMathInstruct-2":
         print("Loading nvidia/OpenMathInstruct2Dataset for training and validation")
         data = OpenMathInstruct2Dataset()
+    elif data_config["dataset_name"] == "DeepScaler":
+        print(
+            "Loading agentica-org/DeepScaleR-Preview-Dataset for training and validation"
+        )
+        data = DeepScalerDataset()
     else:
         raise ValueError(f"No processor for dataset {data_config['dataset_name']}.")
 
-    task_data_processors = defaultdict(
-        lambda: (math_task_spec, openinstructmath2_data_processor)
-    )
-    task_data_processors["math"] = (math_task_spec, openinstructmath2_data_processor)
+    task_data_processors = defaultdict(lambda: (math_task_spec, hf_data_processor))
+    task_data_processors["math"] = (math_task_spec, hf_data_processor)
 
     math_env = MathEnvironment.options(
         runtime_env={

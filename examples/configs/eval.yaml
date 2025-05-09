@@ -1,10 +1,15 @@
 # Evaluation Configuration
+eval:
+  metric: "pass@1" # only pass@1 is supported now
+  num_tests_per_prompt: 1 # every prompt will be tested num_tests_per_prompt times and use the average score as the final score
+  seed: 42
+
 generation:
   backend: "vllm" # only vllm is supported for evaluation
   max_new_tokens: ${generation.vllm_cfg.max_model_len}
   temperature: 0.0
   top_p: 1.0
-  top_k: -1 # disable
+  top_k: -1 # -1 means disable
   num_prompts_per_step: -1 # -1 means pass all prompts at once
   model_name: "Qwen/Qwen2.5-Math-1.5B-Instruct"
   stop_token_ids: null

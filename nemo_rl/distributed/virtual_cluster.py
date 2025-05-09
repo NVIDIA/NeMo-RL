@@ -61,12 +61,11 @@ def _get_node_ip_and_free_port():
 
 
 def init_ray(log_dir: Optional[str] = None):
-    """Initialize Ray and connect to an existing Ray cluster or fall back and start a local one. Should be called before any ray API is called.
+    """Initialise Ray.
 
-    This function:
-    1. Gathers common environment variables needed for distributed training
-    2. Sets up the working directory and Python executable
-    3. Connects to an existing Ray cluster
+    Try to attach to an existing local cluster.
+    If that cluster uses the same CUDA_VISIBLE_DEVICES or Slurm managed tag we will reuse it.
+    Otherwise, we will detach and start a fresh local cluster.
     """
     if "UV_CACHE_DIR" not in os.environ:
         logging.warning("UV_CACHE_DIR is not set, using default cache dir")
@@ -78,9 +77,14 @@ def init_ray(log_dir: Optional[str] = None):
         "py_executable": PY_EXECUTABLES.SYSTEM,
     }
 
-    # Initialize Ray connection
+    cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "ALL")
+    # sort cvd to ensure consistent tag
+    cvd = ",".join(sorted(cvd.split(",")))
+    cvd_tag = f"nrl_tag_{cvd.replace(',', '_')}"
+    SLURM_MANAGED_TAG = "slurm_managed_ray_cluster"
+
+    # Try to attach to an existing cluster
     try:
-        # Try to connect to an existing cluster first.
         ray.init(
             address="auto",
             log_to_driver=True,
@@ -88,16 +92,61 @@ def init_ray(log_dir: Optional[str] = None):
             runtime_env=runtime_env,
             _temp_dir=os.path.abspath(log_dir) if log_dir else None,
         )
-        logger.info(f"Connected to existing Ray cluster: {ray.cluster_resources()}")
-    except ConnectionError:
-        # If no existing cluster, start a new one with local resources
-        ray.init(
-            log_to_driver=True,
-            include_dashboard=False,
-            runtime_env=runtime_env,
-            _temp_dir=os.path.abspath(log_dir) if log_dir else None,
+
+        cluster_res = ray.cluster_resources()
+
+        # Reuse if the driver's cvd_tag matches a tag in the cluster.
+        # This is for reusing a previously self-started local cluster.
+        if cvd_tag in cluster_res:
+            logger.info(
+                f"Connected to existing Ray cluster (driver CVD_TAG '{cvd_tag}' matched): {cluster_res}"
+            )
+            return
+
+        # Reuse if it's an externally managed SLURM cluster.
+        if SLURM_MANAGED_TAG in cluster_res:
+            logger.info(
+                f"Connected to existing SLURM-managed Ray cluster (tag '{SLURM_MANAGED_TAG}' found): {cluster_res}"
+            )
+            return
+
+        # If neither reuse condition is met, but we connected to *something*
+        logger.info(
+            f"Existing Ray cluster found ({cluster_res}) but it does not meet reuse criteria. "
+            f"Driver's cvd_tag: '{cvd_tag}'. Expected SLURM tag: '{SLURM_MANAGED_TAG}'. "
+            "Starting a new local cluster..."
         )
-        logger.info(f"Started local cluster with: {ray.cluster_resources()}")
+        ray.shutdown()
+
+        # Clear driver-side package cache so working_dir is re-uploaded
+        import importlib
+
+        import ray._private.runtime_env.packaging as _pkg
+
+        importlib.reload(_pkg)
+
+    except ConnectionError:
+        logger.debug("No existing Ray cluster found, will start a new one.")
+        # If ConnectionError, proceed to start a new local cluster without further action here.
+        # Clear driver-side package cache so working_dir is re-uploaded
+        ray.shutdown()
+        pass
+
+    # Start a brand-new local cluster
+    # Reuse `runtime_env` but drop `working_dir` to avoid packaging the whole repo (prevents ray OSError: Failed to download runtime_env file package issue)
+    local_runtime_env = dict(runtime_env)
+    local_runtime_env.pop("working_dir", None)
+
+    ray.init(
+        log_to_driver=True,
+        include_dashboard=False,
+        runtime_env=local_runtime_env,
+        _temp_dir=os.path.abspath(log_dir) if log_dir else None,
+        resources={cvd_tag: 1},
+    )
+    logger.info(
+        f"Started local cluster with tag '{cvd_tag}': {ray.cluster_resources()}"
+    )
 
 
 class ResourceInsufficientError(Exception):
