@@ -157,17 +157,6 @@ class RayWorkerBuilder:
                 options["runtime_env"] = {}
             options["runtime_env"]["py_executable"] = worker_class.DEFAULT_PY_EXECUTABLE
 
-        if options.get("runtime_env", {}).get("py_executable", "n/a").startswith("uv"):
-            # If the py_executable begins with uv it signals that we need to create a
-            #  local venv first and then replace the py_executable with the local venv's python.
-            #  The directory the venv will be created in is controlled by the env var
-            #  NEMO_RL_VENV_DIR and defaults to $GIT_ROOT/venvs/.
-            unwrapped_cls = worker_class.__ray_actor_class__
-            venv_python = create_local_venv(
-                py_executable=options["runtime_env"]["py_executable"],
-                venv_name=f"{unwrapped_cls.__module__}.{unwrapped_cls.__name__}",
-            )
-            options["runtime_env"]["py_executable"] = venv_python
         return worker_class.options(**options).remote(*self.args, **worker_kwargs)
 
 
@@ -295,6 +284,8 @@ class RayWorkerGroup:
                         "MASTER_ADDR": self.master_address,
                         "MASTER_PORT": str(self.master_port),
                         "NODE_RANK": str(node_idx),
+                        "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
+                        "CUDA_VISIBLE_DEVICES": str(bundle_idx),
                     }
                 )
 
@@ -310,12 +301,8 @@ class RayWorkerGroup:
                     else f"{self.name_prefix}-{node_idx}-{bundle_idx}"
                 )
 
-                # Calculate GPU resources
-                num_gpus = (
-                    1 / self.cluster.max_colocated_worker_groups
-                    if self.cluster.use_gpus
-                    else 0
-                )
+                # Set this to 0 to manually control placement group allotment
+                num_gpus = 0
 
                 # Pass these options to the remote_worker_builder
                 runtime_env = {"env_vars": env_vars}

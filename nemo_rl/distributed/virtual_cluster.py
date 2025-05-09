@@ -74,8 +74,6 @@ def init_ray(log_dir: Optional[str] = None):
     # Set up runtime environment
     runtime_env = {
         "env_vars": dict(os.environ),  # Pass thru all user environment variables
-        "working_dir": git_root,
-        "py_executable": PY_EXECUTABLES.SYSTEM,
     }
 
     # Initialize Ray connection
