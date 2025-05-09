@@ -129,7 +129,7 @@ class ClippedPGLossFn(LossFunction):
         if self.loss_type == LossType.TOKEN_LEVEL:
             # average over all tokens in the microbatch
             mult_prob_error = masked_mean(
-                torch.exp(lp_error),
+                torch.exp(lp_error * mask),
                 mask,
                 global_normalization_factor=total_valid_tokens_or_seqs,
             ).item()
