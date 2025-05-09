@@ -358,8 +358,8 @@ class DTensorPolicyWorker:
                     mb_iterator = batch.make_microbatch_iterator(mbs)
 
                 for mb in mb_iterator:      
+                    input_ids = mb.get("input_ids").cuda()
                     input_lengths = mb.get("input_lengths")
-                    input_ids = mb["input_ids"]
                     batch_size, seq_len = input_ids.shape
 
                     attention_mask = torch.zeros(
