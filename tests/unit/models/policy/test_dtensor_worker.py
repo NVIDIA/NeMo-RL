@@ -528,6 +528,7 @@ def test_dtensor_loss_independent_of_microbatch_size_two_gpus(two_gpu_virtual_cl
         {
             "ratio_clip_min": 0.2,
             "ratio_clip_max": 0.2,
+            "ratio_clip_c": None,
             "reference_policy_kl_penalty": 0.1,
             "disable_ppo_ratio": False,
             "use_on_policy_kl_approximation": False,
