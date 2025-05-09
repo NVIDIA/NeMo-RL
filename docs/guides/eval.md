@@ -20,7 +20,7 @@ uv run python examples/convert_dcp_to_hf.py \
 ```
 > **Note:** Adjust the paths according to your training output directory structure.
 
-Once the conversion is complete, you can override the `generation.model_name` to point to the directory containing the converted HF model in [this section](#run-evaluation-script).
+Once the conversion is complete, you can override the `generation.model_name` to point to the directory containing the converted HF model in [this section](#run-the-evaluation-script).
 
 ### Prepare the Evaluation Configuration
 **Override with Custom Settings**
