@@ -402,6 +402,7 @@ def test_clipped_pg_loss_ppo_clipping():
     cfg = {
         "ratio_clip_min": ratio_clip,
         "ratio_clip_max": ratio_clip,
+        "ratio_clip_c": None,
         "reference_policy_kl_penalty": 0.0,  # Disable KL
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
@@ -486,6 +487,7 @@ def test_clipped_pg_loss_reinforce_mode():
         "reference_policy_kl_penalty": 0.0,
         "ratio_clip_min": 0.0,  # Placeholder, ignored
         "ratio_clip_max": 0.0,  # Placeholder, ignored
+        "ratio_clip_c": None,
         "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
         "token_level_loss": True,
@@ -538,6 +540,7 @@ def test_clipped_pg_loss_kl_penalty():
         "reference_policy_kl_penalty": kl_beta,
         "ratio_clip_min": 0.2,
         "ratio_clip_max": 0.2,
+        "ratio_clip_c": None,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
@@ -614,6 +617,7 @@ def test_clipped_pg_loss_masking():
     cfg = {
         "ratio_clip_min": 0.2,
         "ratio_clip_max": 0.2,
+        "ratio_clip_c": None,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
@@ -700,6 +704,7 @@ def test_clipped_pg_loss_zero_mask():
     cfg = {
         "ratio_clip_min": 0.2,
         "ratio_clip_max": 0.2,
+        "ratio_clip_c": None,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
@@ -731,6 +736,7 @@ def test_clipped_pg_loss_on_policy_kl_importance_sampling():
     cfg = {
         "ratio_clip_min": ratio_clip,
         "ratio_clip_max": ratio_clip,
+        "ratio_clip_c": None,
         "reference_policy_kl_penalty": kl_beta,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": True,
@@ -882,5 +888,109 @@ def test_masked_mean_all_zeros():
     # Case 2: dim is not None
     values = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
     mask = torch.zeros_like(values)
-    result = masked_mean(values, mask)
-    torch.testing.assert_allclose(result, torch.tensor((0.0)))
+    result = masked_mean(values, mask, dim=1)
+    torch.testing.assert_allclose(result, torch.tensor([0.0, 0.0]))
+
+
+def test_clipped_pg_loss_dual_clip():
+    """
+    Tests dual clipping in PPO loss function.
+
+    Dual clipping prevents excessive policy updates when dealing with:
+    1. Strongly negative advantages
+    2. Very large probability ratios (when curr_logprobs >> prev_logprobs)
+
+    This test verifies that when advantages are negative, ratio_clip_c serves as an upper
+    bound on the loss.
+    """
+    if not torch.cuda.is_available():
+        pytest.skip("No GPU available")
+
+    device = "cuda"
+    data, seq_len, vocab_size = _setup_clipped_pg_test_data(device=device)
+
+    ratio_clip = 0.2
+    ratio_clip_c = 3.0
+    cfg = {
+        "ratio_clip_min": ratio_clip,
+        "ratio_clip_max": ratio_clip,
+        "ratio_clip_c": ratio_clip_c,
+        "reference_policy_kl_penalty": 0.0,  # Disable KL
+        "disable_ppo_ratio": False,
+        "use_on_policy_kl_approximation": False,
+        "use_importance_sampling_correction": False,
+        "token_level_loss": True,
+    }
+    loss_fn = ClippedPGLossFn(cfg)
+
+    # Create test data with a mix of advantages: positive, slightly negative, strongly negative
+    adv_masked = torch.tensor([[1.0, -1.0, -4.0]], device=device)
+
+    # Set up target logprobs to test various probability ratios
+    prev_lp_masked = torch.tensor([[-1.0, -1.0, -3.0]], device=device)
+    curr_lp_masked = torch.tensor(
+        [[-1.69315, -1.0, -0.69741]], device=device
+    )  # approx log(0.5)-1, log(1)-1, log(10)-3
+
+    ratios = torch.exp(curr_lp_masked - prev_lp_masked)  # approx [0.5, 1.0, 1.5]
+    assert torch.allclose(
+        ratios, torch.tensor([[0.5, 1.0, 10.0]], device=device), rtol=1e-3
+    )
+
+    # Fill full tensors (only need first dim for B=1)
+    data["advantages"][0, 1:] = adv_masked
+    data["prev_logprobs"][0, 1:] = prev_lp_masked
+
+    # --- Hand Calculation ---
+    # Actor Loss Calculation
+    ratios_clamped = torch.clamp(
+        ratios, 1.0 - ratio_clip, 1.0 + ratio_clip
+    )  # [0.8, 1.0, 1.2]
+    assert torch.allclose(
+        ratios_clamped, torch.tensor([[0.8, 1.0, 1.2]], device=device), rtol=1e-3
+    )
+
+    # Standard PPO clipping
+    loss1 = -adv_masked * ratios  # -[1*0.5, -1*1.0, -4*10.] = [-0.5, 1.0, 40.]
+    assert torch.allclose(
+        loss1, torch.tensor([[-0.5, 1.0, 40.0]], device=device), rtol=1e-3
+    )
+
+    loss2 = -adv_masked * ratios_clamped  # -[1*0.8, -1*1.0, -4*1.2] = [-0.8, 1.0, 4.8]
+    assert torch.allclose(
+        loss2, torch.tensor([[-0.8, 1.0, 4.8]], device=device), rtol=1e-3
+    )
+
+    max_loss = torch.maximum(loss1, loss2)  # [-0.5, 1.0, 40.]
+    assert torch.allclose(
+        max_loss, torch.tensor([[-0.5, 1.0, 40.0]], device=device), rtol=1e-3
+    )
+
+    # Dual clipping
+    loss3 = -adv_masked * ratio_clip_c  # -[1*3.0, -1*3.0, -4*3.0] = [-3.0, 3.0, 12.0]
+    assert torch.allclose(
+        loss3, torch.tensor([[-3.0, 3.0, 12.0]], device=device), rtol=1e-3
+    )
+    min_loss = torch.minimum(max_loss, loss3)  # [-3.0, 1.0, 12.0]
+    assert torch.allclose(
+        min_loss, torch.tensor([[-3.0, 1.0, 12.0]], device=device), rtol=1e-3
+    )
+
+    # For negative advantages, dual clipping reduces the loss from 40.0 to 12.0
+    clip_loss = torch.where(adv_masked < 0, min_loss, max_loss)  # [-0.5, 1.0, 12.0]
+    assert torch.allclose(
+        clip_loss, torch.tensor([[-0.5, 1.0, 12.0]], device=device), rtol=1e-3
+    ), f"clip_loss is {clip_loss}, expected [[-0.5, 1.0, 12.0]]"
+
+    expected_loss = torch.mean(clip_loss)  # (-0.5 + 1.0 + 12.0) / 3 = 12.5 / 3 = 4.1667
+    assert torch.allclose(expected_loss, torch.tensor(4.1667, device=device), rtol=1e-3)
+
+    input_ids = data["input_ids"]
+    dummy_logits = _create_exact_logits(
+        curr_lp_masked, input_ids, seq_len, vocab_size, device
+    )
+
+    actual_loss, _ = loss_fn(
+        dummy_logits, data, torch.sum(data["sample_mask"] * data["token_mask"])
+    )
+    torch.testing.assert_close(actual_loss, expected_loss)

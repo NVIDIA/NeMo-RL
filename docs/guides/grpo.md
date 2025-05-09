@@ -127,6 +127,20 @@ where:
 - $\beta$ is the KL penalty coefficient
 - $\pi_{\text{ref}}$ is the reference policy
 
+Also supports "Dual-Clipping" from https://arxiv.org/pdf/1912.09729, which
+imposes an additional upper bound on the probability ratio when advantages are negative.
+This prevents excessive policy updates. $rA \ll 0$ -> $cA$(clipped).
+The loss function is modified to the following when A_t < 0:
+
+$$
+L(\theta) = E_t \Big[ \max \Big( \min \big(r_t(\theta) A_t, \text{clip}(r_t(\theta), 1-\varepsilon, 1+\varepsilon) A_t \big), c A_t \Big) \Big] - \beta D_{\text{KL}} (\pi_\theta \| \pi_\text{ref})
+$$
+
+where:
+- c is the dual-clip parameter (ratio_clip_c), which must be greater than 1 and is
+    usually set as 3 empirically
+- $r_t(\theta)$ is the ratio $\frac{\pi_\theta(x)}{\pi_{\theta_{\text{old}}}(x)}$ that measures how much the policy has change
+
 #### Improvements to the GRPO loss formulation for stability and accuracy
 
 #### On-Policy KL Approximation
@@ -167,3 +181,7 @@ $$
 By multiplying the first term of the loss function by the importance weights $\frac{\pi_\text{training}(x)}{\pi_\text{inference}(x)}$, we can correct for the distribution mismatch between $\pi_{\text{training}}$ and $\pi_{\text{inference}}$ while still sampling from $\pi_{\text{inference}}$.
 
 To enable the importance sampling correction, set the config `use_importance_sampling_correction=True` in the `ClippedPGLossConfig`. By default, we set this config to False to align with standard GRPO.
+
+## Evaluate the Trained Model
+
+Upon completion of the training process, you can refer to our [evaluation guide](eval.md) to assess model capabilities.
