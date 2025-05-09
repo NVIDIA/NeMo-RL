@@ -1012,6 +1012,7 @@ def test_clipped_pg_loss_entropy():
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,  # This flag does not affect entropy calculation
+        "token_level_loss": True,
     }
     loss_fn = ClippedPGLossFn(cfg)
 
@@ -1041,7 +1042,11 @@ def test_clipped_pg_loss_entropy():
     dummy_logits = _create_exact_logits(
         curr_lp_masked, data["input_ids"], seq_len, vocab_size, device
     )
-    _, metrics = loss_fn(dummy_logits, data)
+    _, metrics = loss_fn(
+        dummy_logits,
+        data,
+        total_valid_tokens_or_seqs=torch.sum(data["sample_mask"] * data["token_mask"]),
+    )
 
     torch.testing.assert_close(
         torch.tensor(metrics["approx_entropy"], device=device),
