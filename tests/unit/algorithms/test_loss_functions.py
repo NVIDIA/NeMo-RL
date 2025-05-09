@@ -372,11 +372,10 @@ def test_clipped_pg_loss_ppo_clipping():
     data, seq_len, vocab_size = _setup_clipped_pg_test_data(device=device)
 
     ratio_clip = 0.2
-    ratio_clip_c = 3.0
     cfg = {
         "ratio_clip_min": ratio_clip,
         "ratio_clip_max": ratio_clip,
-        "ratio_clip_c": ratio_clip_c,
+        "ratio_clip_c": None,
         "reference_policy_kl_penalty": 0.0,  # Disable KL
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
@@ -456,6 +455,7 @@ def test_clipped_pg_loss_reinforce_mode():
         "reference_policy_kl_penalty": 0.0,
         "ratio_clip_min": 0.0,  # Placeholder, ignored
         "ratio_clip_max": 0.0,  # Placeholder, ignored
+        "ratio_clip_c": None,
         "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
     }
@@ -503,6 +503,7 @@ def test_clipped_pg_loss_kl_penalty():
         "reference_policy_kl_penalty": kl_beta,
         "ratio_clip_min": 0.2,
         "ratio_clip_max": 0.2,
+        "ratio_clip_c": None,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
         "use_importance_sampling_correction": False,
@@ -574,6 +575,7 @@ def test_clipped_pg_loss_masking():
     cfg = {
         "ratio_clip_min": 0.2,
         "ratio_clip_max": 0.2,
+        "ratio_clip_c": None,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
@@ -637,6 +639,7 @@ def test_clipped_pg_loss_zero_mask():
     cfg = {
         "ratio_clip_min": 0.2,
         "ratio_clip_max": 0.2,
+        "ratio_clip_c": None,
         "reference_policy_kl_penalty": 0.1,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
@@ -667,6 +670,7 @@ def test_clipped_pg_loss_on_policy_kl_importance_sampling():
     cfg = {
         "ratio_clip_min": ratio_clip,
         "ratio_clip_max": ratio_clip,
+        "ratio_clip_c": None,
         "reference_policy_kl_penalty": kl_beta,
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": True,
