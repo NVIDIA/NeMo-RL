@@ -125,6 +125,8 @@ class ClippedPGLossFn(LossFunction):
 
         mask = token_mask * sample_mask.unsqueeze(-1)
 
+        # token_mult_prob_error
+        # See more details and other metrics in docs/guides/grpo.md#metrics
         lp_error = torch.abs(generation_logprobs - prev_logprobs)  # noqa: F841  (precommit ignore for now)
         if self.loss_type == LossType.TOKEN_LEVEL:
             # average over all tokens in the microbatch
@@ -247,6 +249,7 @@ class ClippedPGLossFn(LossFunction):
             )
 
         # Approximating entropy as E_{s ~ \pi_{gen}(s)}[-(\pi_{curr}/\pi_{gen})log(\pi_{curr}(s))]
+        # See more details and other metrics in docs/guides/grpo.md#metrics
         with torch.no_grad():
             seq_entropy_approx = -masked_mean(
                 torch.exp(curr_logprobs - generation_logprobs) * curr_logprobs, mask
