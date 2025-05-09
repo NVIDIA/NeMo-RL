@@ -372,9 +372,11 @@ def test_clipped_pg_loss_ppo_clipping():
     data, seq_len, vocab_size = _setup_clipped_pg_test_data(device=device)
 
     ratio_clip = 0.2
+    ratio_clip_c = 3.0
     cfg = {
         "ratio_clip_min": ratio_clip,
         "ratio_clip_max": ratio_clip,
+        "ratio_clip_c": ratio_clip_c,
         "reference_policy_kl_penalty": 0.0,  # Disable KL
         "disable_ppo_ratio": False,
         "use_on_policy_kl_approximation": False,
