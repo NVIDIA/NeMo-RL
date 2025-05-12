@@ -54,10 +54,14 @@ def prepare_openinstructmath2_dataset(
 
     # Format the examples, removing original columns
     train_formatted = split_ds["train"].map(
-        format_math, remove_columns=split_ds["train"].column_names, fn_kwargs={"output_key": output_key}
+        format_math,
+        remove_columns=split_ds["train"].column_names,
+        fn_kwargs={"output_key": output_key},
     )
     val_formatted = split_ds["test"].map(
-        format_math, remove_columns=split_ds["test"].column_names, fn_kwargs={"output_key": output_key}
+        format_math,
+        remove_columns=split_ds["test"].column_names,
+        fn_kwargs={"output_key": output_key},
     )
 
     return {
