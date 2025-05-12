@@ -58,8 +58,10 @@ data:
   max_input_seq_length: ${policy.max_total_sequence_length}
   dataset_name: "openmathinstruct2"
   prompt_file: examples/prompts/math.txt
+  split: "train_1M"
   add_bos: true
   add_eos: true
+  add_generation_prompt: true
   output_key: 'generated_solution'
   # train_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"
   # val_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"

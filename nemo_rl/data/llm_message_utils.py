@@ -367,6 +367,7 @@ def get_formatted_message_log(
     task_data_spec: TaskDataSpec,
     add_bos_token: bool = True,
     add_eos_token: bool = True,
+    add_generation_prompt: bool = False,
 ) -> LLMMessageLogType:
     """Format and tokenize chat messages using the specified template.
 
@@ -392,7 +393,7 @@ def get_formatted_message_log(
     for i, message in enumerate(message_log):
         formatted_message = tokenizer.apply_chat_template(
             message_log[: i + 1],
-            add_generation_prompt=False,
+            add_generation_prompt=add_generation_prompt and message["role"] == "user",
             tokenize=False,
             add_special_tokens=False,
         )
