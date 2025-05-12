@@ -310,7 +310,7 @@ class DTensorPolicyWorker:
 
             losses = []
             all_mb_metrics = []
-            for gb_start in range(0, dataset_size, local_gbs):
+            for gb_idx, gb_start in enumerate(range(0, dataset_size, local_gbs)):
                 global_batch: BatchedDataDict = data.slice(
                     gb_start, gb_start + local_gbs
                 )
@@ -400,7 +400,7 @@ class DTensorPolicyWorker:
                     ## scale by the number of global batches so we get the correct
                     ## value when summing metrics across all microbatches
                     for k in loss_metrics.keys():
-                        loss_metrics[k] *= batch_size / local_gbs
+                        loss_metrics[k] /= num_global_batches
                     num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
                     loss_metrics["normalization_factor"] = (
@@ -416,7 +416,7 @@ class DTensorPolicyWorker:
 
                         # when FSDP reduces the gradients over the DP dim, they're automatically averaged
                         # but we want to sum them so we cancel out the average here
-                        loss *= (batch_size / mbs) * self.dp_size
+                        loss *= self.dp_size
                         loss.backward()
                     if num_valid_samples > 0:
                         mb_losses.append(loss.item())

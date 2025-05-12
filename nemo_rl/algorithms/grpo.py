@@ -559,23 +559,16 @@ def grpo_train(
 
         print("\n📊 Training Results:")
         metrics = {
-            "loss": train_results["loss"].numpy().mean().item(),
-            "reward": rewards.numpy().mean().item(),
-            "grad_norm": train_results["grad_norm"].numpy().mean().item(),
+            "loss": train_results["loss"].numpy(),
+            "reward": rewards.numpy(),
+            "grad_norm": train_results["grad_norm"].numpy(),
         }
-
-        mb_metrics = train_results['all_mb_metrics']
-        mb_metrics_stat = {}
-        for k, v in mb_metrics.items():
-            if k in {"lr", "reward", "normalization_factor", "micro_batch_size"}:
-                if 'micro_batch_size' in mb_metrics:
-                    mb_metrics_stat[k] = np.average(
-                        v, weights=mb_metrics['micro_batch_size']).item()
-                else:
-                    mb_metrics_stat[k] = np.mean(v).item()
+        metrics.update(train_results["all_mb_metrics"])
+        for k, v in metrics.items():
+            if k in {"lr", "reward", "normalization_factor"}:
+                metrics[k] = np.mean(v).item()
             else:
-                mb_metrics_stat[k] = np.sum(v).item()
-        metrics.update(mb_metrics_stat)
+                metrics[k] = np.sum(v).item()
         metrics.update(rollout_metrics)
 
         timing_metrics = timer.get_timing_metrics(reduction_op="sum")
@@ -585,7 +578,6 @@ def grpo_train(
         print(
             f"  • Mean Generation Length: {rollout_metrics['mean_gen_tokens_per_sample']:.4f}"
         )
-
         print("\n⏱️  Timing:")
         # Display total time first, separately
         total_time = timing_metrics.get("total_step_time", 0)
