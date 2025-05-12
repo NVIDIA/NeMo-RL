@@ -1,0 +1,403 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Sequence packing algorithms for efficient batching of variable-length sequences."""
+
+import enum
+import math
+import random
+from abc import ABC, abstractmethod
+from typing import Dict, List, Tuple, Type, Union
+
+
+class PackingAlgorithm(enum.Enum):
+    """Enum for supported sequence packing algorithms."""
+
+    CONCATENATIVE = "concatenative"
+    FIRST_FIT_DECREASING = "first_fit_decreasing"
+    FIRST_FIT_SHUFFLE = "first_fit_shuffle"
+
+
+class SequencePacker(ABC):
+    """Abstract base class for sequence packing algorithms.
+
+    Sequence packing is the process of efficiently arranging sequences of different
+    lengths into fixed-capacity bins (batches) to maximize computational efficiency.
+    """
+
+    def __init__(self, bin_capacity: int, collect_metrics: bool = False):
+        """Initialize the sequence packer.
+
+        Args:
+            bin_capacity: The maximum capacity of each bin.
+            collect_metrics: Whether to collect metrics across multiple packing operations.
+        """
+        self.bin_capacity = bin_capacity
+        self.collect_metrics = collect_metrics
+        self.metrics = None
+
+        if collect_metrics:
+            from nemo_rl.data.packing.metrics import PackingMetrics
+
+            self.metrics = PackingMetrics()
+
+    @abstractmethod
+    def _pack_implementation(self, sequence_lengths: List[int]) -> List[List[int]]:
+        """Implementation of the packing algorithm.
+
+        Args:
+            sequence_lengths: A list of sequence lengths to pack.
+
+        Returns:
+            A list of bins, where each bin is a list of indices into the original
+            sequence_lengths list.
+        """
+        pass
+
+    def pack(self, sequence_lengths: List[int]) -> List[List[int]]:
+        """Pack sequences into bins and update metrics if enabled.
+
+        Args:
+            sequence_lengths: A list of sequence lengths to pack.
+
+        Returns:
+            A list of bins, where each bin is a list of indices into the original
+            sequence_lengths list.
+        """
+        # Call the implementation
+        bins = self._pack_implementation(sequence_lengths)
+
+        # Update metrics if collection is enabled
+        if self.collect_metrics and self.metrics:
+            self.metrics.update(sequence_lengths, bins, self.bin_capacity)
+
+        return bins
+
+    def reset_metrics(self) -> None:
+        """Reset collected metrics."""
+        if self.metrics:
+            self.metrics.reset()
+
+    def compute_metrics(
+        self, sequence_lengths: List[int], bins: List[List[int]]
+    ) -> Dict[str, float]:
+        """Calculate metrics for a packing solution without updating the metrics tracker.
+
+        Args:
+            sequence_lengths: List of sequence lengths
+            bins: List of bins, where each bin is a list of indices
+
+        Returns:
+            Dictionary of packing metrics
+        """
+        if self.metrics:
+            return self.metrics.calculate_stats_only(
+                sequence_lengths, bins, self.bin_capacity
+            )
+        else:
+            # Create a temporary metrics object if not collecting
+            from nemo_rl.data.packing.metrics import PackingMetrics
+
+            temp_metrics = PackingMetrics()
+            return temp_metrics.calculate_stats_only(
+                sequence_lengths, bins, self.bin_capacity
+            )
+
+    def get_aggregated_metrics(self) -> Dict[str, float]:
+        """Get aggregated metrics across all packing operations.
+
+        Returns:
+            Dictionary of aggregated metrics, or empty dict if not collecting
+        """
+        if self.metrics:
+            return self.metrics.get_aggregated_stats()
+        else:
+            return {}
+
+    def print_metrics(self) -> None:
+        """Print the current metrics in a formatted way."""
+        if not self.metrics:
+            print(
+                "Metrics collection is not enabled. Initialize with collect_metrics=True."
+            )
+            return
+
+        self.metrics.print_aggregated_stats()
+
+    def _validate_sequence_lengths(self, sequence_lengths: List[int]) -> None:
+        """Validate that all sequence lengths are within bin capacity.
+
+        Args:
+            sequence_lengths: A list of sequence lengths to validate.
+
+        Raises:
+            ValueError: If any sequence length exceeds bin capacity.
+        """
+        for length in sequence_lengths:
+            if length > self.bin_capacity:
+                raise ValueError(
+                    f"Sequence length {length} exceeds bin capacity {self.bin_capacity}"
+                )
+
+    def _create_indexed_lengths(
+        self, sequence_lengths: List[int], reverse: bool = False
+    ) -> List[Tuple[int, int]]:
+        """Create a list of (length, index) pairs from sequence lengths.
+
+        Args:
+            sequence_lengths: A list of sequence lengths.
+            reverse: Whether to sort in descending order (True) or ascending order (False).
+
+        Returns:
+            A list of (length, index) pairs, optionally sorted.
+        """
+        indexed_lengths = [(length, i) for i, length in enumerate(sequence_lengths)]
+        if reverse:
+            indexed_lengths.sort(reverse=True)  # Sort in descending order
+        return indexed_lengths
+
+    def _estimate_bins_needed(self, sequence_lengths: List[int]) -> int:
+        """Estimate the number of bins needed based on total length.
+
+        Args:
+            sequence_lengths: A list of sequence lengths.
+
+        Returns:
+            Estimated number of bins needed.
+        """
+        total_length = sum(sequence_lengths)
+        return max(1, math.ceil(total_length / self.bin_capacity))
+
+
+class ConcatenativePacker(SequencePacker):
+    """Concatenative packing algorithm.
+
+    This algorithm simply concatenates sequences in order until reaching the bin capacity,
+    then starts a new bin. It doesn't try to optimize the packing in any way.
+
+    Time complexity: O(n) where n is the number of sequences.
+
+    Example:
+    ```python
+    >>> examples = {
+    ...     "sequence_lengths": [4, 1, 3, 2, 1, 3, 4, 5]
+    ... }
+    >>> # If packed with seq_length=5:
+    ... {"bins": [ [0, 1], [2, 3], [4, 5], [6], [7] ]}
+    >>> # If packed with seq_length=8:
+    ... {"bins": [ [0, 1, 2], [3, 4, 5], [6], [7] ]}
+    """
+
+    def _pack_implementation(self, sequence_lengths: List[int]) -> List[List[int]]:
+        """Pack sequences using the Concatenative algorithm.
+
+        Args:
+            sequence_lengths: A list of sequence lengths to pack.
+
+        Returns:
+            A list of bins, where each bin is a list of indices into the original
+            sequence_lengths list.
+        """
+        # Validate sequence lengths
+        self._validate_sequence_lengths(sequence_lengths)
+
+        bins = []  # List of bins, each bin is a list of sequence indices
+        current_bin = []  # Current bin being filled
+        current_length = 0  # Current length of sequences in the bin
+
+        for i, length in enumerate(sequence_lengths):
+            # If adding this sequence would exceed bin capacity, start a new bin
+            if current_length + length > self.bin_capacity:
+                if current_bin:  # Only add the bin if it's not empty
+                    bins.append(current_bin)
+                current_bin = [i]
+                current_length = length
+            else:
+                # Add the sequence to the current bin
+                current_bin.append(i)
+                current_length += length
+
+        # Add the last bin if it's not empty
+        if current_bin:
+            bins.append(current_bin)
+
+        return bins
+
+
+class FirstFit(SequencePacker):
+    """Base class for First-Fit algorithms.
+
+    First-Fit algorithms place each sequence into the first bin where it fits.
+    If no bin can fit the sequence, a new bin is created.
+
+    This is an abstract base class that provides the common implementation for
+    First-Fit variants. Subclasses must implement the _prepare_sequences method
+    to determine the order in which sequences are processed.
+    """
+
+    def _prepare_sequences(self, sequence_lengths: List[int]) -> List[Tuple[int, int]]:
+        """Prepare sequences for packing.
+
+        This method determines the order in which sequences are processed.
+        Subclasses must override this method.
+
+        Args:
+            sequence_lengths: A list of sequence lengths to pack.
+
+        Returns:
+            A list of (length, index) pairs.
+        """
+        raise NotImplementedError("Subclasses must implement _prepare_sequences")
+
+    def _pack_implementation(self, sequence_lengths: List[int]) -> List[List[int]]:
+        """Pack sequences using the First-Fit algorithm.
+
+        Args:
+            sequence_lengths: A list of sequence lengths to pack.
+
+        Returns:
+            A list of bins, where each bin is a list of indices into the original
+            sequence_lengths list.
+        """
+        # Prepare sequences for packing (order determined by subclass)
+        indexed_lengths = self._prepare_sequences(sequence_lengths)
+
+        bins = []  # List of bins, each bin is a list of sequence indices
+        bin_remaining = []  # Remaining capacity for each bin
+
+        for length, idx in indexed_lengths:
+            # If the sequence is larger than the bin capacity, it cannot be packed
+            if length > self.bin_capacity:
+                raise ValueError(
+                    f"Sequence length {length} exceeds bin capacity {self.bin_capacity}"
+                )
+
+            # Try to find a bin where the sequence fits
+            bin_found = False
+            for i, remaining in enumerate(bin_remaining):
+                if remaining >= length:
+                    # Add the sequence to this bin
+                    bins[i].append(idx)
+                    bin_remaining[i] -= length
+                    bin_found = True
+                    break
+
+            # If no suitable bin was found, create a new one
+            if not bin_found:
+                bins.append([idx])
+                bin_remaining.append(self.bin_capacity - length)
+
+        return bins
+
+
+class FirstFitDecreasing(FirstFit):
+    """First-Fit Decreasing (FFD) algorithm for sequence packing.
+
+    This algorithm sorts sequences by length in descending order and then
+    places each sequence into the first bin where it fits.
+
+    Time complexity: O(n log n) for sorting + O(n * m) for packing,
+    where n is the number of sequences and m is the number of bins.
+    """
+
+    def _prepare_sequences(self, sequence_lengths: List[int]) -> List[Tuple[int, int]]:
+        """Prepare sequences for packing by sorting them in descending order.
+
+        Args:
+            sequence_lengths: A list of sequence lengths to pack.
+
+        Returns:
+            A list of (length, index) pairs sorted by length in descending order.
+        """
+        # Create a list of (length, index) pairs
+        indexed_lengths = [(length, i) for i, length in enumerate(sequence_lengths)]
+
+        # Sort by length in descending order
+        indexed_lengths.sort(reverse=True)
+
+        return indexed_lengths
+
+
+class FirstFitShuffle(FirstFit):
+    """First-Fit Shuffle algorithm for sequence packing.
+
+    This algorithm randomly shuffles the sequences and then places each
+    sequence into the first bin where it fits.
+
+    Time complexity: O(n * m) for packing, where n is the number of sequences
+    and m is the number of bins.
+    """
+
+    def _prepare_sequences(self, sequence_lengths: List[int]) -> List[Tuple[int, int]]:
+        """Prepare sequences for packing by randomly shuffling them.
+
+        Args:
+            sequence_lengths: A list of sequence lengths to pack.
+
+        Returns:
+            A list of (length, index) pairs in random order.
+        """
+        # Create a list of (length, index) pairs
+        indexed_lengths = [(length, i) for i, length in enumerate(sequence_lengths)]
+
+        # Shuffle the sequences
+        random.shuffle(indexed_lengths)
+
+        return indexed_lengths
+
+
+def get_packer(
+    algorithm: Union[PackingAlgorithm, str],
+    bin_capacity: int,
+    collect_metrics: bool = False,
+) -> SequencePacker:
+    """Factory function to get a sequence packer based on the algorithm.
+
+    Args:
+        algorithm: The packing algorithm to use. Can be either a PackingAlgorithm enum value
+                  or a string (case-insensitive) matching one of the enum names.
+        bin_capacity: The maximum capacity of each bin.
+        collect_metrics: Whether to collect metrics across multiple packing operations.
+
+    Returns:
+        A SequencePacker instance for the specified algorithm.
+
+    Raises:
+        ValueError: If the algorithm is not recognized.
+    """
+    packers: Dict[PackingAlgorithm, Type[SequencePacker]] = {
+        PackingAlgorithm.CONCATENATIVE: ConcatenativePacker,
+        PackingAlgorithm.FIRST_FIT_DECREASING: FirstFitDecreasing,
+        PackingAlgorithm.FIRST_FIT_SHUFFLE: FirstFitShuffle,
+    }
+
+    # Convert string to enum if needed
+    if isinstance(algorithm, str):
+        try:
+            algorithm = PackingAlgorithm[algorithm.upper()]
+        except KeyError:
+            available_algorithms = ", ".join([alg.name for alg in PackingAlgorithm])
+            raise ValueError(
+                f"Unknown packing algorithm: {algorithm}. "
+                f"Available algorithms: {available_algorithms}"
+            )
+
+    if algorithm not in packers:
+        available_algorithms = ", ".join([alg.name for alg in PackingAlgorithm])
+        raise ValueError(
+            f"Unknown packing algorithm: {algorithm}. "
+            f"Available algorithms: {available_algorithms}"
+        )
+
+    return packers[algorithm](bin_capacity, collect_metrics=collect_metrics)

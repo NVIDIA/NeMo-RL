@@ -1,4 +1,19 @@
 # SFT Algorithm Configuration
+seq_pack:
+  train:
+    enabled: false
+    algorithm: "concatenative"  # Packing algorithm to use (currently only "concatenative" is supported)
+    prefetch_samples: 100  # Number of samples to prefetch from the dataset for packing (should be larger than the global batch size)
+    # attention_mask_strategy: "full"  # Options: "block_diagonal" or "full" # TODO(ahmadki): enable this
+    collect_metrics: false  # Whether to collect packing metrics for analysis
+  
+  validation:
+    enabled: false
+    algorithm: "concatenative"  # Packing algorithm to use (currently only "concatenative" is supported)
+    prefetch_samples: 100  # Number of samples to prefetch from the dataset for packing (should be larger than the global validation batch size)
+    # attention_mask_strategy: "full"  # Options: "block_diagonal" or "full" # TODO(ahmadki): enable this
+    collect_metrics: false  # Whether to collect packing metrics for analysis
+
 sft:
   ## total number of steps to train will equal
   ## min((max_num_epochs * len(train_dataloader)), max_num_steps)
