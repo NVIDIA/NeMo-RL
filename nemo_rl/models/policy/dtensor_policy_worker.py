@@ -138,6 +138,8 @@ class DTensorPolicyWorker:
             self.dtype = torch.float32
         elif self.cfg["precision"] == "bfloat16":
             self.dtype = torch.bfloat16
+        elif self.cfg["precision"] == "float16":
+            self.dtype = torch.float16
         else:
             raise ValueError(f"Unknown precision: {self.cfg['precision']}")
 
