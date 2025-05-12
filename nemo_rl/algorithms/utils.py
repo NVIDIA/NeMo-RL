@@ -14,6 +14,7 @@
 import random
 import warnings
 from functools import wraps
+from typing import Optional
 
 import numpy as np
 import torch
@@ -118,11 +119,19 @@ def surpress_user_warnings(f):
     return wrapper
 
 
-# need to surpress the masked tensor warnings from pytorch
-@surpress_user_warnings
-def masked_mean(values, mask, dim=None):
-    """Masks values with mask, and computes the mean of the values using the masked values."""
-    return (values * mask).sum(dim=dim) / (mask.sum(dim=dim) + 1e-8)
+def masked_mean(
+    values,
+    mask,
+    dim: Optional[int] = None,
+    global_normalization_factor: Optional[torch.Tensor] = None,
+):
+    """Computes the mean of a microbatch, using a global statistic as the normalization factor."""
+    normalization_factor = (
+        torch.sum(mask, dim=dim)
+        if global_normalization_factor is None
+        else global_normalization_factor
+    )
+    return torch.sum(values * mask, dim=dim) / (normalization_factor + 1e-8)
 
 
 def set_seed(seed: int):

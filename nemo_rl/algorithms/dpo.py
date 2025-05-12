@@ -70,7 +70,7 @@ class DPOConfig(TypedDict):
     preference_average_log_probs: bool
     sft_average_log_probs: bool
     ## TODO(@ashors) support other loss functions
-    ## https://github.com/NVIDIA/nemo-rl/issues/193
+    ## https://github.com/NVIDIA/NeMo-RL/issues/193
     # preference_loss: str
     # gt_reward_scale: float
     preference_loss_weight: float
@@ -302,7 +302,10 @@ def validate(
 
             else:
                 for k, v in val_results["all_mb_metrics"].items():
-                    val_metrics[k] += np.mean(v).item()
+                    if k in {"lr", "normalization_factor"}:
+                        val_metrics[k] += np.mean(v).item()
+                    else:
+                        val_metrics[k] += np.sum(v).item()
                 num_valid_batches += 1
 
             if val_batches > 0 and batch_idx >= val_batches - 1:
@@ -479,10 +482,10 @@ def dpo_train(
             }
             metrics.update(train_results["all_mb_metrics"])
             for k, v in metrics.items():
-                if k == "num_valid_samples":
-                    metrics[k] = np.sum(v).item()
-                else:
+                if k in {"lr", "normalization_factor"}:
                     metrics[k] = np.mean(v).item()
+                else:
+                    metrics[k] = np.sum(v).item()
             timing_metrics = timer.get_timing_metrics(reduction_op="sum")
 
             print("\n📊 Training Results:")

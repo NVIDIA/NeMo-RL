@@ -29,6 +29,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.integrations.accelerate import find_tied_parameters
 
 from nemo_rl.algorithms.interfaces import LossFunction
+from nemo_rl.algorithms.loss_functions import LossType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import (
     PY_EXECUTABLES,
@@ -41,7 +42,11 @@ from nemo_rl.models.dtensor.parallelize import (
     to_local_if_dtensor,
 )
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.utils import get_gpu_info, import_class_from_path
+from nemo_rl.models.policy.utils import (
+    get_gpu_info,
+    import_class_from_path,
+    sliding_window_overwrite,
+)
 from nemo_rl.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
@@ -83,11 +88,14 @@ def get_cpu_state_dict(
     for k, v in state_generator:
         val = to_local_if_dtensor(v)
 
-        cpu_tensor = torch.empty(
-            *val.shape, device="cpu", pin_memory=pin_memory, dtype=val.dtype
-        )
-        cpu_tensor.copy_(val, non_blocking=True)
-        new_state_dict[k] = cpu_tensor
+        if len(val.shape) == 0:
+            new_state_dict[k] = val.cpu()
+        else:
+            cpu_tensor = torch.empty(
+                *val.shape, device="cpu", pin_memory=pin_memory, dtype=val.dtype
+            )
+            cpu_tensor.copy_(val, non_blocking=True)
+            new_state_dict[k] = cpu_tensor
 
     torch.cuda.synchronize()
     return new_state_dict
@@ -137,7 +145,13 @@ class DTensorPolicyWorker:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
+            # Always load the model in float32 to keep master weights in float32.
+            # Keeping the master weights in lower precision has shown to cause issues with convergence.
+            # https://github.com/NVIDIA/NeMo-RL/issues/279 will fix the issue of CPU OOM for larger models.
+            torch_dtype=torch.float32,
+            **sliding_window_overwrite(
+                model_name
+            ),  # due to https://github.com/huggingface/transformers/issues/38002
         )
         # caching since this property is not always preserved after FSDP
         self.num_tied_weights = len(find_tied_parameters(self.model))
@@ -262,7 +276,7 @@ class DTensorPolicyWorker:
             and not skip_tie_check
         ):
             raise ValueError(
-                f"Using dtensor policy with tp size {self.cfg['dtensor_cfg']['tensor_parallel_size']} for model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+                f"Using dtensor policy with tp size {self.cfg['dtensor_cfg']['tensor_parallel_size']} for model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/NeMo-RL/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )
 
         if gbs is None:
@@ -271,6 +285,7 @@ class DTensorPolicyWorker:
             mbs = self.cfg["train_micro_batch_size"]
         local_gbs = gbs // self.dp_size
         dataset_size = data.get("input_ids").shape[0]
+        num_global_batches = dataset_size // local_gbs
 
         if eval_mode:
             ctx = torch.no_grad()
@@ -287,6 +302,35 @@ class DTensorPolicyWorker:
             losses = []
             all_mb_metrics = []
             for gb_start in range(0, dataset_size, local_gbs):
+                global_batch: BatchedDataDict = data.slice(
+                    gb_start, gb_start + local_gbs
+                )
+
+                assert "sample_mask" in global_batch, (
+                    "sample_mask must be present in the data!"
+                )
+                ## get the normalization factor for the loss
+                if loss_fn.loss_type == LossType.TOKEN_LEVEL:
+                    assert "token_mask" in global_batch, (
+                        "token_mask must be present in the data when using token-level loss"
+                    )
+                    ## get number of tokens in the global batch
+                    total_valid_tokens_or_seqs = torch.sum(
+                        global_batch["token_mask"][:, 1:]
+                        * global_batch["sample_mask"].unsqueeze(-1)
+                    )
+                    torch.distributed.all_reduce(
+                        total_valid_tokens_or_seqs, group=self.dp_mesh.get_group()
+                    )
+                elif loss_fn.loss_type == LossType.SEQUENCE_LEVEL:
+                    ## get number of valid samples in the global batch
+                    total_valid_tokens_or_seqs = torch.sum(global_batch["sample_mask"])
+                    torch.distributed.all_reduce(
+                        total_valid_tokens_or_seqs, group=self.dp_mesh.get_group()
+                    )
+                else:
+                    raise ValueError(f"Unknown loss type: {loss_fn.loss_type}")
+
                 self.optimizer.zero_grad()
                 mb_losses = []
 
@@ -295,9 +339,7 @@ class DTensorPolicyWorker:
                 # so its safe to not check for the case where the last data slice is smaller than mbs
                 num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
 
-                for mb in data.slice(
-                    gb_start, gb_start + local_gbs
-                ).make_microbatch_iterator(mbs):
+                for mb in global_batch.make_microbatch_iterator(mbs):
                     input_ids = mb.get("input_ids").cuda()
 
                     input_lengths = mb.get("input_lengths")
@@ -335,17 +377,30 @@ class DTensorPolicyWorker:
                     else:
                         logits = outputs.logits
 
-                    loss, loss_metrics = loss_fn(logits, mb)
+                    # Divide logits by temperature
+                    if "generation" in self.cfg and self.cfg["generation"] is not None:
+                        logits.div_(self.cfg["generation"]["temperature"])
+
+                    loss, loss_metrics = loss_fn(logits, mb, total_valid_tokens_or_seqs)
+                    ## scale by the number of global batches so we get the correct
+                    ## value when summing metrics across all microbatches
+                    for k in loss_metrics.keys():
+                        loss_metrics[k] /= num_global_batches
                     num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
-                    # Backward pass
+                    loss_metrics["normalization_factor"] = (
+                        total_valid_tokens_or_seqs.cpu()
+                    )
 
-                    # Loss is accumulated across microbatches so we need to scale by the number of microbatches
-                    loss = loss / num_microbatches
+                    # Backward pass
                     if not eval_mode:
                         ## NOTE: invalid samples should be multiplied
                         ## by zero in the loss function to prevent them
-                        ## from affecting the gradien
+                        ## from affecting the gradient calculation
+
+                        # when FSDP reduces the gradients over the DP dim, they're automatically averaged
+                        # but we want to sum them so we cancel out the average here
+                        loss *= self.dp_size
                         loss.backward()
                     if num_valid_samples > 0:
                         mb_losses.append(loss.item())
@@ -371,17 +426,18 @@ class DTensorPolicyWorker:
 
                     # Update parameters
                     self.optimizer.step()
-                    self.scheduler.step()
 
                 losses.append(torch.tensor(mb_losses).sum().item())
 
+            # increment scheduler after all batches in rollout are processed
+            self.scheduler.step()
+
             # Compute global loss across all ranks
             with torch.no_grad():
-                local_loss = torch.tensor(losses, device="cuda")
-                global_loss = torch.zeros_like(local_loss)
-                torch.distributed.all_reduce(local_loss, group=self.dp_mesh.get_group())
-                global_loss = local_loss / self.dp_size
-
+                global_loss = torch.tensor(losses, device="cuda")
+                torch.distributed.all_reduce(
+                    global_loss, group=self.dp_mesh.get_group()
+                )
             # Aggregate metrics across all microbatches
             mb_metrics = defaultdict(list)
             for m in all_mb_metrics:
@@ -390,7 +446,6 @@ class DTensorPolicyWorker:
 
             metrics = {
                 "global_loss": global_loss.cpu(),
-                "local_loss": local_loss.cpu(),
                 "grad_norm": grad_norm,
                 "rank": torch.distributed.get_rank(),
                 "all_mb_metrics": dict(mb_metrics),

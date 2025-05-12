@@ -49,4 +49,5 @@ design-docs/uv.md
 design-docs/chat-datasets.md
 design-docs/generation.md
 design-docs/checkpointing.md
+design-docs/loss_functions.md
 ```

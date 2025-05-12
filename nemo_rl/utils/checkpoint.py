@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
 import numpy as np
 import torch
+import yaml
 
 
 class CheckpointingConfig(TypedDict):
@@ -56,7 +57,7 @@ class CheckpointManager:
     checkpoint_dir/
         step_0/
             training_info.json
-            config.json
+            config.yaml
             policy.py (up to the algorithm loop to save here)
             policy_optimizer.py (up to the algorithm loop to save here)
             ...
@@ -114,8 +115,8 @@ class CheckpointManager:
 
         # save config
         if run_config is not None:
-            with open(save_dir / "config.json", "w") as f:
-                json.dump(run_config, f)
+            with open(save_dir / "config.yaml", "w") as f:
+                yaml.safe_dump(run_config, f)
 
         return Path(os.path.abspath(save_dir))
 

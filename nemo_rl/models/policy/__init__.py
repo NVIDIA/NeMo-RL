@@ -37,7 +37,7 @@ class PolicyConfig(TypedDict):
     train_micro_batch_size: int
     learning_rate: float
     logprob_batch_size: int
-    generation: GenerationConfig
+    generation: Optional[GenerationConfig]
     precision: str
     dtensor_cfg: DTensorConfig
     make_sequence_length_divisible_by: int

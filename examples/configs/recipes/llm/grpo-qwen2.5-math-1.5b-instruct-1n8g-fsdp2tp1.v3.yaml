@@ -1,8 +1,8 @@
 grpo:
-  num_prompts_per_step: 64
-  num_generations_per_prompt: 32
+  num_prompts_per_step: 32
+  num_generations_per_prompt: 16
   max_rollout_turns: 1
-  max_num_steps: 500
+  max_num_steps: 450
   normalize_rewards: true
   use_leave_one_out_baseline: true
   val_period: 10
@@ -13,24 +13,25 @@ loss_fn:
   reference_policy_kl_penalty: 0.01
   ratio_clip_min: 0.2
   ratio_clip_max: 0.2
+  ratio_clip_c: null
   use_on_policy_kl_approximation: false
   use_importance_sampling_correction: false
 checkpointing:
   enabled: true
-  checkpoint_dir: results/grpo-llama3.1-8b-instruct-4n8g-fsdp2tp1-long
+  checkpoint_dir: results/grpo-qwen2.5-math-1.5b-instruct-1n8g-fsdp2tp1
   metric_name: val_reward
   higher_is_better: true
   keep_top_k: 3
   save_period: 10
 policy:
-  model_name: meta-llama/Llama-3.1-8B-Instruct
+  model_name: Qwen/Qwen2.5-Math-1.5B-Instruct
   tokenizer:
-    name: meta-llama/Llama-3.1-8B-Instruct
+    name: Qwen/Qwen2.5-Math-1.5B-Instruct
   train_global_batch_size: 512
-  train_micro_batch_size: 1
+  train_micro_batch_size: 4
   generation_batch_size: 32
-  logprob_batch_size: 2
-  max_total_sequence_length: 4096
+  logprob_batch_size: 4
+  max_total_sequence_length: 512
   precision: bfloat16
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
@@ -46,7 +47,7 @@ policy:
   optimizer:
     name: torch.optim.AdamW
     kwargs:
-      lr: 3e-07
+      lr: 5e-06
       weight_decay: 0.01
       betas:
         - 0.9
@@ -68,19 +69,20 @@ policy:
         - 50
   generation:
     backend: vllm
-    max_new_tokens: 4096
+    max_new_tokens: 512
     temperature: 1
     top_p: 1
     top_k: null
     stop_token_ids:
-      - 128009
+      - 151645
     stop_strings: null
     vllm_cfg:
       tensor_parallel_size: 1
       gpu_memory_utilization: 0.6
-      max_model_len: 4096
+      max_model_len: 512
+      load_format: dummy
 data:
-  max_input_seq_length: 4096
+  max_input_seq_length: 512
   prompt_file: examples/prompts/cot.txt
   system_prompt_file: null
   dataset_name: OpenMathInstruct-2
@@ -88,18 +90,18 @@ env:
   math:
     num_workers: 8
 logger:
-  log_dir: logs/grpo-llama3.1-8b-instruct-4n8g-fsdp2tp1-long
+  log_dir: logs/grpo-qwen2.5-math-1.5b-instruct-1n8g-fsdp2tp1
   num_val_samples_to_print: 0
   wandb_enabled: true
   tensorboard_enabled: true
   monitor_gpus: true
   wandb:
     project: nemo-rl
-    name: grpo-llama3.1-8b-instruct-4n8g-fsdp2tp1-long
+    name: grpo-qwen2.5-math-1.5b-instruct-1n8g-fsdp2tp1
   tensorboard: {}
   gpu_monitoring:
     collection_interval: 10
     flush_interval: 10
 cluster:
   gpus_per_node: 8
-  num_nodes: 4
+  num_nodes: 1

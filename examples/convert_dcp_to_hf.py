@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import argparse
-import json
+
+import yaml
 
 from nemo_rl.utils.native_checkpoint import convert_dcp_to_hf
 
@@ -27,7 +28,7 @@ def parse_args():
         "--config",
         type=str,
         default=None,
-        help="Path to config.json file in the checkpoint directory",
+        help="Path to config.yaml file in the checkpoint directory",
     )
     parser.add_argument(
         "--dcp-ckpt-path", type=str, default=None, help="Path to DCP checkpoint"
@@ -46,11 +47,11 @@ def main():
     args = parse_args()
 
     with open(args.config, "r") as f:
-        config = json.load(f)
+        config = yaml.safe_load(f)
 
     model_name_or_path = config["policy"]["model_name"]
     # TODO: After the following PR gets merged:
-    # https://github.com/NVIDIA/nemo-rl/pull/148/files
+    # https://github.com/NVIDIA/NeMo-RL/pull/148/files
     # tokenizer should be copied from policy/tokenizer/* instead of relying on the model name
     # We can expose a arg at the top level --tokenizer_path to plumb that through.
     # This is more stable than relying on the current NeMo-RL get_tokenizer() which can

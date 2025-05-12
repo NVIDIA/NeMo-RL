@@ -15,9 +15,11 @@ loss_fn:
   reference_policy_kl_penalty: 0.01
   ratio_clip_min: 0.2
   ratio_clip_max: 0.2
+  ratio_clip_c: null
   # (default off) loss formulation improvements (docs/guides/grpo.md#loss)
   use_on_policy_kl_approximation: false
   use_importance_sampling_correction: false
+  token_level_loss: true
 
 checkpointing:
   enabled: true
@@ -28,7 +30,7 @@ checkpointing:
   save_period: 10
 
 policy:
-  # Qwen/Qwen2.5-1.5B has tied weights which are only supported with dtensor policy with tp size 1 (https://github.com/NVIDIA/nemo-rl/issues/227)
+  # Qwen/Qwen2.5-1.5B has tied weights which are only supported with dtensor policy with tp size 1 (https://github.com/NVIDIA/NeMo-RL/issues/227)
   model_name: "Qwen/Qwen2.5-1.5B"
   tokenizer:
     name: ${policy.model_name} ## specify if you'd like to use a tokenizer different from the model's default
@@ -90,6 +92,9 @@ policy:
       tensor_parallel_size: 1
       gpu_memory_utilization: 0.6
       max_model_len: ${policy.max_total_sequence_length}
+      # For most cases, use "dummy" to load the initial weights, since they will be overwritten during refit
+      # For Gemma models, we need to use "auto" due to a vllm bug
+      load_format: dummy
 
 data:
   max_input_seq_length: ${policy.max_total_sequence_length} # upper bound, real truncation occurs at vllm.max_model_len

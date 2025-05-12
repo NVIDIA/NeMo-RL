@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import gc
+import os
 from typing import List, Optional, TypedDict, Union
 
 import ray
@@ -162,7 +163,6 @@ class VllmGenerationWorker:
         # Special handling for tensor parallel case
         if self.tensor_parallel_size > 1:
             # Configure vLLM for tensor parallelism within Ray
-            import os
 
             # Reset CUDA_VISIBLE_DEVICES to allow vLLM to manage GPU assignment
             os.environ.pop("CUDA_VISIBLE_DEVICES", None)
@@ -190,7 +190,7 @@ class VllmGenerationWorker:
             enable_prefix_caching=True,
             dtype="auto",
             seed=seed,
-            # Don't use cuda-graph by default as it leads to convergence issue (see https://github.com/NVIDIA/nemo-rl/issues/186)
+            # Don't use cuda-graph by default as it leads to convergence issue (see https://github.com/NVIDIA/NeMo-RL/issues/186)
             enforce_eager=True,
             max_model_len=self.cfg["vllm_cfg"]["max_model_len"],
             trust_remote_code=True,
