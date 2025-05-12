@@ -102,7 +102,10 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
             data_config["output_key"],
         )
     elif data_cls == "openmathinstruct2":
-        data = hf_datasets.OpenMathInstruct2Dataset()
+        data = hf_datasets.OpenMathInstruct2Dataset(
+            output_key=data_config["output_key"],
+            prompt_file=data_config["prompt_file"],
+        )
     else:
         raise ValueError(f"Unknown dataset class: {data_cls}")
     print(

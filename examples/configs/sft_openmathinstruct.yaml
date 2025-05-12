@@ -1,8 +1,8 @@
 # SFT Algorithm Configuration
 sft:
-  max_num_epochs: 1
-  max_num_steps: 2000
-  val_period: 1855
+  max_num_epochs: 100
+  max_num_steps: 60000
+  val_period: 1000
   val_batches: 4
   val_global_batch_size: 128
   val_micro_batch_size: 2
@@ -11,17 +11,17 @@ sft:
 
 checkpointing:
   enabled: true
-  checkpoint_dir: "results/sft_openmathinstruct2"
+  checkpoint_dir: "results/sft_openmath"
   metric_name: "val_loss"
   higher_is_better: false
-  keep_top_k: 100 ## save all checkpoints
-  save_period: 1855
+  keep_top_k: 12 ## save all checkpoints
+  save_period: 1000
 
 policy:
   model_name: "meta-llama/Llama-3.1-8B"
   tokenizer:
-    name: meta-llama/Llama-3.1-8B-Instruct ## specify if you'd like to use a tokenizer different from the model's default
-    # chat_template: NULL
+    name: ${policy.model_name} ## specify if you'd like to use a tokenizer different from the model's default
+    chat_template: NULL
     #chat_template: "{% for message in messages %}{%- if message['role'] == 'system'  %}{{'Context: ' + message['content'].strip()}}{%- elif message['role'] == 'user'  %}{{' Question: ' + message['content'].strip() + ' Answer:'}}{%- elif message['role'] == 'assistant'  %}{{' ' + message['content'].strip()}}{%- endif %}{% endfor %}"
   train_global_batch_size: 512
   train_micro_batch_size: 2
@@ -56,15 +56,23 @@ policy:
 
 data:
   max_input_seq_length: ${policy.max_total_sequence_length}
-  dataset_name: "openmathinstruct2"
-  prompt_file: examples/prompts/math.txt
-  add_bos: true
-  add_eos: true
-  output_key: 'generated_solution'
-  # train_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"
-  # val_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"
-  # input_key: 'input'
-  # output_key: 'output'
+  dataset_name: "prompt_response_dataset"
+  add_bos: false
+  add_eos: false
+  train_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"
+  val_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"
+  input_key: 'input'
+  output_key: 'output'
+
+# data:
+#   max_input_seq_length: ${policy.max_total_sequence_length}
+#   dataset_name: "openmathinstruct2"
+#   add_bos: false
+#   add_eos: false
+#   # train_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"
+#   # val_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"
+#   # input_key: 'input'
+#   # output_key: 'output'
 
 logger:
   log_dir: "logs"  # Base directory for all logs
@@ -73,7 +81,7 @@ logger:
   monitor_gpus: false  # If true, will monitor GPU usage and log to wandb and/or tensorboard
   wandb:
     project: "sft-dev-yifu"
-    name: "openmathinstruct-nemorl-1M_train"
+    name: "openmathinstruct-nemorl-mbs2"
   tensorboard:
     log_dir: "tb_logs-sft-dev-${data.dataset_name}"
   gpu_monitoring:

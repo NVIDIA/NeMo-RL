@@ -381,6 +381,14 @@ def get_formatted_message_log(
     new_message_log = []
     prev_formatted_message = ""
 
+    if task_data_spec.prompt:
+        message_log = [
+            {
+                "role": "user",
+                "content": task_data_spec.prompt.format(message_log[0]["content"]),
+            }
+        ] + message_log[1:]
+
     for i, message in enumerate(message_log):
         formatted_message = tokenizer.apply_chat_template(
             message_log[: i + 1],
