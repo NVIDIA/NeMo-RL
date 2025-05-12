@@ -29,7 +29,7 @@ from nemo_rl.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
 )
-from tests.unit.test_utils import simple_loss
+from tests.unit.test_utils import SimpleLoss
 
 # Define basic test config
 simple_policy_config = {
@@ -299,9 +299,10 @@ def test_convert_dcp_to_hf(policy, num_gpus):
             "input_lengths": input_lengths,
             "attention_mask": attention_mask,
             "labels": torch.randint(0, 16000, (4, 128)),
+            "sample_mask": torch.ones(input_ids.shape[0]),
         }
     )
-    policy.train(dummy_fwd_dict, simple_loss)
+    policy.train(dummy_fwd_dict, SimpleLoss())
 
     with TemporaryDirectory() as tmp_dir:
         policy.save_checkpoint(

@@ -24,6 +24,7 @@ pytestmark = pytest.mark.modelconfig
 from transformers import AutoModelForCausalLM
 
 from nemo_rl.algorithms.interfaces import LossFunction
+from nemo_rl.algorithms.loss_functions import ClippedPGLossFn, NLLLoss
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
@@ -32,7 +33,7 @@ from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.dtensor_policy_worker import DTensorPolicyWorker
 from nemo_rl.models.policy.hf_policy import HfPolicy
 from tests.unit.conftest import TEST_ASSETS
-from tests.unit.test_utils import simple_loss
+from tests.unit.test_utils import SimpleLoss
 
 
 def create_test_config(
@@ -262,11 +263,12 @@ def training_setup(request, two_gpu_virtual_cluster):
                 "input_lengths": input_lengths,
                 "attention_mask": attention_mask,  # Keep for compatibility with loss functions
                 "labels": torch.randint(0, 32000, (8, 128)),
+                "sample_mask": torch.ones(8),
             }
         )
 
         # Create loss function
-        loss_fn: LossFunction = simple_loss
+        loss_fn: LossFunction = SimpleLoss()
 
         # Provide the resources to the test
         yield policy, data, loss_fn
@@ -472,3 +474,101 @@ def test_dtensor_fails_with_tp_and_tied_model(mock_2gpu_distributed_env):
             init_optimizer=False,
             init_reference_model=False,
         )
+
+
+@pytest.mark.timeout(180)
+def test_dtensor_loss_independent_of_microbatch_size_two_gpus(two_gpu_virtual_cluster):
+    """Tests that changing microbatch size while keeping global batch size constant does not affect loss values in DTensor."""
+    # Create test batch with global batch size of 8
+    global_batch_size = 8
+    seq_len = 128
+    vocab_size = 32000
+
+    # Create test input_ids and attention_mask
+    input_ids = torch.randint(0, vocab_size, (global_batch_size, seq_len))
+    attention_mask = torch.ones(global_batch_size, seq_len)
+    input_lengths = attention_mask.sum(dim=1).to(torch.int32)
+
+    # Create data dictionary
+    data = BatchedDataDict(
+        {
+            "input_ids": input_ids,
+            "input_lengths": input_lengths,
+            "attention_mask": attention_mask,
+            "token_mask": torch.triu(
+                torch.ones(global_batch_size, seq_len), diagonal=1
+            ),  # give different examples different numbers of valid tokens
+            "sample_mask": torch.ones((global_batch_size,)),
+            "labels": torch.randint(0, vocab_size, (global_batch_size, seq_len)),
+            "num_valid_tokens_in_batch": torch.tensor(
+                [seq_len] * global_batch_size, dtype=torch.float32
+            ),
+            "advantages": torch.randn(global_batch_size, seq_len),
+            "prev_logprobs": torch.randn(global_batch_size, seq_len),
+            "reference_policy_logprobs": torch.randn(global_batch_size, seq_len),
+            "generation_logprobs": torch.randn(global_batch_size, seq_len),
+        }
+    )
+
+    # Test with mbs=1, 2 microbatches per GPU
+    config = create_test_config()
+    tokenizer = get_tokenizer(config["tokenizer"])
+
+    print("Creating training HfPolicy with mbs=1...")
+    policy_mbs1 = HfPolicy(
+        cluster=two_gpu_virtual_cluster,
+        config=config,
+        init_reference_model=False,
+        tokenizer=tokenizer,
+    )
+
+    # Test NLLLoss and ClippedPGLossFn with mbs=1
+    nll_loss_fn = NLLLoss()
+    pg_loss_fn = ClippedPGLossFn(
+        {
+            "ratio_clip_min": 0.2,
+            "ratio_clip_max": 0.2,
+            "ratio_clip_c": None,
+            "reference_policy_kl_penalty": 0.1,
+            "disable_ppo_ratio": False,
+            "use_on_policy_kl_approximation": False,
+            "use_importance_sampling_correction": False,
+            "token_level_loss": True,
+        }
+    )
+
+    policy_mbs1.prepare_for_training()
+    mbs1_nll_results = policy_mbs1.train(data, nll_loss_fn)
+    mbs1_nll_loss = mbs1_nll_results["loss"]
+
+    mbs1_pg_results = policy_mbs1.train(data, pg_loss_fn)
+    mbs1_pg_loss = mbs1_pg_results["loss"]
+
+    policy_mbs1.worker_group.shutdown()
+
+    # Test with mbs=2, 1 microbatch per GPU
+    config = create_test_config()
+    config["train_micro_batch_size"] = 2
+    config["generation"] = configure_generation_config(config["generation"], tokenizer)
+
+    print("Creating training HfPolicy with mbs=2...")
+    policy_mbs2 = HfPolicy(
+        cluster=two_gpu_virtual_cluster,
+        config=config,
+        init_reference_model=False,
+        tokenizer=tokenizer,
+    )
+
+    # Test NLLLoss and ClippedPGLossFn with mbs=2
+    policy_mbs2.prepare_for_training()
+    mbs2_nll_results = policy_mbs2.train(data, nll_loss_fn)
+    mbs2_nll_loss = mbs2_nll_results["loss"]
+
+    mbs2_pg_results = policy_mbs2.train(data, pg_loss_fn)
+    mbs2_pg_loss = mbs2_pg_results["loss"]
+
+    # Verify both loss functions are independent of microbatch size
+    torch.testing.assert_close(mbs1_nll_loss, mbs2_nll_loss, rtol=1e-5, atol=1e-5)
+    torch.testing.assert_close(mbs1_pg_loss, mbs2_pg_loss, rtol=1e-5, atol=1e-5)
+
+    policy_mbs2.worker_group.shutdown()

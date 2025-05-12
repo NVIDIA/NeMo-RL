@@ -565,10 +565,10 @@ def grpo_train(
         }
         metrics.update(train_results["all_mb_metrics"])
         for k, v in metrics.items():
-            if k == "num_valid_samples":
-                metrics[k] = np.sum(v).item()
-            else:
+            if k in {"lr", "reward", "normalization_factor"}:
                 metrics[k] = np.mean(v).item()
+            else:
+                metrics[k] = np.sum(v).item()
         metrics.update(rollout_metrics)
 
         timing_metrics = timer.get_timing_metrics(reduction_op="sum")

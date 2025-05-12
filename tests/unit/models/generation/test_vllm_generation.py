@@ -388,7 +388,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
     This test validates that the two policies can work together.
     """
     from nemo_rl.models.policy.hf_policy import HfPolicy
-    from tests.unit.test_utils import nll_loss
+    from tests.unit.test_utils import SimpleNLLLoss
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
@@ -524,6 +524,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
                 "input_ids": train_input_ids,
                 "input_lengths": generation_results["unpadded_sequence_lengths"],
                 "token_loss_mask": token_loss_mask,
+                "sample_mask": torch.ones(train_input_ids.shape[0]),
             }
         )
 
@@ -532,7 +533,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
         hf_policy.prepare_for_training()
 
         # Just do one training step to verify it works
-        results = hf_policy.train(train_data, nll_loss)
+        results = hf_policy.train(train_data, SimpleNLLLoss())
         print(f"Training loss: {results['loss']}")
 
         hf_policy.finish_training()
