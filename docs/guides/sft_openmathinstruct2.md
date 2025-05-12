@@ -1,34 +1,45 @@
 # SFT on OpenMathInstruct-2
 
-This guide explains how to use NeMo RL to run SFT on the [nvidia/OpenMathInstruct-2](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2) math instruction tuning dataset. We then evaluate the trained model on the [MATH-500 benchmark](https://huggingface.co/datasets/HuggingFaceH4/MATH-500).
+This guide explains how to use NeMo RL to run SFT on the [nvidia/OpenMathInstruct-2](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2) math instruction tuning dataset. We then show how to use NeMo RL's evaluation scripts to evaluate the trained model on the [MATH-500 benchmark](https://huggingface.co/datasets/HuggingFaceH4/MATH-500).
 
 
 ## Training the Model
 To train the model using NeMo RL, use the `examples/configs/recipes/tutorials/sft/sft_openmathinstruct2.yaml` config file. This file closely matches the experiment settings in the [original OpenMathInstruct-2 paper](https://arxiv.org/abs/2410.01560).
 
 ```
-uv run examples/run_sft.py --config=examples/configs/recipes/tutorials/sft/sft_openmathinstruct2.yaml
+uv run examples/run_sft.py --config=examples/configs/sft_openmathinstruct2.yaml
 ```
 
+### Dataset Splits
+
+The OpenMathInstruct-2 has several versions of different sizes. Configure the version of the dataset via the `data.split` config:
+
+* `train`: full 14 M problem–solution pairs
+* `train_1M`, `train_2M`, `train_5M`: fair-downsampled subsets of 1M, 2M, or 5M examples
+
+By default, the config uses the 1M subset (`data.split=train_1M`).
+
 ## Evaluating the Model
-To evaluate the model, we first need to convert our PyTorch distributed checkpoints to HuggingFace format:
+Throughout training, the checkpoints of the model will be saved to the `results/sft_openmathinstruct2` folder (specified by `checkpointing.checkpoint_dir`). To evaluate the model, we first need to convert the PyTorch distributed checkpoint to HuggingFace format:
 
 ```
 uv run examples/convert_dcp_to_hf.py \
-    --config=/path/to/checkpoint/config.yaml \
-    --dcp-ckpt-path=/path/to/checkpoint/policy/weights \
-    --hf-ckpt-path=/path/to/checkpoint/hf
+    --config=results/sft_openmathinstruct2/step_1855/config.yaml \
+    --dcp-ckpt-path=results/sft_openmathinstruct2/step_1855/policy/weights \
+    --hf-ckpt-path=results/sft_openmathinstruct2/step_1855/hf
 ```
 
-Then, to evaluate on the MATH-500 dataset:
+Replace `results/sft_openmathinstruct2/step_1855` with the path to the checkpoint you are evaluating. The resulting HuggingFace checkpoint will be saved to `--hf-ckpt-path`.
+
+To evaluate on the MATH-500 dataset:
 
 ```
 uv run examples/run_eval.py \
-    --config=examples/configs/recipes/tutorials/sft/eval_math500.yaml \
-    generation.model_name=/path/to/hf/checkpoint
+    --config=examples/configs/eval_math500.yaml \
+    generation.model_name=results/sft_openmathinstruct2/step_1855/hf
 ```
 
-Running the above, we see the following results at 16,000 steps:
+where `generation.model_name` is the path to the HuggingFace checkpoint. Running the above after training the Llama-3.1-8B model for 1 epoch on the train_1M version of the OpenMathInstruct-2 dataset, we get the following result:
 
 ```
 ============================================================
@@ -40,6 +51,8 @@ metric='pass@1' num_tests_per_prompt=1
 score=0.6000 (300.0/500)
 ============================================================
 ```
+
+As a reference, using NeMo-Aligner and NeMo-Skills to train and evaluate the model on the same dataset (as is done in the [original OpenMathInstruct-2 paper](https://arxiv.org/abs/2410.01560)) results in a score of 0.5020
 
 Evaluating the NeMo-Aligner checkpoint using the same method, we see:
 

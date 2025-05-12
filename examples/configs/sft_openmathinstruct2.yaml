@@ -14,18 +14,16 @@ checkpointing:
   checkpoint_dir: "results/sft_openmathinstruct2"
   metric_name: "val_loss"
   higher_is_better: false
-  keep_top_k: 100 ## save all checkpoints
+  keep_top_k: 100
   save_period: 1855
 
 policy:
   model_name: "meta-llama/Llama-3.1-8B"
   tokenizer:
     name: meta-llama/Llama-3.1-8B-Instruct ## specify if you'd like to use a tokenizer different from the model's default
-    # chat_template: NULL
-    #chat_template: "{% for message in messages %}{%- if message['role'] == 'system'  %}{{'Context: ' + message['content'].strip()}}{%- elif message['role'] == 'user'  %}{{' Question: ' + message['content'].strip() + ' Answer:'}}{%- elif message['role'] == 'assistant'  %}{{' ' + message['content'].strip()}}{%- endif %}{% endfor %}"
   train_global_batch_size: 512
   train_micro_batch_size: 2
-  max_total_sequence_length: 4096  #1024
+  max_total_sequence_length: 4096
   precision: "bfloat16"
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
@@ -63,10 +61,6 @@ data:
   add_eos: true
   add_generation_prompt: true
   output_key: 'generated_solution'
-  # train_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"
-  # val_data_path: "/lustre/fsw/portfolios/coreai/users/yifuw/datasets/sft/openmathinstruct2-sft.jsonl"
-  # input_key: 'input'
-  # output_key: 'output'
 
 logger:
   log_dir: "logs"  # Base directory for all logs
