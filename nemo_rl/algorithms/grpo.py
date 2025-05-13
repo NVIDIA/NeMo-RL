@@ -578,6 +578,7 @@ def grpo_train(
         print(
             f"  • Mean Generation Length: {rollout_metrics['mean_gen_tokens_per_sample']:.4f}"
         )
+
         print("\n⏱️  Timing:")
         # Display total time first, separately
         total_time = timing_metrics.get("total_step_time", 0)

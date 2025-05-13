@@ -19,7 +19,7 @@ import ray
 from transformers import AutoTokenizer
 
 from nemo_rl.algorithms.interfaces import LossFunction
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict, DynamicBatchingCfg
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.distributed.worker_groups import RayWorkerBuilder, RayWorkerGroup
 from nemo_rl.models.generation.interfaces import (
@@ -119,17 +119,19 @@ class HfPolicy(PolicyInterface, GenerationInterface):
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
-        if self.cfg['dynamic_batching']['enabled']:
+        if self.cfg["dynamic_batching"]["enabled"]:
             dynamic_batching_cfg: DynamicBatchingCfg = {
-                'input_lengths_key': 'input_lengths',
-                'max_tokens_per_microbatch': self.cfg['dynamic_batching']['logprob_mb_tokens']
+                "input_lengths_key": "input_lengths",
+                "max_tokens_per_microbatch": self.cfg["dynamic_batching"][
+                    "logprob_mb_tokens"
+                ],
             }
         else:
             dynamic_batching_cfg = None
 
         sharded_data = data.shard_by_batch_size(
-            self.dp_size, 
-            batch_size=None, 
+            self.dp_size,
+            batch_size=None,
             dynamic_batching_cfg=dynamic_batching_cfg,
         )
 
@@ -148,17 +150,19 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         Returns: Identical to get_logprobs.
         """
-        if self.cfg['dynamic_batching']['enabled']:
+        if self.cfg["dynamic_batching"]["enabled"]:
             dynamic_batching_cfg: DynamicBatchingCfg = {
-                'input_lengths_key': 'input_lengths',
-                'max_tokens_per_microbatch': self.cfg['dynamic_batching']['logprob_mb_tokens']
+                "input_lengths_key": "input_lengths",
+                "max_tokens_per_microbatch": self.cfg["dynamic_batching"][
+                    "logprob_mb_tokens"
+                ],
             }
         else:
             dynamic_batching_cfg = None
 
         sharded_data = data.shard_by_batch_size(
-            self.dp_size, 
-            batch_size=None, 
+            self.dp_size,
+            batch_size=None,
             dynamic_batching_cfg=dynamic_batching_cfg,
         )
         futures = self.worker_group.run_all_workers_multiple_data(
@@ -185,16 +189,18 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         batch_size = gbs or self.cfg["train_global_batch_size"]
         micro_batch_size = mbs or self.cfg["train_micro_batch_size"]
         # Shard and replicate the batch
-        if self.cfg['dynamic_batching']['enabled']:
+        if self.cfg["dynamic_batching"]["enabled"]:
             dynamic_batching_cfg: DynamicBatchingCfg = {
-                'input_lengths_key': 'input_lengths',
-                'max_tokens_per_microbatch': self.cfg['dynamic_batching']['train_mb_tokens']
+                "input_lengths_key": "input_lengths",
+                "max_tokens_per_microbatch": self.cfg["dynamic_batching"][
+                    "train_mb_tokens"
+                ],
             }
         else:
             dynamic_batching_cfg = None
 
         sharded_data = data.shard_by_batch_size(
-            self.dp_size, 
+            self.dp_size,
             batch_size=batch_size,
             dynamic_batching_cfg=dynamic_batching_cfg,
         )

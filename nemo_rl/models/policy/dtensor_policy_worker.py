@@ -102,9 +102,7 @@ def get_cpu_state_dict(
 
 
 @ray.remote(
-    runtime_env={
-        "env_vars": {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
-    }
+    runtime_env={"env_vars": {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}}
 )
 class DTensorPolicyWorker:
     DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.BASE
@@ -291,10 +289,11 @@ class DTensorPolicyWorker:
         # dim 1 is always assumed to be the sequence dim, sanity check this here
         sequence_dim = 1
         seq_dim_size = data.get("input_ids").shape[sequence_dim]
-        for k,v in data.items():
+        for k, v in data.items():
             if torch.is_tensor(v) and len(v.shape) > 1:
-                assert v.shape[sequence_dim] == seq_dim_size, \
+                assert v.shape[sequence_dim] == seq_dim_size, (
                     f"Dim 1 must be the sequence dim, expected dim 1={seq_dim_size} but got shape {v.shape}"
+                )
 
         if eval_mode:
             ctx = torch.no_grad()
@@ -341,23 +340,25 @@ class DTensorPolicyWorker:
                     raise ValueError(f"Unknown loss type: {loss_fn.loss_type}")
 
                 padded_seqlen = data.get("input_ids").shape[1]
-            
+
                 self.optimizer.zero_grad()
                 mb_losses = []
                 batch = data.get_batch(batch_idx=gb_idx, batch_size=local_gbs)
                 # Calculate number of microbatches to process
                 # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
                 # so its safe to not check for the case where the last data slice is smaller than mbs
-                if self.cfg['dynamic_batching']['enabled']:
+                if self.cfg["dynamic_batching"]["enabled"]:
                     mb_iterator = batch.make_microbatch_iterator_with_dynamic_shapes(
-                        max_sequence_length=data['input_ids'].shape[1],
-                        round_seq_len_multiple=self.cfg['dynamic_batching']['sequence_length_round'],
-                        input_lengths_key='input_lengths',
+                        max_sequence_length=data["input_ids"].shape[1],
+                        round_seq_len_multiple=self.cfg["dynamic_batching"][
+                            "sequence_length_round"
+                        ],
+                        input_lengths_key="input_lengths",
                     )
                 else:
                     mb_iterator = batch.make_microbatch_iterator(mbs)
 
-                for mb in mb_iterator:      
+                for mb in mb_iterator:
                     input_ids = mb.get("input_ids").cuda()
                     input_lengths = mb.get("input_lengths")
                     batch_size, seq_len = input_ids.shape
@@ -406,7 +407,6 @@ class DTensorPolicyWorker:
                     loss_metrics["normalization_factor"] = (
                         total_valid_tokens_or_seqs.cpu()
                     )
-                    loss_metrics["micro_batch_size"] = batch_size
 
                     # Backward pass
                     if not eval_mode:
@@ -472,7 +472,10 @@ class DTensorPolicyWorker:
 
             return metrics
 
-    def get_logprobs(self, data: BatchedDataDict, micro_batch_size: int = None,
+    def get_logprobs(
+        self,
+        data: BatchedDataDict,
+        micro_batch_size: int = None,
     ) -> BatchedDataDict:
         """Get the logprobs of the model for a batch of data.
 
@@ -495,21 +498,24 @@ class DTensorPolicyWorker:
         # dim 1 is always assumed to be the sequence dim, sanity check this here
         sequence_dim = 1
         seq_dim_size = data.get("input_ids").shape[sequence_dim]
-        for k,v in data.items():
+        for k, v in data.items():
             if torch.is_tensor(v) and len(v.shape) > 1:
-                assert v.shape[sequence_dim] == seq_dim_size, \
+                assert v.shape[sequence_dim] == seq_dim_size, (
                     f"Dim 1 must be the sequence dim, expected dim 1={seq_dim_size} but got shape {v.shape}"
+                )
 
         all_log_probs = []
         self.model.eval()
 
         with unshard_fsdp2_model(self.model), torch.no_grad():
             data.to("cuda")
-            if self.cfg['dynamic_batching']['enabled']:
+            if self.cfg["dynamic_batching"]["enabled"]:
                 mb_iterator = data.make_microbatch_iterator_with_dynamic_shapes(
-                    max_sequence_length=data['input_ids'].shape[1],
-                    round_seq_len_multiple=self.cfg['dynamic_batching']['sequence_length_round'],
-                    input_lengths_key='input_lengths',
+                    max_sequence_length=data["input_ids"].shape[1],
+                    round_seq_len_multiple=self.cfg["dynamic_batching"][
+                        "sequence_length_round"
+                    ],
+                    input_lengths_key="input_lengths",
                 )
             else:
                 mb_iterator = data.make_microbatch_iterator(logprob_batch_size)
@@ -586,7 +592,9 @@ class DTensorPolicyWorker:
         for lp in all_log_probs:
             padding_needed = seq_dim_size - lp.shape[1]
             if padding_needed > 0:
-                lp = torch.nn.functional.pad(lp, (0, padding_needed), mode='constant', value=0.0)
+                lp = torch.nn.functional.pad(
+                    lp, (0, padding_needed), mode="constant", value=0.0
+                )
             all_log_probs_padded.append(lp)
         return_data["logprobs"] = torch.cat(all_log_probs_padded, dim=0).cpu()
 
