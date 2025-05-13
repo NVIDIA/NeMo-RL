@@ -458,6 +458,8 @@ def sft_train(
                     sft_save_state["epoch"] = current_epoch
                     if val_metrics is not None:
                         sft_save_state["val_loss"] = val_metrics["val_loss"]
+                    else:
+                        sft_save_state["val_loss"] = 0
                     with timer.time("checkpointing"):
                         print(f"Saving checkpoint for step {total_steps + 1}...")
                         checkpoint_path = checkpointer.init_tmp_checkpoint(

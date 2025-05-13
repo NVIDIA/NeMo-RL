@@ -531,6 +531,8 @@ def grpo_train(
                 grpo_save_state["step"] = step + 1
                 if val_metrics is not None:
                     grpo_save_state["val_reward"] = val_metrics["accuracy"]
+                else:
+                    grpo_save_state["val_reward"] = 0
                 grpo_save_state["consumed_samples"] = consumed_samples
                 with timer.time("checkpointing"):
                     print(f"Saving checkpoint for step {step + 1}...")
