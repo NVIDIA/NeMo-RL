@@ -93,82 +93,64 @@ def _parallelize_gemma3(
     Tensor parallelism is not supported for Gemma3 models because of tied word embeddings.
     """
     if isinstance(model, Gemma3ForConditionalGeneration):
-        layers = model.language_model.model.layers
         model_prefix = "language_model.model"
         num_attention_heads = model.config.text_config.num_attention_heads
         num_key_value_heads = model.config.text_config.num_key_value_heads
     else:
-        layers = model.model.layers
         model_prefix = "model"
         num_attention_heads = model.config.num_attention_heads
         num_key_value_heads = model.config.num_key_value_heads
 
-    if tp_mesh.size() > 1:
-        assert num_key_value_heads % tp_mesh.size() == 0, (
-            f"num_key_value_heads ({num_key_value_heads}) must be divisible by TP size ({tp_mesh.size()})"
-        )
-        assert num_attention_heads % tp_mesh.size() == 0, (
-            f"num_attention_heads ({num_attention_heads}) must be divisible by TP size ({tp_mesh.size()})"
-        )
-
-        # For gemma3 models, we don't include the model.embed_tokens and lm_head in the
-        # parallelization plans because they have tied weights.
-        base_model_tp_plan = {
-            f"{model_prefix}.layers.*.self_attn.q_proj": ColwiseParallel(),
-            f"{model_prefix}.layers.*.self_attn.k_proj": ColwiseParallel(),
-            f"{model_prefix}.layers.*.self_attn.v_proj": ColwiseParallel(),
-            f"{model_prefix}.layers.*.self_attn.o_proj": RowwiseParallel(),
-            f"{model_prefix}.layers.*.mlp.up_proj": ColwiseParallel(),
-            f"{model_prefix}.layers.*.mlp.gate_proj": ColwiseParallel(),
-            f"{model_prefix}.layers.*.mlp.down_proj": RowwiseParallel(),
-        }
-
-        base_model_sp_plan = {
-            f"{model_prefix}.embed_tokens": PrepareModuleOutput(
-                output_layouts=Replicate(),
-                desired_output_layouts=Shard(1),
-                use_local_output=False,
-            ),
-            f"{model_prefix}.rotary_emb": RotaryEmbedParallel(use_local_output=True),
-            f"{model_prefix}.rotary_emb_local": RotaryEmbedParallel(
-                use_local_output=True
-            ),
-            f"{model_prefix}.layers.*.input_layernorm": SequenceParallel(),
-            f"{model_prefix}.layers.*.self_attn.o_proj": RowwiseParallel(
-                output_layouts=Shard(1)
-            ),
-            f"{model_prefix}.layers.*.post_attention_layernorm": SequenceParallel(),
-            f"{model_prefix}.layers.*.pre_feedforward_layernorm": SequenceParallel(),
-            f"{model_prefix}.layers.*.mlp.down_proj": RowwiseParallel(
-                output_layouts=Shard(1)
-            ),
-            f"{model_prefix}.layers.*.post_feedforward_layernorm": SequenceParallel(),
-            f"{model_prefix}.norm": SequenceParallel(),
-            f"{model_prefix}.lm_head": PrepareModuleInput(
-                input_layouts=(Shard(1),),
-                desired_input_layouts=(Replicate(),),
-                use_local_output=True,
-            ),
-        }
-
-        if sequence_parallel:
-            # Enable sequence parallelism only if TP size > 1
-            base_model_tp_plan.update(base_model_sp_plan)
-
-        parallelize_module(model, tp_mesh, base_model_tp_plan)
-
-    if activation_checkpointing:
-        for i in range(len(layers)):
-            layers[i].mlp = checkpoint_wrapper(layers[i].mlp)
-
-    for layer in layers:
-        fully_shard(
-            layer, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
-        )
-
-    return fully_shard(
-        model, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
+    assert num_key_value_heads % tp_mesh.size() == 0, (
+        f"num_key_value_heads ({num_key_value_heads}) must be divisible by TP size ({tp_mesh.size()})"
     )
+    assert num_attention_heads % tp_mesh.size() == 0, (
+        f"num_attention_heads ({num_attention_heads}) must be divisible by TP size ({tp_mesh.size()})"
+    )
+
+    # For gemma3 models, we don't include the model.embed_tokens and lm_head in the
+    # parallelization plans because they have tied weights.
+    base_model_tp_plan = {
+        f"{model_prefix}.layers.*.self_attn.q_proj": ColwiseParallel(),
+        f"{model_prefix}.layers.*.self_attn.k_proj": ColwiseParallel(),
+        f"{model_prefix}.layers.*.self_attn.v_proj": ColwiseParallel(),
+        f"{model_prefix}.layers.*.self_attn.o_proj": RowwiseParallel(),
+        f"{model_prefix}.layers.*.mlp.up_proj": ColwiseParallel(),
+        f"{model_prefix}.layers.*.mlp.gate_proj": ColwiseParallel(),
+        f"{model_prefix}.layers.*.mlp.down_proj": RowwiseParallel(),
+    }
+
+    base_model_sp_plan = {
+        f"{model_prefix}.embed_tokens": PrepareModuleOutput(
+            output_layouts=Replicate(),
+            desired_output_layouts=Shard(1),
+            use_local_output=False,
+        ),
+        f"{model_prefix}.rotary_emb": RotaryEmbedParallel(use_local_output=True),
+        f"{model_prefix}.rotary_emb_local": RotaryEmbedParallel(use_local_output=True),
+        f"{model_prefix}.layers.*.input_layernorm": SequenceParallel(),
+        f"{model_prefix}.layers.*.self_attn.o_proj": RowwiseParallel(
+            output_layouts=Shard(1)
+        ),
+        f"{model_prefix}.layers.*.post_attention_layernorm": SequenceParallel(),
+        f"{model_prefix}.layers.*.pre_feedforward_layernorm": SequenceParallel(),
+        f"{model_prefix}.layers.*.mlp.down_proj": RowwiseParallel(
+            output_layouts=Shard(1)
+        ),
+        f"{model_prefix}.layers.*.post_feedforward_layernorm": SequenceParallel(),
+        f"{model_prefix}.norm": SequenceParallel(),
+        f"{model_prefix}.lm_head": PrepareModuleInput(
+            input_layouts=(Shard(1),),
+            desired_input_layouts=(Replicate(),),
+            use_local_output=True,
+        ),
+    }
+
+    if sequence_parallel:
+        # Enable sequence parallelism only if TP size > 1
+        base_model_tp_plan.update(base_model_sp_plan)
+
+    return base_model_tp_plan
 
 
 def _parallelize_llama(
@@ -181,57 +163,41 @@ def _parallelize_llama(
     activation_checkpointing: bool = False,
 ):
     """Parallelizes a LlamaForCausalLM model across data and tensor parallel dimensions."""
-    if tp_mesh.size() > 1:
-        assert not model.config.tie_word_embeddings, (
-            "Tie word embeddings not supported when TP is enabled"
-        )
-
-        base_model_tp_plan = {
-            "model.embed_tokens": RowwiseParallel(input_layouts=Replicate()),
-            "model.layers.*.self_attn.q_proj": ColwiseParallel(),
-            "model.layers.*.self_attn.k_proj": ColwiseParallel(),
-            "model.layers.*.self_attn.v_proj": ColwiseParallel(),
-            "model.layers.*.self_attn.o_proj": RowwiseParallel(),
-            "model.layers.*.mlp.up_proj": ColwiseParallel(),
-            "model.layers.*.mlp.gate_proj": ColwiseParallel(),
-            "model.layers.*.mlp.down_proj": RowwiseParallel(),
-            "lm_head": ColwiseParallel(
-                output_layouts=Shard(-1), use_local_output=False
-            ),
-        }
-
-        base_model_sp_plan = {
-            "model.embed_tokens": RowwiseParallel(
-                input_layouts=Replicate(), output_layouts=Shard(1)
-            ),
-            "model.norm": SequenceParallel(),
-            "model.layers.*.input_layernorm": SequenceParallel(),
-            "model.layers.*.self_attn.o_proj": RowwiseParallel(output_layouts=Shard(1)),
-            "model.layers.*.post_attention_layernorm": SequenceParallel(),
-            "model.layers.*.mlp.down_proj": RowwiseParallel(output_layouts=Shard(1)),
-            "lm_head": ColwiseParallel(
-                input_layouts=Shard(1), output_layouts=Shard(-1), use_local_output=False
-            ),
-        }
-
-        if sequence_parallel:
-            # Enable sequence parallelism only if TP size > 1
-            base_model_tp_plan.update(base_model_sp_plan)
-
-        parallelize_module(model, tp_mesh, base_model_tp_plan)
-
-    if activation_checkpointing:
-        for i in range(len(model.model.layers)):
-            model.model.layers[i].mlp = checkpoint_wrapper(model.model.layers[i].mlp)  # type: ignore
-
-    for layer in model.model.layers:
-        fully_shard(
-            layer, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
-        )
-
-    return fully_shard(
-        model, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
+    assert not model.config.tie_word_embeddings, (
+        "Tie word embeddings not supported when TP is enabled"
     )
+
+    base_model_tp_plan = {
+        "model.embed_tokens": RowwiseParallel(input_layouts=Replicate()),
+        "model.layers.*.self_attn.q_proj": ColwiseParallel(),
+        "model.layers.*.self_attn.k_proj": ColwiseParallel(),
+        "model.layers.*.self_attn.v_proj": ColwiseParallel(),
+        "model.layers.*.self_attn.o_proj": RowwiseParallel(),
+        "model.layers.*.mlp.up_proj": ColwiseParallel(),
+        "model.layers.*.mlp.gate_proj": ColwiseParallel(),
+        "model.layers.*.mlp.down_proj": RowwiseParallel(),
+        "lm_head": ColwiseParallel(output_layouts=Shard(-1), use_local_output=False),
+    }
+
+    base_model_sp_plan = {
+        "model.embed_tokens": RowwiseParallel(
+            input_layouts=Replicate(), output_layouts=Shard(1)
+        ),
+        "model.norm": SequenceParallel(),
+        "model.layers.*.input_layernorm": SequenceParallel(),
+        "model.layers.*.self_attn.o_proj": RowwiseParallel(output_layouts=Shard(1)),
+        "model.layers.*.post_attention_layernorm": SequenceParallel(),
+        "model.layers.*.mlp.down_proj": RowwiseParallel(output_layouts=Shard(1)),
+        "lm_head": ColwiseParallel(
+            input_layouts=Shard(1), output_layouts=Shard(-1), use_local_output=False
+        ),
+    }
+
+    if sequence_parallel:
+        # Enable sequence parallelism only if TP size > 1
+        base_model_tp_plan.update(base_model_sp_plan)
+
+    return base_model_tp_plan
 
 
 def _parallelize_qwen(
@@ -262,77 +228,53 @@ def _parallelize_qwen(
                     f"expecting input of {mod} to be a torch.Tensor or DTensor, but got {input_tensor}"
                 )
 
-    if tp_mesh.size() > 1:
-        assert not model.config.tie_word_embeddings, (
-            "Tie word embeddings not supported when TP is enabled"
-        )
-        if sequence_parallel:
-            base_model_tp_plan = {
-                "lm_head": ColwiseParallel(
-                    input_layouts=Shard(1),
-                    output_layouts=Shard(-1),
-                    use_local_output=False,
-                ),
-                "model.embed_tokens": RowwiseParallel(
-                    input_layouts=Replicate(),
-                    output_layouts=Shard(1),
-                ),
-                "model.rotary_emb": RotaryEmbedParallel(),
-                "model.norm": SequenceParallel(),
-                "model.layers.*.input_layernorm": SequenceParallel(),
-                "model.layers.*.self_attn.q_proj": ColwiseParallel(
-                    use_local_output=False
-                ),
-                "model.layers.*.self_attn.k_proj": ColwiseParallel(
-                    use_local_output=False
-                ),
-                "model.layers.*.self_attn.v_proj": ColwiseParallel(
-                    use_local_output=False
-                ),
-                "model.layers.*.self_attn.o_proj": RowwiseParallel(
-                    output_layouts=Shard(1)
-                ),
-                "model.layers.*.self_attn.q_norm": Qwen3QKNorm(),
-                "model.layers.*.self_attn.k_norm": Qwen3QKNorm(),
-                "model.layers.*.post_attention_layernorm": SequenceParallel(),
-                "model.layers.*.mlp.up_proj": ColwiseParallel(),
-                "model.layers.*.mlp.gate_proj": ColwiseParallel(),
-                "model.layers.*.mlp.down_proj": RowwiseParallel(
-                    output_layouts=Shard(1)
-                ),
-            }
-
-        else:
-            base_model_tp_plan = {
-                "lm_head": ColwiseParallel(
-                    output_layouts=Shard(-1), use_local_output=False
-                ),
-                "model.embed_tokens": RowwiseParallel(
-                    input_layouts=Replicate(),
-                ),
-                "model.layers.*.self_attn.q_proj": ColwiseParallel(),
-                "model.layers.*.self_attn.k_proj": ColwiseParallel(),
-                "model.layers.*.self_attn.v_proj": ColwiseParallel(),
-                "model.layers.*.self_attn.o_proj": RowwiseParallel(),
-                "model.layers.*.mlp.up_proj": ColwiseParallel(),
-                "model.layers.*.mlp.gate_proj": ColwiseParallel(),
-                "model.layers.*.mlp.down_proj": RowwiseParallel(),
-            }
-
-        parallelize_module(model, tp_mesh, base_model_tp_plan)
-
-    if activation_checkpointing:
-        for i in range(len(model.model.layers)):
-            model.model.layers[i].mlp = checkpoint_wrapper(model.model.layers[i].mlp)  # type: ignore
-
-    for layer in model.model.layers:
-        fully_shard(
-            layer, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
-        )
-
-    return fully_shard(
-        model, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
+    assert not model.config.tie_word_embeddings, (
+        "Tie word embeddings not supported when TP is enabled"
     )
+    if sequence_parallel:
+        base_model_tp_plan = {
+            "lm_head": ColwiseParallel(
+                input_layouts=Shard(1),
+                output_layouts=Shard(-1),
+                use_local_output=False,
+            ),
+            "model.embed_tokens": RowwiseParallel(
+                input_layouts=Replicate(),
+                output_layouts=Shard(1),
+            ),
+            "model.rotary_emb": RotaryEmbedParallel(),
+            "model.norm": SequenceParallel(),
+            "model.layers.*.input_layernorm": SequenceParallel(),
+            "model.layers.*.self_attn.q_proj": ColwiseParallel(use_local_output=False),
+            "model.layers.*.self_attn.k_proj": ColwiseParallel(use_local_output=False),
+            "model.layers.*.self_attn.v_proj": ColwiseParallel(use_local_output=False),
+            "model.layers.*.self_attn.o_proj": RowwiseParallel(output_layouts=Shard(1)),
+            "model.layers.*.self_attn.q_norm": Qwen3QKNorm(),
+            "model.layers.*.self_attn.k_norm": Qwen3QKNorm(),
+            "model.layers.*.post_attention_layernorm": SequenceParallel(),
+            "model.layers.*.mlp.up_proj": ColwiseParallel(),
+            "model.layers.*.mlp.gate_proj": ColwiseParallel(),
+            "model.layers.*.mlp.down_proj": RowwiseParallel(output_layouts=Shard(1)),
+        }
+
+    else:
+        base_model_tp_plan = {
+            "lm_head": ColwiseParallel(
+                output_layouts=Shard(-1), use_local_output=False
+            ),
+            "model.embed_tokens": RowwiseParallel(
+                input_layouts=Replicate(),
+            ),
+            "model.layers.*.self_attn.q_proj": ColwiseParallel(),
+            "model.layers.*.self_attn.k_proj": ColwiseParallel(),
+            "model.layers.*.self_attn.v_proj": ColwiseParallel(),
+            "model.layers.*.self_attn.o_proj": RowwiseParallel(),
+            "model.layers.*.mlp.up_proj": ColwiseParallel(),
+            "model.layers.*.mlp.gate_proj": ColwiseParallel(),
+            "model.layers.*.mlp.down_proj": RowwiseParallel(),
+        }
+
+    return base_model_tp_plan
 
 
 PARALLIZE_FUNCTIONS: dict[type[torch.nn.Module], Callable[..., torch.nn.Module]] = {
@@ -346,6 +288,45 @@ PARALLIZE_FUNCTIONS: dict[type[torch.nn.Module], Callable[..., torch.nn.Module]]
 }
 
 
+def translate_parallel_style(style: str):
+    """Translate parallel style str to parallel type"""
+    assert isinstance(style, str), (
+        f"parallel style type should be str, but got {type(style)}"
+    )
+
+    if style == "colwise":
+        return ColwiseParallel()
+    elif style == "rowwise":
+        return RowwiseParallel()
+    elif style == "colwise_rep":
+        return ColwiseParallel(output_layouts=Replicate())
+    elif style == "rowwise_rep":
+        return RowwiseParallel(input_layouts=Replicate())
+    elif style == "sequence_parallel":
+        return SequenceParallel()
+    else:
+        raise ValueError(f"Unknown parallel style: {style}")
+
+
+def get_hf_tp_plan(model):
+    """Get the Hugging Face tensor parallel plan from the model."""
+    hf_tp_plan = {}
+
+    # model_cls._tp_plan will override model_cls after xxxForCausalLM.post_init() (transformers==4.51.3)
+    model_cls = type(model)
+    if hasattr(model_cls, "_tp_plan") and model_cls._tp_plan is not None:
+        hf_tp_plan.update(model_cls._tp_plan)
+
+    if hasattr(model, "_tp_plan") and model._tp_plan is not None:
+        hf_tp_plan.update(model._tp_plan)
+
+    if hasattr(model.model, "_tp_plan") and model.model._tp_plan is not None:
+        hf_tp_plan.update({f"model.{k}": v for k, v in model.model._tp_plan.items()})
+
+    hf_tp_plan = {k: translate_parallel_style(v) for k, v in hf_tp_plan.items()}
+    return hf_tp_plan
+
+
 def _parallelize_model(
     model: Union[Qwen2ForCausalLM, LlamaForCausalLM],
     dp_mesh: DeviceMesh,
@@ -354,6 +335,7 @@ def _parallelize_model(
     sequence_parallel: bool = False,
     activation_checkpointing: bool = False,
     cpu_offload: bool = False,
+    custom_parallel_plan: dict = None,
 ):
     """Parallelize a model using DTensor.
 
@@ -372,6 +354,8 @@ def _parallelize_model(
     Raises:
         ValueError: If the model type is not supported for parallelization.
     """
+    model_cls = type(model)
+
     mp_policy = MixedPrecisionPolicy(
         param_dtype=param_dtype,
         reduce_dtype=torch.float32,
@@ -383,20 +367,66 @@ def _parallelize_model(
         else torch.distributed.fsdp.OffloadPolicy
     )
 
-    model_cls = type(model)
-    if model_cls not in PARALLIZE_FUNCTIONS:
-        raise ValueError(f"Model {model_cls} not supported as part of dtensor")
+    if tp_mesh.size() > 1:
+        # first use user's custom parallel plan
+        if custom_parallel_plan is not None:
+            model_parallel_plan = {
+                k: translate_parallel_style(v) for k, v in custom_parallel_plan.items()
+            }
 
-    func = PARALLIZE_FUNCTIONS[type(model)]
+        # second use our optimized parallel plan
+        elif model_cls in PARALLIZE_FUNCTIONS:
+            # try to use our optimized parallel plan
+            try:
+                func = PARALLIZE_FUNCTIONS[model_cls]
+                model_parallel_plan = func(
+                    model,
+                    dp_mesh,
+                    tp_mesh,
+                    mp_policy,
+                    offload_policy,
+                    sequence_parallel,
+                    activation_checkpointing,
+                )
+            # fall back to the HF tp plan
+            except Exception as e:
+                print(
+                    f"Optimized parallel plan is not available: {e}. Falling back to the HF tp plan."
+                )
+                assert not sequence_parallel, (
+                    "sequence_parallel is not support in HF tp plan."
+                )
+                model_parallel_plan = get_hf_tp_plan(model)
 
-    return func(
-        model,
-        dp_mesh,
-        tp_mesh,
-        mp_policy,
-        offload_policy,
-        sequence_parallel,
-        activation_checkpointing,
+        # final use the default HF tp plan
+        else:
+            # optimized parallel plan is not support for the model class
+            print(
+                f"Optimized parallel plan is not support for {model_cls}. Falling back to the HF tp plan."
+            )
+            assert not sequence_parallel, (
+                "sequence_parallel is not support in HF tp plan."
+            )
+            model_parallel_plan = get_hf_tp_plan(model)
+
+        parallelize_module(model, tp_mesh, model_parallel_plan)
+
+    if model_cls == Gemma3ForConditionalGeneration:
+        layers = model.language_model.model.layers
+    else:
+        layers = model.model.layers
+
+    if activation_checkpointing:
+        for i in range(len(layers)):
+            layers[i].mlp = checkpoint_wrapper(layers[i].mlp)  # type: ignore
+
+    for layer in layers:
+        fully_shard(
+            layer, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
+        )
+
+    return fully_shard(
+        model, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
     )
 
 

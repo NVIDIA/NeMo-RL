@@ -50,6 +50,7 @@ policy:
     sequence_parallel: false
     activation_checkpointing: false
     tensor_parallel_size: 1
+    custom_parallel_plan: null
 
   # dynamic_batching improves performance by ensuring logprob and training microbatches
   # have a sufficent number of tokens to maximize GPU utilization. Specifically, variable length
