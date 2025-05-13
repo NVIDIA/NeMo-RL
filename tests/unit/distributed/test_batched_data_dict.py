@@ -223,10 +223,10 @@ def test_shard_by_batch_size_dynamic():
     )
 
     # Expected Output: 3 microbatches per shard, of sizes 2, 1, 1
-    assert shards[0].metadata["is_sorted"] is True
-    assert shards[0].metadata["micro_batch_indices"] == [[[0, 2], [2, 3], [3, 4]]]
-    assert shards[1].metadata["is_sorted"] is True
-    assert shards[1].metadata["micro_batch_indices"] == [[[0, 2], [2, 3], [3, 4]]]
+    assert shards[0].is_sorted is True
+    assert shards[0].micro_batch_indices == [[[0, 2], [2, 3], [3, 4]]]
+    assert shards[1].is_sorted is True
+    assert shards[1].micro_batch_indices == [[[0, 2], [2, 3], [3, 4]]]
 
     # test creating dynamic micro_batch iterators
     for shard in shards:
