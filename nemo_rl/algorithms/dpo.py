@@ -235,16 +235,22 @@ def setup(
     )
 
 
-def add_ref_logprobs_to_data(dataloader, policy, master_config):
+def add_ref_logprobs_to_data(dataloader, policy, master_config, is_val=False):
     dataloader_iter = iter(dataloader)
     while True:
         try:
             batch = next(dataloader_iter)
 
+            micro_batch_size = (
+                master_config["dpo"]["val_micro_batch_size"] * 2
+                if is_val
+                else master_config["policy"]["train_micro_batch_size"] * 2
+            )
+
             ## append ref policy logprobs to batch
             logprobs = policy.get_reference_policy_logprobs(
                 batch,
-                micro_batch_size=master_config["policy"]["train_micro_batch_size"] * 2,
+                micro_batch_size=micro_batch_size,
             )["reference_logprobs"]
             ## want logprobs for batch to correspond to the log probabilities of the next tokens
             ## so we roll the logprobs to the left by one
@@ -283,7 +289,7 @@ def validate(
         val_metrics = defaultdict(lambda: 0.0)
         num_valid_batches = 0
         for batch_idx, val_batch in enumerate(
-            add_ref_logprobs_to_data(val_dataloader, policy, master_config)
+            add_ref_logprobs_to_data(val_dataloader, policy, master_config, is_val=True)
         ):
             ## just run model fwd
             val_results = policy.train(
