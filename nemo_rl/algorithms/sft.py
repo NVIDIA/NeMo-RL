@@ -385,6 +385,7 @@ def sft_train(
             print(
                 f"\n{'=' * 25} Step {current_step + 1}/{min(len(train_dataloader), master_config['sft']['max_num_steps'])} {'=' * 25}"
             )
+            val_metrics, validation_timings = None, None
 
             with timer.time("total_step_time"):
                 # Prepare batch and generate responses
@@ -453,7 +454,8 @@ def sft_train(
                     sft_save_state["step"] = (current_step + 1) % len(train_dataloader)
                     sft_save_state["total_steps"] = total_steps + 1
                     sft_save_state["epoch"] = current_epoch
-                    sft_save_state["val_loss"] = val_metrics["val_loss"]
+                    if val_metrics is not None:
+                        sft_save_state["val_loss"] = val_metrics["val_loss"]
                     with timer.time("checkpointing"):
                         print(f"Saving checkpoint for step {total_steps + 1}...")
                         checkpoint_path = checkpointer.init_tmp_checkpoint(

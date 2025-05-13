@@ -362,6 +362,7 @@ def grpo_train(
         print(
             f"\n{'=' * 25} Step {step + 1}/{min(len(dataloader), master_config['grpo']['max_num_steps'])} {'=' * 25}"
         )
+        val_metrics, validation_timings = None, None
 
         with timer.time("total_step_time"):
             # Prepare batch
@@ -528,7 +529,8 @@ def grpo_train(
                 policy.prepare_for_training()
 
                 grpo_save_state["step"] = step + 1
-                grpo_save_state["val_reward"] = val_metrics["accuracy"]
+                if val_metrics is not None:
+                    grpo_save_state["val_reward"] = val_metrics["accuracy"]
                 grpo_save_state["consumed_samples"] = consumed_samples
                 with timer.time("checkpointing"):
                     print(f"Saving checkpoint for step {step + 1}...")

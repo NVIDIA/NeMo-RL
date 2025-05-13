@@ -406,6 +406,7 @@ def dpo_train(
             print(
                 f"\n{'=' * 25} Step {current_step + 1}/{min(len(train_dataloader), master_config['dpo']['max_num_steps'])} {'=' * 25}"
             )
+            val_metrics, validation_timings = None, None
 
             with timer.time("total_step_time"):
                 print("▶ Taking a training step...")
@@ -457,7 +458,8 @@ def dpo_train(
                     dpo_save_state["step"] = (current_step + 1) % len(train_dataloader)
                     dpo_save_state["total_steps"] = total_steps + 1
                     dpo_save_state["epoch"] = current_epoch
-                    dpo_save_state["val_loss"] = val_metrics["loss"]
+                    if val_metrics is not None:
+                        dpo_save_state["val_loss"] = val_metrics["loss"]
                     with timer.time("checkpointing"):
                         print(f"Saving checkpoint for step {total_steps + 1}...")
                         checkpoint_path = checkpointer.init_tmp_checkpoint(
