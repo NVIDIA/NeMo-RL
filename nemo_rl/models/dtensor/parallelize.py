@@ -81,12 +81,7 @@ class RotaryEmbedParallel(SequenceParallel):
 
 def _parallelize_gemma3(
     model: Union[Gemma3ForCausalLM, Gemma3ForConditionalGeneration],
-    dp_mesh: DeviceMesh,
-    tp_mesh: DeviceMesh,
-    mp_policy: MixedPrecisionPolicy,
-    offload_policy: torch.distributed.fsdp.OffloadPolicy,
     sequence_parallel: bool = False,
-    activation_checkpointing: bool = False,
 ):
     """Parallelizes a Gemma3ForCausalLM model across data parallel dimensions.
 
@@ -94,19 +89,8 @@ def _parallelize_gemma3(
     """
     if isinstance(model, Gemma3ForConditionalGeneration):
         model_prefix = "language_model.model"
-        num_attention_heads = model.config.text_config.num_attention_heads
-        num_key_value_heads = model.config.text_config.num_key_value_heads
     else:
         model_prefix = "model"
-        num_attention_heads = model.config.num_attention_heads
-        num_key_value_heads = model.config.num_key_value_heads
-
-    assert num_key_value_heads % tp_mesh.size() == 0, (
-        f"num_key_value_heads ({num_key_value_heads}) must be divisible by TP size ({tp_mesh.size()})"
-    )
-    assert num_attention_heads % tp_mesh.size() == 0, (
-        f"num_attention_heads ({num_attention_heads}) must be divisible by TP size ({tp_mesh.size()})"
-    )
 
     # For gemma3 models, we don't include the model.embed_tokens and lm_head in the
     # parallelization plans because they have tied weights.
@@ -155,12 +139,7 @@ def _parallelize_gemma3(
 
 def _parallelize_llama(
     model: LlamaForCausalLM,
-    dp_mesh: DeviceMesh,
-    tp_mesh: DeviceMesh,
-    mp_policy: MixedPrecisionPolicy,
-    offload_policy: torch.distributed.fsdp.OffloadPolicy,
     sequence_parallel: bool = False,
-    activation_checkpointing: bool = False,
 ):
     """Parallelizes a LlamaForCausalLM model across data and tensor parallel dimensions."""
     assert not model.config.tie_word_embeddings, (
@@ -202,12 +181,7 @@ def _parallelize_llama(
 
 def _parallelize_qwen(
     model: Union[Qwen2ForCausalLM, Qwen3ForCausalLM],
-    dp_mesh: DeviceMesh,
-    tp_mesh: DeviceMesh,
-    mp_policy: MixedPrecisionPolicy,
-    offload_policy: torch.distributed.fsdp.OffloadPolicy,
     sequence_parallel: bool = False,
-    activation_checkpointing: bool = False,
 ):
     """Parallelizes a Qwen2ForCausalLM model across data and tensor parallel dimensions."""
 
@@ -289,7 +263,10 @@ PARALLIZE_FUNCTIONS: dict[type[torch.nn.Module], Callable[..., torch.nn.Module]]
 
 
 def translate_parallel_style(style: str):
-    """Translate parallel style str to parallel type"""
+    """Translate parallel style str to parallel type.
+
+    Taken and modified from: https://github.com/NVIDIA/NeMo/blob/6c6169db01bcca73ae8ad3ac35242fadbb9a78ba/nemo/lightning/pytorch/strategies/utils.py#L547
+    """
     assert isinstance(style, str), (
         f"parallel style type should be str, but got {type(style)}"
     )
@@ -309,7 +286,10 @@ def translate_parallel_style(style: str):
 
 
 def get_hf_tp_plan(model):
-    """Get the Hugging Face tensor parallel plan from the model."""
+    """Get the Hugging Face tensor parallel plan from the model.
+
+    Taken and modified from: https://github.com/NVIDIA/NeMo/blob/6c6169db01bcca73ae8ad3ac35242fadbb9a78ba/nemo/lightning/pytorch/strategies/utils.py#L532
+    """
     hf_tp_plan = {}
 
     # model_cls._tp_plan will override model_cls after xxxForCausalLM.post_init() (transformers==4.51.3)
@@ -355,19 +335,23 @@ def _parallelize_model(
         ValueError: If the model type is not supported for parallelization.
     """
     model_cls = type(model)
-
-    mp_policy = MixedPrecisionPolicy(
-        param_dtype=param_dtype,
-        reduce_dtype=torch.float32,
-        output_dtype=torch.float32,
-    )
-    offload_policy = (
-        CPUOffloadPolicy(pin_memory=False)
-        if cpu_offload
-        else torch.distributed.fsdp.OffloadPolicy
-    )
+    if model_cls == Gemma3ForConditionalGeneration:
+        layers = model.language_model.model.layers
+        num_attention_heads = model.config.text_config.num_attention_heads
+        num_key_value_heads = model.config.text_config.num_key_value_heads
+    else:
+        layers = model.model.layers
+        num_attention_heads = model.config.num_attention_heads
+        num_key_value_heads = model.config.num_key_value_heads
 
     if tp_mesh.size() > 1:
+        assert num_key_value_heads % tp_mesh.size() == 0, (
+            f"num_key_value_heads ({num_key_value_heads}) must be divisible by TP size ({tp_mesh.size()})"
+        )
+        assert num_attention_heads % tp_mesh.size() == 0, (
+            f"num_attention_heads ({num_attention_heads}) must be divisible by TP size ({tp_mesh.size()})"
+        )
+
         # first use user's custom parallel plan
         if custom_parallel_plan is not None:
             model_parallel_plan = {
@@ -379,15 +363,7 @@ def _parallelize_model(
             # try to use our optimized parallel plan
             try:
                 func = PARALLIZE_FUNCTIONS[model_cls]
-                model_parallel_plan = func(
-                    model,
-                    dp_mesh,
-                    tp_mesh,
-                    mp_policy,
-                    offload_policy,
-                    sequence_parallel,
-                    activation_checkpointing,
-                )
+                model_parallel_plan = func(model, sequence_parallel)
             # fall back to the HF tp plan
             except Exception as e:
                 print(
@@ -411,14 +387,21 @@ def _parallelize_model(
 
         parallelize_module(model, tp_mesh, model_parallel_plan)
 
-    if model_cls == Gemma3ForConditionalGeneration:
-        layers = model.language_model.model.layers
-    else:
-        layers = model.model.layers
-
     if activation_checkpointing:
         for i in range(len(layers)):
             layers[i].mlp = checkpoint_wrapper(layers[i].mlp)  # type: ignore
+
+    mp_policy = MixedPrecisionPolicy(
+        param_dtype=param_dtype,
+        reduce_dtype=torch.float32,
+        output_dtype=torch.float32,
+    )
+
+    offload_policy = (
+        CPUOffloadPolicy(pin_memory=False)
+        if cpu_offload
+        else torch.distributed.fsdp.OffloadPolicy
+    )
 
     for layer in layers:
         fully_shard(
