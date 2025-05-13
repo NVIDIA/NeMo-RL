@@ -35,8 +35,11 @@ To evaluate on the [MATH-500 benchmark](https://huggingface.co/datasets/HuggingF
 
 ```
 uv run examples/run_eval.py \
-    --config=examples/configs/eval_math500.yaml \
-    generation.model_name=results/sft_openmathinstruct2/step_1855/hf
+    --config=examples/configs/eval.yaml \
+    generation.model_name=results/sft_openmathinstruct2/step_1855/hf \
+    tokenizer.name=meta-llama/Llama-3.1-8B-Instruct \
+    data.dataset_name=HuggingFaceH4/MATH-500 \
+    data.dataset_key=test
 ```
 
 Use `generation.model_name` to specify the path to the HuggingFace checkpoint.
