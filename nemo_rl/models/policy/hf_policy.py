@@ -79,7 +79,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         )
 
         self.use_dynamic_batches = False
-        if config.get("dynamic_batching", False):
+        if config["dynamic_batching"]["enabled"]:
             assert config["dtensor_cfg"]["enabled"], (
                 "Dynamic batch is only supported for DTensor policy."
             )

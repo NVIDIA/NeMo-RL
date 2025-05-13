@@ -85,7 +85,7 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
             "tensor_parallel_size": 1,
         },
         "dynamic_batching": {
-            "enabled": True,
+            "enabled": enable_dtensor,  # Dynamic batching is only supported with DTensor
             "train_mb_tokens": 16,
             "logprob_mb_tokens": 16,
             "sequence_length_round": 4,
