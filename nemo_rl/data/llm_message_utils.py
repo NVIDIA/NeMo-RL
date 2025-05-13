@@ -375,6 +375,9 @@ def get_formatted_message_log(
         message_log: List of message dicts with 'role' and 'content' keys
         tokenizer: Tokenizer for converting text to token IDs
         task_data_spec: Task spec for this dataset.
+        add_bos_token: Whether to add bos token to first message if it is not already present. Default: True
+        add_eos_token: Whether to add eos token to last message if it is not already present. Default: True
+        add_generation_prompt: Whether to include assistant's generation prompt in user messages. Default: False
 
     Returns:
         The message log with updated 'token_ids' and 'content' fields.

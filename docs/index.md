@@ -12,12 +12,18 @@ cluster.md
 ```
 
 ```{toctree}
+:caption: 🚀 E2E Examples
+:hidden:
+
+guides/sft_openmathinstruct2.md
+```
+
+```{toctree}
 :caption: 📚 Guides
 :hidden:
 
 adding-new-models.md
 guides/sft.md
-guides/sft_openmathinstruct2.md
 guides/dpo.md
 guides/grpo.md
 guides/eval.md
