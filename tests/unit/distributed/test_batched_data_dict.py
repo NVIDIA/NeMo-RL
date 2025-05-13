@@ -203,37 +203,40 @@ def test_shard_by_batch_size_matches_example():
     assert sharded[0]["data"] == ["A", "B", "C", "D"]
     assert sharded[1]["data"] == ["A", "B", "C", "D"]
 
+
 def test_shard_by_batch_size_dynamic():
     # create a data dict with variable sequence lengths per datum
-    batch = BatchedDataDict({
-        "data": torch.ones([8,128]),
-        "sequence_lengths": torch.tensor((2,8,4,16,28,32,2,32), dtype=torch.int)}
+    batch = BatchedDataDict(
+        {
+            "data": torch.ones([8, 128]),
+            "sequence_lengths": torch.tensor(
+                (2, 8, 4, 16, 28, 32, 2, 32), dtype=torch.int
+            ),
+        }
     )
     dynamic_batching_cfg: DynamicBatchingCfg = {
-            'max_tokens_per_microbatch' : 32,
-            'input_lengths_key' : 'sequence_lengths',
-        }
+        "max_tokens_per_microbatch": 32,
+        "input_lengths_key": "sequence_lengths",
+    }
     shards = batch.shard_by_batch_size(
-        shards=2,
-        dynamic_batching_cfg=dynamic_batching_cfg
+        shards=2, dynamic_batching_cfg=dynamic_batching_cfg
     )
 
     # Expected Output: 3 microbatches per shard, of sizes 2, 1, 1
-    assert shards[0].metadata['is_sorted'] is True
-    assert shards[0].metadata['micro_batch_indices'] == [[[0, 2], [2, 3], [3, 4]]]
-    assert shards[1].metadata['is_sorted'] is True
-    assert shards[1].metadata['micro_batch_indices'] == [[[0, 2], [2, 3], [3, 4]]]
+    assert shards[0].metadata["is_sorted"] is True
+    assert shards[0].metadata["micro_batch_indices"] == [[[0, 2], [2, 3], [3, 4]]]
+    assert shards[1].metadata["is_sorted"] is True
+    assert shards[1].metadata["micro_batch_indices"] == [[[0, 2], [2, 3], [3, 4]]]
 
     # test creating dynamic micro_batch iterators
     for shard in shards:
         mb_iterator = shard.make_microbatch_iterator_with_dynamic_shapes(
             max_sequence_length=32,
             round_seq_len_multiple=4,
-            input_lengths_key='sequence_lengths'
+            input_lengths_key="sequence_lengths",
         )
         # check each microbatch has a valid dynamic sequence length
         for mb in mb_iterator:
-            batch_size, seqlen = mb['data'].shape
+            batch_size, seqlen = mb["data"].shape
             assert seqlen % 4 == 0
             assert seqlen <= 32
-

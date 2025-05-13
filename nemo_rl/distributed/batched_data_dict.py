@@ -20,9 +20,9 @@ from typing import (
     Iterator,
     List,
     Optional,
+    TypedDict,
     TypeVar,
     Union,
-    TypedDict,
 )
 
 import torch
