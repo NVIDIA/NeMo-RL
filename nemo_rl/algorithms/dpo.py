@@ -443,10 +443,15 @@ def dpo_train(
                 dpo_save_state["consumed_samples"] += master_config["policy"][
                     "train_global_batch_size"
                 ]
-                if (
-                    master_config["checkpointing"]["enabled"]
-                    and (total_steps + 1)
-                    % master_config["checkpointing"]["save_period"]
+                is_last_step = total_steps + 1 >= master_config["dpo"][
+                    "max_num_steps"
+                ] or (
+                    current_epoch + 1 == max_num_epochs
+                    and current_step + 1 == len(train_dataloader)
+                )
+                if master_config["checkpointing"]["enabled"] and (
+                    is_last_step
+                    or (total_steps + 1) % master_config["checkpointing"]["save_period"]
                     == 0
                 ):  # +1 because step is 0-indexed
                     dpo_save_state["step"] = (current_step + 1) % len(train_dataloader)

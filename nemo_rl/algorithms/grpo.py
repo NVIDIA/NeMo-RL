@@ -518,9 +518,12 @@ def grpo_train(
 
             ## Checkpointing
             consumed_samples += master_config["grpo"]["num_prompts_per_step"]
-            if (
-                master_config["checkpointing"]["enabled"]
-                and (step + 1) % master_config["checkpointing"]["save_period"] == 0
+            is_last_step = step + 1 == min(
+                master_config["grpo"]["max_num_steps"], len(dataloader)
+            )
+            if master_config["checkpointing"]["enabled"] and (
+                is_last_step
+                or (step + 1) % master_config["checkpointing"]["save_period"] == 0
             ):  # +1 because step is 0-indexed
                 policy.prepare_for_training()
 
