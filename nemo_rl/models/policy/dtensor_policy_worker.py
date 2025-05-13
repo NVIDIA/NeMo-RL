@@ -324,7 +324,7 @@ class DTensorPolicyWorker:
                         * global_batch["sample_mask"].unsqueeze(-1)
                     )
 
-                to_reduce = torch.tensor([local_valid_seqs, local_valid_toks])
+                to_reduce = torch.tensor([local_valid_seqs, local_valid_toks]).cuda()
                 torch.distributed.all_reduce(to_reduce, group=self.dp_mesh.get_group())
                 global_valid_seqs, global_valid_toks = to_reduce[0], to_reduce[1]
 
@@ -332,9 +332,9 @@ class DTensorPolicyWorker:
                     assert "token_mask" in global_batch, (
                         "token_mask must be present in the data when using token-level loss"
                     )
-                    norm_factor = global_valid_toks
+                    norm_factor = global_valid_toks.item()
                 elif loss_fn.loss_type == LossType.SEQUENCE_LEVEL:
-                    norm_factor = global_valid_seqs
+                    norm_factor = global_valid_seqs.item()
                 else:
                     raise ValueError(f"Unknown loss type: {loss_fn.loss_type}")
 
