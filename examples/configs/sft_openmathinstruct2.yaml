@@ -1,8 +1,8 @@
 # SFT Algorithm Configuration
 sft:
   max_num_epochs: 1
-  max_num_steps: 2000
-  val_period: 1855
+  max_num_steps: 1000000
+  val_period: 500
   val_batches: 4
   val_global_batch_size: 128
   val_micro_batch_size: 2
@@ -15,7 +15,7 @@ checkpointing:
   metric_name: "val_loss"
   higher_is_better: false
   keep_top_k: 100
-  save_period: 1855
+  save_period: 500
 
 policy:
   model_name: "meta-llama/Llama-3.1-8B"

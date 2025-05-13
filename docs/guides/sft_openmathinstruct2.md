@@ -45,7 +45,12 @@ uv run examples/run_eval.py \
 Use `generation.model_name` to specify the path to the HuggingFace checkpoint.
 
 ## Results
-Using the above instructions to train a Llama-3.1-8B model for 1 epoch on the train_1M version of the OpenMathInstruct-2 dataset, we get the following evaluation result:
+Using the above instructions to train a Llama-3.1-8B model for 1 epoch on the train_1M version of the OpenMathInstruct-2 dataset, we get the following loss curve:
+
+![image](../assets/sft_openmathinstruct2_loss.png)
+
+
+Evaluating the resulting checkpoint on MATH-500, we get the following result:
 
 ```
 ============================================================
@@ -54,8 +59,8 @@ max_new_tokens=2048 temperature=0.0 top_p=1.0 top_k=-1
 
 metric='pass@1' num_tests_per_prompt=1
 
-score=0.5040 (252.0/500)
+score=0.5020 (251.0/500)
 ============================================================
 ```
 
-As a reference, using NeMo-Aligner and NeMo-Skills (as is done in the [original OpenMathInstruct-2 paper](https://arxiv.org/abs/2410.01560)) to train and evaluate the same model on the same dataset results in a score of 0.5020 on MATH-500.
+As a reference, using NeMo-Aligner and NeMo-Skills (as is done in the [original OpenMathInstruct-2 paper](https://arxiv.org/abs/2410.01560)) to train and evaluate the same model on the same dataset achieves the same score of 0.5020 on MATH-500.
