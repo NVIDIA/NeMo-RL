@@ -192,6 +192,7 @@ class DTensorPolicyWorker:
             activation_checkpointing=self.cfg["dtensor_cfg"][
                 "activation_checkpointing"
             ],
+            custom_parallel_plan=self.cfg["dtensor_cfg"]["custom_parallel_plan"],
         )
 
         if self.cpu_offload:
