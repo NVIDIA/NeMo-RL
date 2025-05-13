@@ -139,6 +139,7 @@ jobs:
       image-name: nemo_rl_container
       dockerfile: docker/Dockerfile
       image-label: nemo-rl
+      target: hermetic
       build-args: |
         MAX_JOBS=32
         NEMO_RL_COMMIT=${{ github.sha }}
