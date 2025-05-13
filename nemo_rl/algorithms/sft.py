@@ -417,8 +417,17 @@ def sft_train(
                 print("▶ Taking a training step...")
                 train_results = policy.train(train_data, loss_fn)
 
+                is_last_step = total_steps + 1 >= master_config["sft"][
+                    "max_num_steps"
+                ] or (
+                    current_epoch + 1 == max_num_epochs
+                    and current_step + 1 == len(train_dataloader)
+                )
+
                 # Run validation if it's a validation step
-                if val_period > 0 and (total_steps + 1) % val_period == 0:
+                if is_last_step or (
+                    val_period > 0 and (total_steps + 1) % val_period == 0
+                ):
                     val_metrics, validation_timings = validate(
                         policy,
                         val_dataloader,
@@ -442,12 +451,6 @@ def sft_train(
                 sft_save_state["consumed_samples"] += master_config["policy"][
                     "train_global_batch_size"
                 ]
-                is_last_step = total_steps + 1 >= master_config["sft"][
-                    "max_num_steps"
-                ] or (
-                    current_epoch + 1 == max_num_epochs
-                    and current_step + 1 == len(train_dataloader)
-                )
                 if master_config["checkpointing"]["enabled"] and (
                     is_last_step
                     or (total_steps + 1) % master_config["checkpointing"]["save_period"]
@@ -456,10 +459,7 @@ def sft_train(
                     sft_save_state["step"] = (current_step + 1) % len(train_dataloader)
                     sft_save_state["total_steps"] = total_steps + 1
                     sft_save_state["epoch"] = current_epoch
-                    if val_metrics is not None:
-                        sft_save_state["val_loss"] = val_metrics["val_loss"]
-                    else:
-                        sft_save_state["val_loss"] = 0
+                    sft_save_state["val_loss"] = val_metrics["val_loss"]
                     with timer.time("checkpointing"):
                         print(f"Saving checkpoint for step {total_steps + 1}...")
                         checkpoint_path = checkpointer.init_tmp_checkpoint(

@@ -492,8 +492,12 @@ def grpo_train(
             with timer.time("policy_training"):
                 train_results = policy.train(train_data, loss_fn)
 
+            is_last_step = step + 1 == min(
+                master_config["grpo"]["max_num_steps"], len(dataloader)
+            )
+
             # Run validation if it's a validation step
-            if val_period > 0 and (step + 1) % val_period == 0:
+            if is_last_step or (val_period > 0 and (step + 1) % val_period == 0):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
                     refit_policy_generation(
                         policy,
@@ -519,9 +523,6 @@ def grpo_train(
 
             ## Checkpointing
             consumed_samples += master_config["grpo"]["num_prompts_per_step"]
-            is_last_step = step + 1 == min(
-                master_config["grpo"]["max_num_steps"], len(dataloader)
-            )
             if master_config["checkpointing"]["enabled"] and (
                 is_last_step
                 or (step + 1) % master_config["checkpointing"]["save_period"] == 0
@@ -529,10 +530,7 @@ def grpo_train(
                 policy.prepare_for_training()
 
                 grpo_save_state["step"] = step + 1
-                if val_metrics is not None:
-                    grpo_save_state["val_reward"] = val_metrics["accuracy"]
-                else:
-                    grpo_save_state["val_reward"] = 0
+                grpo_save_state["val_reward"] = val_metrics["accuracy"]
                 grpo_save_state["consumed_samples"] = consumed_samples
                 with timer.time("checkpointing"):
                     print(f"Saving checkpoint for step {step + 1}...")
