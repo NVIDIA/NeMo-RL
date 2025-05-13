@@ -77,9 +77,14 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             name_prefix=name_prefix,
             bundle_indices_list=node_bundle_indices,
         )
-        self.use_dynamic_batches = (
-            config["dtensor_cfg"]["enabled"] and config["dynamic_batching"]["enabled"]
-        )
+
+        self.use_dynamic_batches = False
+        if config.get("dynamic_batching", False):
+            assert config["dtensor_cfg"]["enabled"], (
+                "Dynamic batch is only supported for DTensor policy."
+            )
+            self.use_dynamic_batches = True
+
         self.dp_size = self.worker_group.world_size // self.tensor_parallel_size
         self.cfg = config
 
