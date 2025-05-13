@@ -84,6 +84,12 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
             "activation_checkpointing": False,
             "tensor_parallel_size": 1,
         },
+        "dynamic_batching": {
+            "enabled": True,
+            "train_mb_tokens": 16,
+            "logprob_mb_tokens": 16,
+            "sequence_length_round": 4,
+        },
         "max_grad_norm": 1.0,
         "make_sequence_length_divisible_by": 1,
         "generation": {

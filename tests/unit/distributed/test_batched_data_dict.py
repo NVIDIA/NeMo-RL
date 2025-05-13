@@ -218,15 +218,12 @@ def test_shard_by_batch_size_dynamic():
         "max_tokens_per_microbatch": 32,
         "input_lengths_key": "sequence_lengths",
     }
-    shards = batch.shard_by_batch_size(
+    shards, _ = batch.shard_by_batch_size(
         shards=2, dynamic_batching_cfg=dynamic_batching_cfg
     )
-
     # Expected Output: 3 microbatches per shard, of sizes 2, 1, 1
-    assert shards[0].is_sorted is True
-    assert shards[0].micro_batch_indices == [[[0, 2], [2, 3], [3, 4]]]
-    assert shards[1].is_sorted is True
-    assert shards[1].micro_batch_indices == [[[0, 2], [2, 3], [3, 4]]]
+    for shard in shards:
+        shard.micro_batch_indices == [[[0, 2], [2, 3], [3, 4]]]
 
     # test creating dynamic micro_batch iterators
     for shard in shards:

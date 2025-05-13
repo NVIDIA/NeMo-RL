@@ -51,9 +51,8 @@ class DynamicBatchingCfg(TypedDict):
 class BatchedDataDict(UserDict, Generic[DictT]):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.is_sorted = False
+
         self.micro_batch_indices = None
-        self.sort_indices = None
 
     @classmethod
     def from_batches(
@@ -164,6 +163,33 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
         return chunked_batch
 
+    def reorder_data(self, reorded_indices: List[int]):
+        """Reorders the data along the batch dimension by the given indices."""
+        batch_sizes = set()
+        for val in self.data.values():
+            if isinstance(val, torch.Tensor):
+                batch_sizes.add(val.size(0))
+            else:
+                batch_sizes.add(len(val))
+
+        assert len(batch_sizes) == 1, (
+            "Batch sizes are not the same across the rollout batch"
+        )
+        total_batch_size = batch_sizes.pop()
+
+        indices = range(total_batch_size)
+        reordered = sorted(zip(reorded_indices, indices), key=lambda pair: pair[0])
+        reordered_indices = [idx[1] for idx in reordered]
+
+        for k, v in self.data.items():
+            if torch.is_tensor(v):
+                sorted_v = v.index_select(
+                    dim=0, index=torch.IntTensor(reordered_indices)
+                )
+            else:
+                sorted_v = [v[i] for i in reordered_indices]
+            self.data[k] = sorted_v
+
     def shard_by_batch_size(
         self,
         shards: int,
@@ -266,25 +292,11 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             else batch_size // shards
         )
 
-        # unsort if already sorted to ensure chunking occurs on the original ordering
-        if self.is_sorted:
-            indices = range(total_batch_size)
-            unsorted = sorted(zip(self.sort_indices, indices), key=lambda pair: pair[0])
-            unsorted_indices = [idx[1] for idx in unsorted]
-
-            for k, v in self.data.items():
-                if torch.is_tensor(v):
-                    sorted_v = v.index_select(
-                        dim=0, index=torch.IntTensor(unsorted_indices)
-                    )
-                else:
-                    sorted_v = [v[i] for i in unsorted_indices]
-                self.data[k] = sorted_v
-
         # if using dynamic microbatching, preprocess the data by sorting the data
         # by the sequence lengths. This ensures each DP rank receives samples of about
         # equal sequence lengths which improves load balancing
         if dynamic_batching_cfg is not None:
+            data = {}
             batch_sorted_indices = []
             for chunk_idx in range(num_chunks):
                 chunk_start = chunk_idx * batch_size
@@ -313,10 +325,9 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                     )
                 else:
                     sorted_v = [v[i] for i in batch_sorted_indices]
-                self.data[k] = sorted_v
-
-            self.is_sorted = True
-            self.sort_indices = batch_sorted_indices
+                data[k] = sorted_v
+        else:
+            data = self.data
 
         aggregated_shards = [SlicedDataDict() for _ in range(shards)]
 
@@ -334,29 +345,27 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                     shard_end = min(shard_end, total_batch_size)
                 indices = torch.arange(shard_start, shard_end)
 
-                for k in self.data:
+                for k in data:
                     if k not in aggregated_shards[shard_idx]:
                         # First time seeing this key for this shard, initialize it
-                        if torch.is_tensor(self.data[k]):
-                            aggregated_shards[shard_idx][k] = self.data[k][
-                                indices
-                            ].clone()
+                        if torch.is_tensor(data[k]):
+                            aggregated_shards[shard_idx][k] = data[k][indices].clone()
                         else:
                             aggregated_shards[shard_idx][k] = [
-                                self.data[k][i] for i in indices
+                                data[k][i] for i in indices
                             ]
                     else:
                         # Append to existing data - concatenate tensors or extend lists
-                        if torch.is_tensor(self.data[k]):
+                        if torch.is_tensor(data[k]):
                             aggregated_shards[shard_idx][k] = torch.cat(
                                 [
                                     aggregated_shards[shard_idx][k],
-                                    self.data[k][indices].clone(),
+                                    data[k][indices].clone(),
                                 ]
                             )
                         else:
                             aggregated_shards[shard_idx][k].extend(
-                                [self.data[k][i] for i in indices]
+                                [data[k][i] for i in indices]
                             )
 
         # map inputs to microbatches such that the total number tokens in
@@ -403,8 +412,9 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 micro_batch_indices.append(chunk_micro_batch_indices)
 
             for shard in aggregated_shards:
-                shard.is_sorted = True
                 shard.micro_batch_indices = micro_batch_indices
+
+            return aggregated_shards, batch_sorted_indices
 
         return aggregated_shards
 
@@ -422,7 +432,6 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         end = batch_size * (batch_idx + 1)
         batch = self.slice(start, end)
         if self.micro_batch_indices is not None:
-            batch.is_sorted = True
             batch.micro_batch_indices = [self.micro_batch_indices[batch_idx]]
 
         return batch

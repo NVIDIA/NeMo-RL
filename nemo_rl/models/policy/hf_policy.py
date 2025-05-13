@@ -77,6 +77,9 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             name_prefix=name_prefix,
             bundle_indices_list=node_bundle_indices,
         )
+        self.use_dynamic_batches = (
+            config["dtensor_cfg"]["enabled"] and config["dynamic_batching"]["enabled"]
+        )
         self.dp_size = self.worker_group.world_size // self.tensor_parallel_size
         self.cfg = config
 
@@ -119,21 +122,23 @@ class HfPolicy(PolicyInterface, GenerationInterface):
           We use the convention that the logprob of the first token is 0 so that the sequence length is maintained.
           The logprob of input token i is specified at position i in the output logprobs tensor.
         """
-        if self.cfg["dynamic_batching"]["enabled"]:
+        if self.use_dynamic_batches:
             dynamic_batching_cfg: DynamicBatchingCfg = {
                 "input_lengths_key": "input_lengths",
                 "max_tokens_per_microbatch": self.cfg["dynamic_batching"][
                     "logprob_mb_tokens"
                 ],
             }
+            sharded_data, unsorted_data_indices = data.shard_by_batch_size(
+                self.dp_size,
+                batch_size=None,
+                dynamic_batching_cfg=dynamic_batching_cfg,
+            )
         else:
-            dynamic_batching_cfg = None
-
-        sharded_data = data.shard_by_batch_size(
-            self.dp_size,
-            batch_size=None,
-            dynamic_batching_cfg=dynamic_batching_cfg,
-        )
+            sharded_data = data.shard_by_batch_size(
+                self.dp_size,
+                batch_size=None,
+            )
 
         futures = self.worker_group.run_all_workers_multiple_data(
             "get_logprobs", sharded_data, only_on="all_tied_workers"
@@ -141,6 +146,12 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         logprobs = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures)
         )
+
+        # dynamic batching sorts the inputs by sequence length to improve load balancing,
+        # so change it back here
+        if self.use_dynamic_batches:
+            logprobs.reorder_data(unsorted_data_indices)
+
         return logprobs
 
     def get_reference_policy_logprobs(
@@ -150,21 +161,24 @@ class HfPolicy(PolicyInterface, GenerationInterface):
 
         Returns: Identical to get_logprobs.
         """
-        if self.cfg["dynamic_batching"]["enabled"]:
+        if self.use_dynamic_batches:
             dynamic_batching_cfg: DynamicBatchingCfg = {
                 "input_lengths_key": "input_lengths",
                 "max_tokens_per_microbatch": self.cfg["dynamic_batching"][
                     "logprob_mb_tokens"
                 ],
             }
+            sharded_data, unsorted_data_indices = data.shard_by_batch_size(
+                self.dp_size,
+                batch_size=None,
+                dynamic_batching_cfg=dynamic_batching_cfg,
+            )
         else:
-            dynamic_batching_cfg = None
+            sharded_data = data.shard_by_batch_size(
+                self.dp_size,
+                batch_size=None,
+            )
 
-        sharded_data = data.shard_by_batch_size(
-            self.dp_size,
-            batch_size=None,
-            dynamic_batching_cfg=dynamic_batching_cfg,
-        )
         futures = self.worker_group.run_all_workers_multiple_data(
             "get_reference_policy_logprobs",
             sharded_data,
@@ -175,6 +189,12 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         logprobs = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures)
         )
+
+        # dynamic batching sorts the inputs by sequence length to improve load balancing,
+        # so change it back here
+        if self.use_dynamic_batches:
+            logprobs.reorder_data(unsorted_data_indices)
+
         return logprobs
 
     def train(
@@ -189,21 +209,24 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         batch_size = gbs or self.cfg["train_global_batch_size"]
         micro_batch_size = mbs or self.cfg["train_micro_batch_size"]
         # Shard and replicate the batch
-        if self.cfg["dynamic_batching"]["enabled"]:
+        if self.use_dynamic_batches:
             dynamic_batching_cfg: DynamicBatchingCfg = {
                 "input_lengths_key": "input_lengths",
                 "max_tokens_per_microbatch": self.cfg["dynamic_batching"][
                     "train_mb_tokens"
                 ],
             }
+            sharded_data, _ = data.shard_by_batch_size(
+                self.dp_size,
+                batch_size=batch_size,
+                dynamic_batching_cfg=dynamic_batching_cfg,
+            )
         else:
-            dynamic_batching_cfg = None
+            sharded_data = data.shard_by_batch_size(
+                self.dp_size,
+                batch_size=batch_size,
+            )
 
-        sharded_data = data.shard_by_batch_size(
-            self.dp_size,
-            batch_size=batch_size,
-            dynamic_batching_cfg=dynamic_batching_cfg,
-        )
         # Train each shard in parallel
         futures = self.worker_group.run_all_workers_multiple_data(
             "train",
