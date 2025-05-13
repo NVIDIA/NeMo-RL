@@ -31,7 +31,7 @@ uv run examples/convert_dcp_to_hf.py \
 
 Replace `results/sft_openmathinstruct2/step_1855` with the path to the checkpoint you are evaluating. The resulting HuggingFace checkpoint will be saved to `--hf-ckpt-path`.
 
-To evaluate on the [MATH-500 benchmark](HuggingFaceH4/MATH-500), use the following command:
+To evaluate on the [MATH-500 benchmark](https://huggingface.co/datasets/HuggingFaceH4/MATH-500), use the following command:
 
 ```
 uv run examples/run_eval.py \

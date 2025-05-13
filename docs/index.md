@@ -17,6 +17,7 @@ cluster.md
 
 adding-new-models.md
 guides/sft.md
+guides/sft_openmathinstruct2.md
 guides/dpo.md
 guides/grpo.md
 guides/eval.md
