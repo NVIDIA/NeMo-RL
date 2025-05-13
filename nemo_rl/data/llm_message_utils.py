@@ -391,6 +391,8 @@ def get_formatted_message_log(
         ] + message_log[1:]
 
     for i, message in enumerate(message_log):
+        # If enabled, add_generation_prompt is only used on user messages to include
+        # the assistant's generation prompt as part of the user message.
         formatted_message = tokenizer.apply_chat_template(
             message_log[: i + 1],
             add_generation_prompt=add_generation_prompt and message["role"] == "user",

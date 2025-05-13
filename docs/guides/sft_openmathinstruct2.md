@@ -55,4 +55,4 @@ score=0.5040 (252.0/500)
 ============================================================
 ```
 
-As a reference, using NeMo-Aligner and NeMo-Skills to train and evaluate the model on the same dataset (as is done in the [original OpenMathInstruct-2 paper](https://arxiv.org/abs/2410.01560)) results in a score of 0.5020.
+As a reference, using NeMo-Aligner and NeMo-Skills (as is done in the [original OpenMathInstruct-2 paper](https://arxiv.org/abs/2410.01560)) to train and evaluate the same model on the same dataset results in a score of 0.5020.
