@@ -140,7 +140,7 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
             sft_preprocessor,
             add_bos=data_config.get("add_bos", True),
             add_eos=data_config.get("add_eos", True),
-            add_generation_prompt=data_config.get("add_generation_prompt", False),
+            add_generation_prompt=data_config["add_generation_prompt"],
         ),
         max_seq_length=data_config["max_input_seq_length"],
     )
