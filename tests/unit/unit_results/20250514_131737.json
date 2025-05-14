@@ -1,0 +1,10 @@
+{
+  "exit_status": 1,
+  "git_commit": "287385143d85fbc9b0e848fcc59f15dbb37f9003",
+  "start_time": "2025-05-14 13:17:37",
+  "metrics": {},
+  "gpu_types": [
+    "NVIDIA A100-SXM4-80GB"
+  ],
+  "coverage": "[n/a] run with --cov=nemo_rl"
+}
