@@ -158,7 +158,7 @@ class DTensorPolicyWorker:
         )
         skip_tie_check = os.environ.get(
             "NRL_SKIP_TIED_WEIGHT_CHECK"
-        ) or ModelFlag.SKIP_TIED_WEIGHTS_CHECK.matches(model_name)
+        ) or ModelFlag.SKIP_DTENSOR_TIED_WEIGHTS_CHECK.matches(model_name)
         # Get num_tied_weights before applying FSDP because this property is not always preserved after FSDP
         num_tied_weights = len(find_tied_parameters(self.model))
         if (

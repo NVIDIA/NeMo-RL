@@ -32,7 +32,7 @@ from nemo_rl.models.huggingface.common import ModelFlag, is_gemma3_model
 )
 def test_gemma3_models(model_name):
     assert is_gemma3_model(model_name)
-    assert ModelFlag.SKIP_TIED_WEIGHTS_CHECK.matches(model_name)
+    assert ModelFlag.SKIP_DTENSOR_TIED_WEIGHTS_CHECK.matches(model_name)
     assert ModelFlag.VLLM_LOAD_FORMAT_AUTO.matches(model_name)
 
 
@@ -46,5 +46,5 @@ def test_gemma3_models(model_name):
 )
 def test_non_gemma3_models(model_name):
     assert not is_gemma3_model(model_name)
-    assert not ModelFlag.SKIP_TIED_WEIGHTS_CHECK.matches(model_name)
+    assert not ModelFlag.SKIP_DTENSOR_TIED_WEIGHTS_CHECK.matches(model_name)
     assert not ModelFlag.VLLM_LOAD_FORMAT_AUTO.matches(model_name)
