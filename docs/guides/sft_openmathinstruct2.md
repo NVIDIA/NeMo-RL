@@ -23,7 +23,7 @@ By default, the config uses the 1M subset (`data.split=train_1M`).
 The default config uses 8 GPUs (`cluster.gpus_per_node`) on 1 node (`cluster.num_nodes`), which should complete 1 epoch of training for the train_1M dataset in around 20 hours. For our experiments below, we use 8 nodes to speed up training, completing 1 epoch of training in less than 4 hours.
 
 ## Evaluate the Model
-Throughout training, the checkpoints of the model will be saved to the `results/sft_openmathinstruct2` folder (specified by `checkpointing.checkpoint_dir`). To evaluate the model, we first need to convert the PyTorch distributed checkpoint to HuggingFace format:
+Throughout training, the checkpoints of the model will be saved to the `results/sft_openmathinstruct2` folder (specified by `checkpointing.checkpoint_dir`). To evaluate the model, we first need to convert the PyTorch distributed checkpoint to Hugging Face format:
 
 ```
 uv run examples/convert_dcp_to_hf.py \
