@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, TypedDict, Union
+from typing import Any, NotRequired, Optional, TypedDict, Union
 
 from nemo_rl.models.generation.interfaces import GenerationConfig
 
@@ -30,6 +30,19 @@ class TokenizerConfig(TypedDict):
     chat_template: str
 
 
+class PytorchOptimizerConfig(TypedDict):
+    name: str
+    kwargs: dict[str, Any]
+
+
+class SinglePytorchSchedulerConfig(TypedDict):
+    name: str
+    kwargs: dict[str, Any]
+
+
+SchedulerMilestones = dict[str, list[int]]
+
+
 class PolicyConfig(TypedDict):
     model_name: str
     tokenizer: TokenizerConfig
@@ -38,10 +51,18 @@ class PolicyConfig(TypedDict):
     learning_rate: float
     logprob_batch_size: int
     generation: Optional[GenerationConfig]
+    generation_batch_size: NotRequired[
+        int
+    ]  # used in static batched (framework) generation
     precision: str
     dtensor_cfg: DTensorConfig
     make_sequence_length_divisible_by: int
+    max_total_sequence_length: int
     max_grad_norm: Optional[Union[float, int]]
     fsdp_offload_enabled: bool
     activation_checkpointing_enabled: bool
     refit_buffer_size_gb: int
+    optimizer: NotRequired[PytorchOptimizerConfig] = None
+    scheduler: NotRequired[list[SinglePytorchSchedulerConfig] | SchedulerMilestones] = (
+        None
+    )

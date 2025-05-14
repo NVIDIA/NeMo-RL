@@ -13,12 +13,13 @@
 # limitations under the License.
 import contextlib
 import os
+from typing import Generator
 
 import pynvml
 
 
 @contextlib.contextmanager
-def nvml_context():
+def nvml_context() -> Generator[None, None, None]:
     """Context manager for NVML initialization and shutdown.
 
     Raises:
@@ -60,7 +61,16 @@ def get_device_uuid(device_idx: int) -> str:
     with nvml_context():
         try:
             handle = pynvml.nvmlDeviceGetHandleByIndex(global_device_idx)
-            return pynvml.nvmlDeviceGetUUID(handle)
+            uuid = pynvml.nvmlDeviceGetUUID(handle)
+            # Ensure the UUID is returned as a string, not bytes
+            if isinstance(uuid, bytes):
+                return uuid.decode("utf-8")
+            elif isinstance(uuid, str):
+                return uuid
+            else:
+                raise RuntimeError(
+                    f"Unexpected UUID type: {type(uuid)} for device {device_idx} (global index: {global_device_idx})"
+                )
         except pynvml.NVMLError as e:
             raise RuntimeError(
                 f"Failed to get device UUID for device {device_idx} (global index: {global_device_idx}): {e}"

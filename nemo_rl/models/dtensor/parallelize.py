@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Union
+from typing import Callable, Union
 
 import torch
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -222,7 +222,7 @@ def _parallelize_llama(
 
     if activation_checkpointing:
         for i in range(len(model.model.layers)):
-            model.model.layers[i].mlp = checkpoint_wrapper(model.model.layers[i].mlp)
+            model.model.layers[i].mlp = checkpoint_wrapper(model.model.layers[i].mlp)  # type: ignore
 
     for layer in model.model.layers:
         fully_shard(
@@ -323,7 +323,7 @@ def _parallelize_qwen(
 
     if activation_checkpointing:
         for i in range(len(model.model.layers)):
-            model.model.layers[i].mlp = checkpoint_wrapper(model.model.layers[i].mlp)
+            model.model.layers[i].mlp = checkpoint_wrapper(model.model.layers[i].mlp)  # type: ignore
 
     for layer in model.model.layers:
         fully_shard(
@@ -335,7 +335,7 @@ def _parallelize_qwen(
     )
 
 
-PARALLIZE_FUNCTIONS = {
+PARALLIZE_FUNCTIONS: dict[type[torch.nn.Module], Callable[..., torch.nn.Module]] = {
     Qwen2ForCausalLM: _parallelize_qwen,
     Qwen3ForCausalLM: _parallelize_qwen,
     LlamaForCausalLM: _parallelize_llama,
@@ -410,7 +410,7 @@ def to_local_if_dtensor(tensor: Union[torch.Tensor, DTensor]) -> torch.Tensor:
 
 
 def clip_grad_by_total_norm_(
-    parameters: Union[List[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]],
+    parameters: Union[list[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]],
     max_grad_norm: Union[int, float],
     total_norm: float,
     dtype: torch.dtype = torch.float32,
@@ -422,7 +422,7 @@ def clip_grad_by_total_norm_(
     Note that the gradients are modified in place.
 
     Args:
-        parameters (Union[List[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]]):
+        parameters (Union[list[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]]):
             An iterable of Tensors or DTensors, or a single Tensor or DTensor
             that will have gradients normalized.
         max_grad_norm (Union[float, int]): Maximum norm of the gradients.
@@ -447,7 +447,7 @@ def clip_grad_by_total_norm_(
 
 
 def get_grad_norm(
-    parameters: Union[List[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]],
+    parameters: Union[list[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]],
     dp_group: torch.distributed.ProcessGroup,
     tp_group: torch.distributed.ProcessGroup,
     norm_type: Union[int, float] = 2,
@@ -458,7 +458,7 @@ def get_grad_norm(
     Taken and modified from: https://github.com/NVIDIA/Megatron-LM/blob/a695b2bd2a0ca9ca63385a48c41a1c5a033cdd1e/megatron/core/optimizer/clip_grads.py#L51
 
     Args:
-        parameters (Union[List[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]]):
+        parameters (Union[list[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]]):
             An iterable of Tensors or DTensors, or a single Tensor or DTensor
             that will have gradient norm calculated.
         dp_group (torch.distributed.ProcessGroup): Process group for data parallel communication.
@@ -485,7 +485,7 @@ def get_grad_norm(
 
     # Calculate norm.
     if norm_type == torch.inf:
-        total_norm = max(grad.abs().max() for grad in grads_for_norm)
+        total_norm = max(grad.abs().max().item() for grad in grads_for_norm)
         total_norm_cuda = torch.tensor(
             [float(total_norm)], dtype=torch.float, device="cuda"
         )
@@ -503,7 +503,7 @@ def get_grad_norm(
             grad_norm = torch.norm(grad, norm_type)
             total_norm += grad_norm**norm_type
 
-        total_norm = total_norm.cuda()
+        total_norm = total_norm.cuda()  # type: ignore
         # Sum across all data-parallel GPUs if using FSDP and then all model-parallel GPUs.
         torch.distributed.all_reduce(
             total_norm, op=torch.distributed.ReduceOp.SUM, group=dp_group
@@ -511,7 +511,7 @@ def get_grad_norm(
         torch.distributed.all_reduce(
             total_norm, op=torch.distributed.ReduceOp.SUM, group=tp_group
         )
-        total_norm = total_norm.item() ** (1.0 / norm_type)
+        total_norm = total_norm.item() ** (1.0 / norm_type)  # type: ignore
 
     return total_norm
 

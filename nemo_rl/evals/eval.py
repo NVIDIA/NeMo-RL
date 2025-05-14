@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import Tuple, TypedDict
+from typing import TypedDict
 
 import ray
 from torch.utils.data import DataLoader
@@ -57,7 +57,7 @@ def setup(
     master_config: MasterConfig,
     tokenizer: AutoTokenizer,
     dataset: AllTaskProcessedDataset,
-) -> Tuple[
+) -> tuple[
     VllmGeneration,
     DataLoader,
     MasterConfig,
