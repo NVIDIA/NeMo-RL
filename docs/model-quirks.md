@@ -18,4 +18,4 @@ Gemma-3 models have a specific issue with vLLM dummy weight initialization due t
 
 **Special Handling:**
 - We automatically use `load_format="auto"` for Gemma-3 models when initializing vLLM.
-- This avoids issues with dummy weight initialization, where the dummy weights for this buffer would never get overwritten during refit
+- This avoids issues with dummy weight initialization, where the dummy weights for this buffer would never get overwritten during refit.
