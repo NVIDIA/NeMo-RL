@@ -43,6 +43,10 @@ class DynamicBatchingCfg(TypedDict):
     """
 
     max_tokens_per_microbatch: int  # Each microbatch contains at most this many tokens
+    sequence_length_round: (
+        int  # Round each microbatch's sequence length to this multiple
+    )
+    input_key: str  # The key in the data dict that specifics the input ids
     input_lengths_key: (
         str  # The key in the data dict that specifies the sequence length per datum
     )
@@ -53,6 +57,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         super().__init__(*args, **kwargs)
 
         self.micro_batch_indices = None
+        self.micro_batch_lengths = None
 
     @classmethod
     def from_batches(
@@ -214,7 +219,11 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                                             dict requires two keys:
                                             1. max_tokens_per_microbatch (int): the maximum
                                                 number of tokens in a microbatch
-                                            2. input_lengths_key (str): the key in the batch
+                                            2. sequence_length_round (int): round each all
+                                                sequence lengths to this multiple
+                                            3. input_key (str): the key in the batch
+                                                which holds input ids.
+                                            4. input_lengths_key (str): the key in the batch
                                                 which holds the sequence length per value.
                                                 The sequence dim index is assumed to be 1.
 
@@ -279,10 +288,6 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             assert batch_size % shards == 0, (
                 f"Batch size ({batch_size}) is not a multiple of shards ({shards})"
             )
-
-        if dynamic_batching_cfg is not None:
-            assert "max_tokens_per_microbatch" in dynamic_batching_cfg
-            assert "input_lengths_key" in dynamic_batching_cfg
 
         num_chunks = total_batch_size // batch_size
         # Calculate shard size, rounding up if not evenly divisible
@@ -375,29 +380,43 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 "max_tokens_per_microbatch"
             ]
             micro_batch_indices = []
+            micro_batch_lengths = []
             # loop through each chunk, dividing the chunk into microbatches
             for chunk_idx in range(num_chunks):
                 chunk_micro_batch_indices = [[0, 0]]
-                current_mbs_total_tokens = 0
+                chunk_micro_batch_lengths = [0]
+                max_seqlen_this_mb = 0
                 # for each indice in the shard, map it to an microbatch
                 for shard_indice in range(shard_size):
                     # use the max seqlen of all shards to calculate the total number of tokens in the mb
                     # this ensures each DP rank has the same batch size each iteration which is
                     # required for FSDP2 and megatron policies.
+                    max_seqlen_this_shard_indice = 0
                     chunk_start = chunk_idx * shard_size
                     chunk_end = (chunk_idx + 1) * shard_size
-                    max_seqlen_this_chunk = 0
                     for shard in aggregated_shards:
                         input_lengths = shard[dynamic_batching_cfg["input_lengths_key"]]
                         seq_len = input_lengths[chunk_start:chunk_end][
                             shard_indice
                         ].item()
-                        max_seqlen_this_chunk = max(max_seqlen_this_chunk, seq_len)
+                        max_seqlen_this_shard_indice = max(
+                            max_seqlen_this_shard_indice, seq_len
+                        )
 
-                    assert max_seqlen_this_chunk <= max_tokens_per_microbatch, (
-                        f"got a input of sequence length {max_seqlen_this_chunk}, however max microbatch size is {max_tokens_per_microbatch} tokens"
+                    # pad to nearest multiple specified
+                    sequence_length_round = dynamic_batching_cfg[
+                        "sequence_length_round"
+                    ]
+                    unpadded_seqlen = data[dynamic_batching_cfg["input_key"]].shape[1]
+
+                    padded_seqlen = (
+                        (max_seqlen_this_shard_indice + sequence_length_round - 1)
+                        // sequence_length_round
+                    ) * sequence_length_round
+                    max_seqlen_this_shard_indice = min(padded_seqlen, unpadded_seqlen)
+                    assert max_seqlen_this_shard_indice <= max_tokens_per_microbatch, (
+                        f"got an input of padded ({sequence_length_round}) sequence length of {max_seqlen_this_shard_indice}, however max microbatch size is {max_tokens_per_microbatch} tokens"
                     )
-
                     # check if the sample at shard_indice may be added to the current mbs for all shards
                     # the total tokens of a mbs = number of indices in the mbs * the max sequence length in the mbs
                     curr_mbs_size = (
@@ -405,20 +424,28 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                         - chunk_micro_batch_indices[-1][0]
                         + 1
                     )
-                    total_tokens_in_mbs = curr_mbs_size * max_seqlen_this_chunk
+                    max_seqlen_this_mb = max(
+                        max_seqlen_this_mb, max_seqlen_this_shard_indice
+                    )
+                    total_tokens_in_mbs = curr_mbs_size * max_seqlen_this_mb
                     # if the current mbs can accomodate this indice, add it
                     if total_tokens_in_mbs <= max_tokens_per_microbatch:
                         chunk_micro_batch_indices[-1][-1] += 1
+                        chunk_micro_batch_lengths[-1] = max_seqlen_this_mb
                     # otherwise start a new mbs
                     else:
                         chunk_micro_batch_indices.append(
                             [shard_indice, shard_indice + 1]
                         )
+                        max_seqlen_this_mb = max_seqlen_this_shard_indice
+                        chunk_micro_batch_lengths.append(max_seqlen_this_mb)
+
                 micro_batch_indices.append(chunk_micro_batch_indices)
+                micro_batch_lengths.append(chunk_micro_batch_lengths)
 
             for shard in aggregated_shards:
                 shard.micro_batch_indices = micro_batch_indices
-
+                shard.micro_batch_lengths = micro_batch_lengths
             return aggregated_shards, batch_sorted_indices
 
         return aggregated_shards
@@ -438,6 +465,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         batch = self.slice(start, end)
         if self.micro_batch_indices is not None:
             batch.micro_batch_indices = [self.micro_batch_indices[batch_idx]]
+            batch.micro_batch_lengths = [self.micro_batch_lengths[batch_idx]]
 
         return batch
 
@@ -483,17 +511,11 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
     def make_microbatch_iterator_with_dynamic_shapes(
         self,
-        max_sequence_length: int,
-        round_seq_len_multiple: int,
-        input_lengths_key: str,
         sequence_dim: int = 1,
     ) -> Iterator["SlicedDataDict"]:
         """Makes an interator that yields microbatchs of dynamic batch and sequence sizes.
 
         Args:
-            max_sequence_length: the maximum sequence length of the dynamically shaped microbatch
-            round_seq_len_multiple: round the dynamic sequence length the next nearest multiple of this value
-            input_lengths_key: the key in the data dict that gives the sequence lengths of each datum
             sequence_dim: the index of the sequence dim for all tensors in the data dict
 
         Returns:
@@ -503,16 +525,11 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             self.micro_batch_indices is not None and len(self.micro_batch_indices) == 1
         )
 
-        for start, end in self.micro_batch_indices[0]:
-            mb = self.slice(start, end)
-            # trucate to the longest sequence to minimize padding
-            padded_seqlen = (
-                (max(mb[input_lengths_key]) + round_seq_len_multiple - 1)
-                // round_seq_len_multiple
-            ) * round_seq_len_multiple
-            padded_seqlen = min(padded_seqlen, max_sequence_length)
-
-            mb.truncate_tensors(dim=sequence_dim, truncated_len=padded_seqlen)
+        for seqlen, (start_idx, end_idx) in zip(
+            self.micro_batch_lengths[0], self.micro_batch_indices[0]
+        ):
+            mb = self.slice(start_idx, end_idx)
+            mb.truncate_tensors(dim=sequence_dim, truncated_len=seqlen)
             yield mb
 
     def make_microbatch_iterator(
