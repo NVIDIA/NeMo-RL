@@ -26,7 +26,8 @@ class SimpleLoss:
         self,
         next_token_logits: torch.Tensor,
         data: BatchedDataDict,
-        total_valid_tokens_or_seqs: torch.Tensor,
+        global_valid_seqs: torch.Tensor | None,
+        global_valid_toks: torch.Tensor | None,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         # Just return mean of logprobs as the loss for testing
         loss = next_token_logits.mean()
@@ -45,7 +46,8 @@ class SimpleNLLLoss:
         self,
         next_token_logits: torch.Tensor,
         data: BatchedDataDict,
-        normalization_factor=None,
+        global_valid_seqs: torch.Tensor | None,
+        global_valid_toks: torch.Tensor | None,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         # logits shape: [batch_size, seq_len, vocab_size]
         # Get the next token logits for each position

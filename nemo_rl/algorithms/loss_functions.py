@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import enum
-from typing import Any, Optional, Tuple, TypedDict
+from typing import Any, Tuple, TypedDict
 
 import torch
 
@@ -113,8 +113,8 @@ class ClippedPGLossFn(LossFunction):
         self,
         next_token_logits: torch.Tensor,
         data: BatchedDataDict[ClippedPGLossDataDict],
-        global_valid_seqs: Optional[torch.Tensor] = None,
-        global_valid_toks: Optional[torch.Tensor] = None,
+        global_valid_seqs: torch.Tensor,
+        global_valid_toks: torch.Tensor,
     ) -> Tuple[torch.Tensor, dict]:
         """Clipped Policy Gradient RL loss function."""
         token_mask = data["token_mask"][:, 1:]
@@ -125,10 +125,6 @@ class ClippedPGLossFn(LossFunction):
         reference_policy_logprobs = data["reference_policy_logprobs"][:, 1:]
 
         mask = token_mask * sample_mask.unsqueeze(-1)
-        if global_valid_seqs is None:
-            global_valid_seqs = torch.sum(sample_mask)
-        if global_valid_toks is None:
-            global_valid_toks = torch.sum(mask)
 
         # token_mult_prob_error
         # See more details and other metrics in docs/guides/grpo.md#metrics
@@ -300,8 +296,8 @@ class NLLLoss(LossFunction):
         self,
         next_token_logits: torch.Tensor,
         data: BatchedDataDict,
-        global_valid_seqs: Optional[torch.Tensor],
-        global_valid_toks: Optional[torch.Tensor],
+        global_valid_seqs: torch.Tensor | None,
+        global_valid_toks: torch.Tensor,
         dpo_loss: bool = False,
         dpo_average_log_probs: bool = False,
     ) -> Tuple[torch.Tensor, dict]:
@@ -310,10 +306,6 @@ class NLLLoss(LossFunction):
         token_mask = data["token_mask"][:, 1:]
         sample_mask = data["sample_mask"]
         mask = token_mask * sample_mask.unsqueeze(-1)
-        if global_valid_seqs is None:
-            global_valid_seqs = torch.sum(sample_mask)
-        if global_valid_toks is None:
-            global_valid_toks = torch.sum(mask)
 
         next_token_logits = next_token_logits.to(torch.float32)
 
@@ -512,14 +504,14 @@ class DPOLossFn(LossFunction):
         self,
         next_token_logits: torch.Tensor,
         data: BatchedDataDict[DPOLossDataDict],
-        global_valid_seqs: Optional[torch.Tensor],
-        global_valid_toks: Optional[torch.Tensor],
+        global_valid_seqs: torch.Tensor,
+        global_valid_toks: torch.Tensor | None,
     ) -> Tuple[torch.Tensor, dict]:
-        if global_valid_seqs is None:
-            global_valid_seqs = torch.sum(data["sample_mask"])
-
         sft_loss_chosen = torch.tensor(0.0)
         if self.sft_loss_weight > 0:
+            assert global_valid_toks is not None, (
+                "global_valid_toks must be provided for SFT loss"
+            )
             sft_loss, _ = self.sft_loss(
                 next_token_logits,
                 data,
