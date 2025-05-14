@@ -20,6 +20,7 @@ guides/sft.md
 guides/dpo.md
 guides/grpo.md
 guides/eval.md
+model-quirks.md
 ```
 
 ```{toctree}
