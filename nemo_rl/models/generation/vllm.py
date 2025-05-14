@@ -41,7 +41,6 @@ class VllmSpecificArgs(TypedDict):
     max_model_len: int
     # Additional arguments for vLLM inserted by nemo rl based on the context of when vllm is used
     skip_tokenizer_init: bool
-    load_format: str
 
 
 class VllmConfig(GenerationConfig):
