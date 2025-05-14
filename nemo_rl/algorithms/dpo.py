@@ -406,6 +406,7 @@ def dpo_train(
             print(
                 f"\n{'=' * 25} Step {current_step + 1}/{min(len(train_dataloader), master_config['dpo']['max_num_steps'])} {'=' * 25}"
             )
+            val_metrics, validation_timings = None, None
 
             with timer.time("total_step_time"):
                 print("▶ Taking a training step...")
@@ -419,8 +420,17 @@ def dpo_train(
                     mbs=master_config["policy"]["train_micro_batch_size"] * 2,
                 )
 
+                is_last_step = total_steps + 1 >= master_config["dpo"][
+                    "max_num_steps"
+                ] or (
+                    current_epoch + 1 == max_num_epochs
+                    and current_step + 1 == len(train_dataloader)
+                )
+
                 # Run validation if it's a validation step
-                if val_period > 0 and (total_steps + 1) % val_period == 0:
+                if is_last_step or (
+                    val_period > 0 and (total_steps + 1) % val_period == 0
+                ):
                     val_metrics, validation_timings = validate(
                         policy,
                         val_dataloader,
@@ -443,10 +453,9 @@ def dpo_train(
                 dpo_save_state["consumed_samples"] += master_config["policy"][
                     "train_global_batch_size"
                 ]
-                if (
-                    master_config["checkpointing"]["enabled"]
-                    and (total_steps + 1)
-                    % master_config["checkpointing"]["save_period"]
+                if master_config["checkpointing"]["enabled"] and (
+                    is_last_step
+                    or (total_steps + 1) % master_config["checkpointing"]["save_period"]
                     == 0
                 ):  # +1 because step is 0-indexed
                     dpo_save_state["step"] = (current_step + 1) % len(train_dataloader)
