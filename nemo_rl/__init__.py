@@ -13,8 +13,6 @@
 # limitations under the License.
 import os
 
-from omegaconf import OmegaConf
-
 from nemo_rl.package_info import (
     __contact_emails__,
     __contact_names__,
@@ -31,6 +29,3 @@ from nemo_rl.package_info import (
 
 os.environ["RAY_USAGE_STATS_ENABLED"] = "0"
 
-# Globally register resolvers
-if not OmegaConf.has_resolver("mul"):
-    OmegaConf.register_new_resolver("mul", lambda a, b: a * b)
