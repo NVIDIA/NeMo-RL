@@ -42,7 +42,6 @@ from nemo_rl.models.generation.interfaces import (
     GenerationOutputSpec,
     verify_right_padding,
 )
-from nemo_rl.models.huggingface.common import ModelFlag
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.utils import (
     get_gpu_info,
@@ -103,9 +102,7 @@ class FSDP1PolicyWorker:
                 model_name
             ),  # due to https://github.com/huggingface/transformers/issues/38002
         )
-        skip_tie_check = os.environ.get(
-            "NRL_SKIP_TIED_WEIGHT_CHECK"
-        ) or ModelFlag.SKIP_TIED_WEIGHTS_CHECK.matches(model_name)
+        skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
         # Get num_tied_weights before applying FSDP because this property is not always preserved after FSDP
         num_tied_weights = len(find_tied_parameters(self.model))
         # Check if the model has tied weights
