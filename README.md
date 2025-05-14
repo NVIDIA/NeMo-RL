@@ -8,6 +8,7 @@
     - [GRPO Single Node](#grpo-single-node)
     - [GRPO Multi-node](#grpo-multi-node)
       - [GRPO Qwen2.5-32B](#grpo-qwen25-32b)
+    - [GRPO Multi-Turn/Tool-Use](#grpo-multi-turn)
   - [Supervised Fine-Tuning (SFT)](#supervised-fine-tuning-sft)
     - [SFT Single Node](#sft-single-node)
     - [SFT Multi-node](#sft-multi-node)
@@ -133,9 +134,11 @@ sbatch \
     --gres=gpu:8 \
     ray.sub
 ```
+The required `CONTAINER` can be built by following the instructions in the [Docker documentation](docs/docker.md).
 
 #### GRPO Qwen2.5-32B
 
+This section outlines how to run GRPO for Qwen2.5-32B with a 16k sequence length.
 ```sh
 # Run from the root of NeMo RL repo
 NUM_ACTOR_NODES=16
@@ -157,6 +160,8 @@ sbatch \
     --gres=gpu:8 \
     ray.sub
 ```
+
+#### GRPO Multi-Turn
 
 We also support multi-turn generation and training (tool use, games, etc.).
 Reference example for training to play a Sliding Puzzle Game:
@@ -338,5 +343,3 @@ We welcome contributions to NeMo RL\! Please see our [Contributing Guidelines](h
 ## Licenses
 
 NVIDIA NeMo RL is licensed under the [Apache License 2.0](https://github.com/NVIDIA/NeMo-RL/blob/main/LICENSE).
-
-NeMo is licensed under the [NVIDIA AI PRODUCT AGREEMENT](https://www.nvidia.com/en-us/agreements/enterprise-software/product-specific-terms-for-ai-products/). By pulling and using the container, you accept the terms and conditions of this license.

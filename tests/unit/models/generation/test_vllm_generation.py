@@ -42,6 +42,7 @@ basic_vllm_test_config: VllmConfig = {
     "stop_token_ids": None,
     "stop_strings": None,
     "vllm_cfg": {
+        "precision": "bfloat16",
         "tensor_parallel_size": 1,
         "gpu_memory_utilization": 0.3,
         "max_model_len": 1024,
