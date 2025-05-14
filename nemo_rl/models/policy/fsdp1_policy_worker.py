@@ -42,6 +42,7 @@ from nemo_rl.models.generation.interfaces import (
     GenerationOutputSpec,
     verify_right_padding,
 )
+from nemo_rl.models.huggingface.common import ModelFlag
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.utils import (
     get_gpu_info,
@@ -102,8 +103,16 @@ class FSDP1PolicyWorker:
                 model_name
             ),  # due to https://github.com/huggingface/transformers/issues/38002
         )
-        # caching since this property is not always preserved after FSDP
-        self.num_tied_weights = len(find_tied_parameters(self.model))
+        skip_tie_check = os.environ.get(
+            "NRL_SKIP_TIED_WEIGHT_CHECK"
+        ) or ModelFlag.SKIP_TIED_WEIGHTS_CHECK.matches(model_name)
+        # Get num_tied_weights before applying FSDP because this property is not always preserved after FSDP
+        num_tied_weights = len(find_tied_parameters(self.model))
+        # Check if the model has tied weights
+        if num_tied_weights != 0 and not skip_tie_check:
+            raise ValueError(
+                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={num_tied_weights}) is not supported (https://github.com/NVIDIA/NeMo-RL/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+            )
 
         if init_reference_model:
             self.reference_model = AutoModelForCausalLM.from_pretrained(
@@ -241,13 +250,6 @@ class FSDP1PolicyWorker:
         mbs: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
-        # Check if the model has tied weights
-        skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
-        if self.num_tied_weights != 0 and not skip_tie_check:
-            raise ValueError(
-                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/NeMo-RL/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
-            )
-
         if gbs is None:
             gbs = self.cfg["train_global_batch_size"]
         if mbs is None:
