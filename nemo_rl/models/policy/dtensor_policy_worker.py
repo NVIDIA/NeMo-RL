@@ -328,15 +328,13 @@ class DTensorPolicyWorker:
                 torch.distributed.all_reduce(to_reduce, group=self.dp_mesh.get_group())
                 global_valid_seqs, global_valid_toks = to_reduce[0], to_reduce[1]
 
-                if loss_fn.loss_type == LossType.TOKEN_LEVEL:
+                if (
+                    hasattr(loss_fn, "loss_type")
+                    and loss_fn.loss_type == LossType.TOKEN_LEVEL
+                ):
                     assert "token_mask" in global_batch, (
                         "token_mask must be present in the data when using token-level loss"
                     )
-                    norm_factor = global_valid_toks.item()
-                elif loss_fn.loss_type == LossType.SEQUENCE_LEVEL:
-                    norm_factor = global_valid_seqs.item()
-                else:
-                    raise ValueError(f"Unknown loss type: {loss_fn.loss_type}")
 
                 self.optimizer.zero_grad()
                 mb_losses = []
@@ -397,7 +395,8 @@ class DTensorPolicyWorker:
                         loss_metrics[k] /= num_global_batches
                     num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
-                    loss_metrics["normalization_factor"] = norm_factor
+                    loss_metrics["global_valid_seqs"] = global_valid_seqs
+                    loss_metrics["global_valid_toks"] = global_valid_toks
 
                     # Backward pass
                     if not eval_mode:
