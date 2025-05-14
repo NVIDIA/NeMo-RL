@@ -70,8 +70,8 @@ def create_test_config(
         },
         "dynamic_batching": {
             "enabled": True,
-            "train_mb_tokens": 16,
-            "logprob_mb_tokens": 16,
+            "train_mb_tokens": 128,
+            "logprob_mb_tokens": 128,
             "sequence_length_round": 4,
         },
         "optimizer": {
