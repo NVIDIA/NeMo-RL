@@ -59,6 +59,9 @@ basic_llama_test_config: PolicyConfig = {
         "activation_checkpointing": False,
         "tensor_parallel_size": 1,
     },
+    "dynamic_batching": {
+        "enabled": False,
+    },
     "optimizer": {
         "name": "torch.optim.AdamW",
         "kwargs": {
