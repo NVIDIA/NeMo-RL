@@ -45,7 +45,7 @@ uv run examples/run_eval.py \
     data.dataset_key=test
 ```
 
-Use `generation.model_name` to specify the path to the HuggingFace checkpoint.
+Use `generation.model_name` to specify the path to the Hugging Face checkpoint.
 
 ## Results
 Using the above instructions to train a Llama-3.1-8B model for 1 epoch on the train_1M version of the OpenMathInstruct-2 dataset, we get the following loss curve:
