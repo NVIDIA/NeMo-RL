@@ -20,6 +20,10 @@ from nemo_rl.models.huggingface.common import ModelFlag, is_gemma3_model
 @pytest.mark.parametrize(
     "model_name",
     [
+        "google/gemma-3-1b-pt",
+        "google/gemma-3-4b-pt",
+        "google/gemma-3-12b-pt",
+        "google/gemma-3-27b-pt",
         "google/gemma-3-1b-it",
         "google/gemma-3-4b-it",
         "google/gemma-3-12b-it",
@@ -35,6 +39,7 @@ def test_gemma3_models(model_name):
 @pytest.mark.parametrize(
     "model_name",
     [
+        "meta-llama/Llama-3.1-8B",
         "meta-llama/Llama-3.1-8B-Instruct",
         "Qwen/Qwen2.5-3B-Instruct",
     ],
