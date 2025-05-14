@@ -205,6 +205,7 @@ base_hf_test_config: PolicyConfig = {
         },
     },
     "dtensor_cfg": {"enabled": False},
+    "dynamic_batching": {"enabled": False},
 }
 
 base_vllm_test_config: VllmConfig = {
