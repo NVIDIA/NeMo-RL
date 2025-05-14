@@ -86,8 +86,8 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
         },
         "dynamic_batching": {
             "enabled": enable_dtensor,  # Dynamic batching is only supported with DTensor
-            "train_mb_tokens": 16,
-            "logprob_mb_tokens": 16,
+            "train_mb_tokens": 40,
+            "logprob_mb_tokens": 40,
             "sequence_length_round": 4,
         },
         "max_grad_norm": 1.0,

@@ -393,6 +393,11 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                             shard_indice
                         ].item()
                         max_seqlen_this_chunk = max(max_seqlen_this_chunk, seq_len)
+
+                    assert max_seqlen_this_chunk <= max_tokens_per_microbatch, (
+                        f"got a input of sequence length {max_seqlen_this_chunk}, however max microbatch size is {max_tokens_per_microbatch} tokens"
+                    )
+
                     # check if the sample at shard_indice may be added to the current mbs for all shards
                     # the total tokens of a mbs = number of indices in the mbs * the max sequence length in the mbs
                     curr_mbs_size = (
