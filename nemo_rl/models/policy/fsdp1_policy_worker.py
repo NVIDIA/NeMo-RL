@@ -292,7 +292,7 @@ class FSDP1PolicyWorker:
                     )
 
                 to_reduce = torch.tensor([local_valid_seqs, local_valid_toks]).cuda()
-                torch.distributed.all_reduce(to_reduce, group=self.dp_mesh.get_group())
+                torch.distributed.all_reduce(to_reduce)
                 global_valid_seqs, global_valid_toks = to_reduce[0], to_reduce[1]
 
                 if loss_fn.loss_type == LossType.TOKEN_LEVEL:
