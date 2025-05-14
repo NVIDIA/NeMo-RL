@@ -353,6 +353,9 @@ def _parallelize_model(
         num_attention_heads = model.config.num_attention_heads
         num_key_value_heads = model.config.num_key_value_heads
 
+    import os
+    force_use_hf_plan = os.environ.get("FORCE_USE_HF_PLAN", None)
+
     if tp_mesh.size() > 1:
         assert num_key_value_heads % tp_mesh.size() == 0, (
             f"num_key_value_heads ({num_key_value_heads}) must be divisible by TP size ({tp_mesh.size()})"
@@ -368,7 +371,7 @@ def _parallelize_model(
             }
 
         # second use our optimized parallel plan
-        elif model_cls in PARALLIZE_FUNCTIONS:
+        elif model_cls in PARALLIZE_FUNCTIONS and not force_use_hf_plan:
             # try to use our optimized parallel plan
             try:
                 func = PARALLIZE_FUNCTIONS[model_cls]
