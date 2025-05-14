@@ -15,7 +15,7 @@ cluster.md
 :caption: 🚀 E2E Examples
 :hidden:
 
-guides/sft_openmathinstruct2.md
+guides/sft-openmathinstruct2.md
 ```
 
 ```{toctree}

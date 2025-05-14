@@ -50,7 +50,7 @@ Use `generation.model_name` to specify the path to the Hugging Face checkpoint.
 ## Results
 Using the above instructions to train a Llama-3.1-8B model for 1 epoch on the train_1M version of the OpenMathInstruct-2 dataset, we get the following loss curve:
 
-![image](../assets/sft_openmathinstruct2_loss.png)
+![image](../assets/sft-openmathinstruct2-loss.png)
 
 
 Evaluating the resulting checkpoint on MATH-500, we get the following result:
