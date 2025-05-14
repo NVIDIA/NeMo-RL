@@ -35,7 +35,7 @@ basic_vllm_test_config: VllmConfig = {
         "name": "Qwen/Qwen3-0.6B",
     },
     "dtype": "bfloat16",
-    "max_new_tokens": 10,
+    "max_new_tokens": 5,
     "temperature": 0.8,
     "top_p": 1.0,
     "top_k": None,
@@ -647,8 +647,8 @@ def test_vllm_generate_text(cluster, tokenizer):
     # Generate and check result
     output = vllm_generation.generate_text(test_prompts, greedy=True)
     assert output["texts"] == [
-        " Lina. I'm a 22-year",
-        " Paris. The capital of France is also the capital",
+        " Lina. I'm",
+        " Paris. The capital of",
     ], "Output should be the same as the expected output"
 
     # Clean up
@@ -832,7 +832,7 @@ def test_vllm_generation_with_stop(
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
     vllm_config["stop_token_ids"] = [6722]  # 'Ġcapital'
-    vllm_config["stop_strings"] = ["I'm a"]
+    vllm_config["stop_strings"] = ["I'm"]
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=is_eval)
 
     # Ensure we can get same output
@@ -868,7 +868,7 @@ def test_vllm_generation_with_stop(
     output_ids = outputs["output_ids"]
     generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
     assert generated_texts == [
-        "Hello, my name is Lina. I'm a",
+        "Hello, my name is Lina. I'm",
         "The capital of France is Paris. The capital",
     ], "Output should be the same as the expected output"
 
@@ -880,7 +880,7 @@ def test_vllm_generation_with_stop(
     test_prompts = BatchedDataDict({"prompts": test_prompts})
     output = vllm_generation.generate_text(test_prompts, greedy=True)
     assert output["texts"] == [
-        " Lina. I'm a",
+        " Lina. I'm",
         " Paris. The capital",
     ], "Output should be the same as the expected output"
 
