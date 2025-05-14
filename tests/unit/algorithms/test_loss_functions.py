@@ -994,3 +994,63 @@ def test_clipped_pg_loss_dual_clip():
         dummy_logits, data, torch.sum(data["sample_mask"] * data["token_mask"])
     )
     torch.testing.assert_close(actual_loss, expected_loss)
+
+
+def test_clipped_pg_loss_entropy():
+    """Tests approximate entropy calculation in ClippedPGLossFn."""
+    if not torch.cuda.is_available():
+        pytest.skip("No GPU available")
+
+    device = "cuda"
+    data, seq_len, vocab_size = _setup_clipped_pg_test_data(device=device)
+
+    cfg = {
+        "ratio_clip_min": 0.2,
+        "ratio_clip_max": 0.2,
+        "ratio_clip_c": None,
+        "reference_policy_kl_penalty": 0.0,  # Disable KL for simplicity
+        "disable_ppo_ratio": False,
+        "use_on_policy_kl_approximation": False,
+        "use_importance_sampling_correction": False,  # This flag does not affect entropy calculation
+        "token_level_loss": True,
+    }
+    loss_fn = ClippedPGLossFn(cfg)
+
+    # Log probs for 3 tokens (default token_mask is [0, 1, 1, 1], so 3 unmasked after slicing)
+    # curr_lp_masked: log probabilities from the current policy (model output)
+    # gen_lp_masked: log probabilities from the generation policy (from data)
+    curr_lp_masked = torch.tensor([[-0.5, -1.0, -1.5]], device=device)
+    gen_lp_masked = torch.tensor([[-0.6, -1.1, -1.6]], device=device)
+
+    # prev_lp_masked is needed for actor loss but not directly for this entropy formula
+    prev_lp_masked = torch.tensor([[-0.4, -0.9, -1.4]], device=device)
+
+    data["prev_logprobs"][0, 1:] = prev_lp_masked
+    data["generation_logprobs"][0, 1:] = gen_lp_masked
+    # _create_exact_logits needs input_ids
+    data["input_ids"] = torch.randint(0, vocab_size, (1, seq_len), device=device)
+
+    # seq_entropy_approx = -masked_mean(torch.exp(curr_logprobs - generation_logprobs) * curr_logprobs, mask)
+    # curr_lp_masked represents curr_logprobs for the hand calculation.
+    # gen_lp_masked represents generation_logprobs.
+    importance_weight_factor = torch.exp(curr_lp_masked - gen_lp_masked)
+    entropy_terms = importance_weight_factor * curr_lp_masked
+    expected_entropy = -torch.mean(
+        entropy_terms
+    )  # torch.mean because default mask applies to these 3 terms
+
+    dummy_logits = _create_exact_logits(
+        curr_lp_masked, data["input_ids"], seq_len, vocab_size, device
+    )
+    _, metrics = loss_fn(
+        dummy_logits,
+        data,
+        total_valid_tokens_or_seqs=torch.sum(data["sample_mask"] * data["token_mask"]),
+    )
+
+    torch.testing.assert_close(
+        torch.tensor(metrics["approx_entropy"], device=device),
+        expected_entropy,
+        rtol=1e-3,
+        atol=1e-5,
+    )
