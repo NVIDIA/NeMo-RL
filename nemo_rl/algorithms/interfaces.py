@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Protocol, Tuple
+from typing import Any, Dict, Protocol, Tuple
 
 import torch
 
@@ -30,8 +30,8 @@ class LossFunction(Protocol):
         self,
         next_token_logits: torch.Tensor,
         data: BatchedDataDict,
-        global_valid_seqs: Optional[torch.Tensor],
-        global_valid_toks: Optional[torch.Tensor],
+        global_valid_seqs: torch.Tensor,
+        global_valid_toks: torch.Tensor,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """Compute loss and metrics from logprobs and other data.
 
@@ -44,16 +44,14 @@ class LossFunction(Protocol):
             data: Dictionary containing all relevant data for loss computation
                   such as rewards, values, actions, advantages, masks, and other
                   algorithm-specific information needed for the particular loss calculation.
-            global_valid_seqs: Optional[torch.Tensor]
-                If provided, this tensor should contain the number of valid sequences in the microbatch.
-                If not provided, it will be computed as the sum of the sample_mask in the data dict.
-                This is used for global normalization for losses/metrics that are computed at the sequence level
-                and need to be aggregated across all microbatches.
-            global_valid_toks: Optional[torch.Tensor]
-                If provided, this tensor should contain the number of valid tokens in the microbatch.
-                If not provided, it will be computed as the sum of the token_mask in the data dict.
-                This is used for global normalization for losses/metrics that are computed at the token level
-                and need to be aggregated across all microbatches.
+            global_valid_seqs: torch.Tensor
+                this tensor should contain the number of valid sequences in the microbatch.
+                It's used for global normalization for losses/metrics that are computed at the sequence level
+                and needs to be aggregated across all microbatches.
+            global_valid_toks: torch.Tensor
+                This tensor should contain the number of valid tokens in the microbatch.
+                It's used for global normalization for losses/metrics that are computed at the token level
+                and needs to be aggregated across all microbatches.
 
         Returns:
             tuple: (loss, metrics)
