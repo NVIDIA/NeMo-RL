@@ -215,9 +215,12 @@ def test_shard_by_batch_size_dynamic():
         }
     )
     dynamic_batching_cfg: DynamicBatchingCfg = {
-        "max_tokens_per_microbatch": 32,
+        "input_key": "data",
         "input_lengths_key": "sequence_lengths",
+        "sequence_length_round" : 4,
+        "max_tokens_per_microbatch": 32,
     }
+    
     shards, _ = batch.shard_by_batch_size(
         shards=2, dynamic_batching_cfg=dynamic_batching_cfg
     )
@@ -227,11 +230,7 @@ def test_shard_by_batch_size_dynamic():
 
     # test creating dynamic micro_batch iterators
     for shard in shards:
-        mb_iterator = shard.make_microbatch_iterator_with_dynamic_shapes(
-            max_sequence_length=32,
-            round_seq_len_multiple=4,
-            input_lengths_key="sequence_lengths",
-        )
+        mb_iterator = shard.make_microbatch_iterator_with_dynamic_shapes()
         # check each microbatch has a valid dynamic sequence length
         for mb in mb_iterator:
             batch_size, seqlen = mb["data"].shape
