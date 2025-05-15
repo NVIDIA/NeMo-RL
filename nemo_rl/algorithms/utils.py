@@ -123,7 +123,7 @@ def masked_mean(
     values,
     mask,
     dim: Optional[int] = None,
-    global_normalization_factor: Optional[torch.Tensor] = None,
+    global_normalization_factor: Optional[torch.Tensor | float] = None,
 ):
     """Computes the mean of a microbatch, using a global statistic as the normalization factor."""
     normalization_factor = (

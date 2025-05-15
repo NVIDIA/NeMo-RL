@@ -72,7 +72,8 @@ def test_nll_loss():
     loss, metrics_dict = loss_fn(
         next_token_logits,
         data,
-        total_valid_tokens_or_seqs=torch.sum(
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(
             data["token_mask"] * data["sample_mask"].unsqueeze(-1)
         ),
     )
@@ -96,8 +97,9 @@ def test_nll_loss():
     loss, metrics_dict = loss_fn(
         next_token_logits,
         data,
-        total_valid_tokens_or_seqs=torch.sum(
-            data["token_mask"] * data["sample_mask"].unsqueeze(0)
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(
+            data["token_mask"] * data["sample_mask"].unsqueeze(-1)
         ),
     )
     ## loss per token is 999, and we have two unmasked tokens
@@ -130,7 +132,10 @@ def test_dpo_loss():
     loss, metrics_dict = loss_fn(
         next_token_logits,
         data,
-        total_valid_tokens_or_seqs=torch.sum(data["sample_mask"]),
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(
+            data["sample_mask"].unsqueeze(-1) * data["token_mask"]
+        ),
     )
 
     ## chosen and rejected errors are the same, so difference between them is 0
@@ -157,9 +162,14 @@ def test_dpo_loss():
     )
     expected_preference_loss = -torch.nn.functional.logsigmoid(torch.tensor(0.0))
     assert torch.isclose(
-        loss_fn_with_sft(next_token_logits, data, torch.sum(data["sample_mask"]))[
-            0
-        ].cpu(),
+        loss_fn_with_sft(
+            next_token_logits,
+            data,
+            global_valid_seqs=torch.sum(data["sample_mask"]),
+            global_valid_toks=torch.sum(
+                data["sample_mask"].unsqueeze(-1) * data["token_mask"]
+            ),
+        )[0].cpu(),
         0.5 * expected_sft_loss + expected_preference_loss,
     )
 
@@ -230,9 +240,17 @@ def test_dpo_loss_varying_sequence_lengths():
     )
 
     # Compute loss
-    loss, metrics = dpo_loss_fn_no_avg(next_token_logits, data, torch.sum(sample_mask))
+    loss, metrics = dpo_loss_fn_no_avg(
+        next_token_logits,
+        data,
+        global_valid_seqs=torch.sum(sample_mask),
+        global_valid_toks=torch.sum(sample_mask.unsqueeze(-1) * token_mask),
+    )
     loss_avg, metrics_avg = dpo_loss_fn_avg(
-        next_token_logits, data, torch.sum(sample_mask)
+        next_token_logits,
+        data,
+        global_valid_seqs=torch.sum(sample_mask),
+        global_valid_toks=torch.sum(sample_mask.unsqueeze(-1) * token_mask),
     )
 
     num_unmasked_tokens = token_mask[:, 1:][::2].sum().item()
@@ -285,7 +303,8 @@ def test_dpo_sft_matches_nll_loss():
     nll_loss, nll_metrics = nll_loss_fn(
         next_token_logits[::2],
         sft_data,
-        torch.sum(
+        global_valid_seqs=None,
+        global_valid_toks=torch.sum(
             sft_data["sample_mask"].unsqueeze(-1) * torch.sum(sft_data["token_mask"])
         ),
     )
@@ -301,7 +320,12 @@ def test_dpo_sft_matches_nll_loss():
         }
     )
     dpo_loss, dpo_metrics = dpo_loss_fn(
-        next_token_logits, dpo_data, torch.sum(dpo_data["sample_mask"])
+        next_token_logits,
+        dpo_data,
+        global_valid_seqs=torch.sum(dpo_data["sample_mask"]),
+        global_valid_toks=torch.sum(
+            dpo_data["sample_mask"].unsqueeze(-1) * dpo_data["token_mask"]
+        ),
     )
 
     # Verify losses match
@@ -468,7 +492,8 @@ def test_clipped_pg_loss_ppo_clipping():
     actual_loss, _ = loss_fn(
         dummy_logits,
         data,
-        torch.sum(data["sample_mask"].unsqueeze(-1) * data["token_mask"]),
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(data["sample_mask"] * data["token_mask"]),
     )
     torch.testing.assert_close(actual_loss, expected_loss)
 
@@ -520,7 +545,10 @@ def test_clipped_pg_loss_reinforce_mode():
     actual_loss, _ = loss_fn(
         dummy_logits,
         data,
-        torch.sum(data["sample_mask"].unsqueeze(-1) * data["token_mask"]),
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(
+            data["sample_mask"].unsqueeze(-1) * data["token_mask"]
+        ),
     )
     torch.testing.assert_close(actual_loss, expected_loss)
 
@@ -585,7 +613,10 @@ def test_clipped_pg_loss_kl_penalty():
     actual_loss, _ = loss_fn(
         dummy_logits,
         data,
-        torch.sum(data["sample_mask"].unsqueeze(-1) * data["token_mask"]),
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(
+            data["sample_mask"].unsqueeze(-1) * data["token_mask"]
+        ),
     )
     torch.testing.assert_close(actual_loss, expected_loss)
 
@@ -631,7 +662,10 @@ def test_clipped_pg_loss_masking():
     loss_default, _ = loss_fn(
         dummy_logits,
         data,
-        torch.sum(data["sample_mask"].unsqueeze(-1) * data["token_mask"]),
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(
+            data["sample_mask"].unsqueeze(-1) * data["token_mask"]
+        ),
     )
 
     # Modify token_mask for batch item 0 to mask one more token (pos 1)
@@ -644,7 +678,8 @@ def test_clipped_pg_loss_masking():
     loss_token_masked, _ = loss_fn(
         dummy_logits,
         data_mod_token,
-        torch.sum(
+        global_valid_seqs=torch.sum(data_mod_token["sample_mask"]),
+        global_valid_toks=torch.sum(
             data_mod_token["sample_mask"].unsqueeze(-1) * data_mod_token["token_mask"]
         ),
     )
@@ -662,7 +697,8 @@ def test_clipped_pg_loss_masking():
     loss_sample_masked, _ = loss_fn(
         dummy_logits,
         data_mod_sample,
-        torch.sum(
+        global_valid_seqs=torch.sum(data_mod_sample["sample_mask"]),
+        global_valid_toks=torch.sum(
             data_mod_sample["sample_mask"].unsqueeze(-1) * data_mod_sample["token_mask"]
         ),
     )
@@ -683,7 +719,8 @@ def test_clipped_pg_loss_masking():
     loss_only_b0, _ = loss_fn(
         logits_only_b0,
         data_only_b0,
-        torch.sum(
+        global_valid_seqs=torch.sum(data_only_b0["sample_mask"]),
+        global_valid_toks=torch.sum(
             data_only_b0["sample_mask"].unsqueeze(-1) * data_only_b0["token_mask"]
         ),
     )
@@ -716,7 +753,14 @@ def test_clipped_pg_loss_zero_mask():
     # Set token mask to all zeros
     data["token_mask"] = torch.zeros_like(data["token_mask"])
 
-    loss, _ = loss_fn(dummy_logits, data, torch.sum(data["token_mask"]))
+    loss, _ = loss_fn(
+        dummy_logits,
+        data,
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(
+            data["sample_mask"].unsqueeze(-1) * data["token_mask"]
+        ),
+    )
 
     # Loss should be exactly zero
     torch.testing.assert_close(loss, torch.tensor(0.0, device=device))
@@ -865,7 +909,10 @@ def test_clipped_pg_loss_on_policy_kl_importance_sampling():
     )
 
     actual_loss, _ = loss_fn(
-        dummy_logits, data, torch.sum(data["sample_mask"] * data["token_mask"])
+        dummy_logits,
+        data,
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(data["sample_mask"] * data["token_mask"]),
     )
     torch.testing.assert_close(actual_loss, expected_total_loss, atol=1e-4, rtol=1e-3)
 
@@ -991,7 +1038,12 @@ def test_clipped_pg_loss_dual_clip():
     )
 
     actual_loss, _ = loss_fn(
-        dummy_logits, data, torch.sum(data["sample_mask"] * data["token_mask"])
+        dummy_logits,
+        data,
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(
+            data["sample_mask"].unsqueeze(-1) * data["token_mask"]
+        ),
     )
     torch.testing.assert_close(actual_loss, expected_loss)
 
@@ -1045,7 +1097,8 @@ def test_clipped_pg_loss_entropy():
     _, metrics = loss_fn(
         dummy_logits,
         data,
-        total_valid_tokens_or_seqs=torch.sum(data["sample_mask"] * data["token_mask"]),
+        global_valid_seqs=torch.sum(data["sample_mask"]),
+        global_valid_toks=torch.sum(data["sample_mask"] * data["token_mask"]),
     )
 
     torch.testing.assert_close(
