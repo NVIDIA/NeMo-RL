@@ -142,7 +142,9 @@ class RayWorkerBuilder:
                 # Apply environment variables if provided
                 if env_vars:
                     if "runtime_env" not in options:
-                        options["runtime_env"] = {}
+                        options["runtime_env"] = {"env_vars": {}}
+                    if "env_vars" not in options["runtime_env"]:
+                        options["runtime_env"]["env_vars"] = {}
                     for k, v in env_vars.items():
                         options["runtime_env"]["env_vars"][k] = v
 
@@ -649,12 +651,31 @@ class RayWorkerGroup:
 
         # Force kill any remaining workers
         if force or cleanup_method is None:
+            initializers_to_kill = []
             for worker in self._workers:
+                if hasattr(worker, "_RAY_INITIALIZER_ACTOR_REF_TO_AVOID_GC"):
+                    # Store the initializer ref before the main worker is killed,
+                    # as killing the worker might affect accessibility of this attribute later.
+                    initializer = getattr(
+                        worker, "_RAY_INITIALIZER_ACTOR_REF_TO_AVOID_GC", None
+                    )
+                    if initializer:
+                        initializers_to_kill.append(initializer)
                 try:
                     ray.kill(worker)
                 except Exception as e:
                     success = False
                     print(f"Error killing worker: {e}")
+
+            # Now, explicitly kill the initializer actors
+            # This makes their termination more deterministic than relying solely on Ray's GC.
+            for initializer in initializers_to_kill:
+                try:
+                    ray.kill(initializer)
+                except Exception as e:
+                    # Log or print, but don't let it mask original success status
+                    # We still want to know if the main worker shutdown failed.
+                    print(f"Error killing initializer actor for a worker: {e}")
 
         # Clear worker lists
         self._workers = []
