@@ -17,7 +17,7 @@ from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 ACTOR_ENVIRONMENT_REGISTRY = {
     "nemo_rl.models.generation.vllm.VllmGenerationWorker": PY_EXECUTABLES.VLLM,
     "nemo_rl.models.policy.dtensor_policy_worker.DTensorPolicyWorker": PY_EXECUTABLES.BASE,
-    "nemo_rl.models.policy.dtensor_policy_worker.FSDP1PolicyWorker": PY_EXECUTABLES.BASE,
+    "nemo_rl.models.policy.fsdp1_policy_worker.FSDP1PolicyWorker": PY_EXECUTABLES.BASE,
     "nemo_rl.environments.math_environment.MathEnvironment": PY_EXECUTABLES.SYSTEM,
     "nemo_rl.environments.games.sliding_puzzle.SlidingPuzzleEnv": PY_EXECUTABLES.SYSTEM,
 }
