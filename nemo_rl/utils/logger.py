@@ -622,7 +622,7 @@ class Logger(LoggerInterface):
         self, data: Dict[str, Any], step: int, name: str
     ) -> None:
         """Log a plot of log probability errors in samples.
-        
+
         This function logs & plots the per-token log-probabilities and errors over the sequence
         for the sample with the highest multiplicative probability error in the batch.
 
