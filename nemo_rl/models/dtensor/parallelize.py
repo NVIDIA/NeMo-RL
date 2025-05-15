@@ -290,18 +290,27 @@ def get_hf_tp_plan(model):
 
     Taken and modified from: https://github.com/NVIDIA/NeMo/blob/6c6169db01bcca73ae8ad3ac35242fadbb9a78ba/nemo/lightning/pytorch/strategies/utils.py#L532
     """
+    model_cls = type(model)
+    if model_cls == Gemma3ForConditionalGeneration:
+        inner_model = model.language_model
+        model_prefix = "language_model"
+    else:
+        inner_model = model.model
+        model_prefix = "model"
+
     hf_tp_plan = {}
 
     # model_cls._tp_plan will override model_cls after xxxForCausalLM.post_init() (transformers==4.51.3)
-    model_cls = type(model)
     if hasattr(model_cls, "_tp_plan") and model_cls._tp_plan is not None:
         hf_tp_plan.update(model_cls._tp_plan)
 
     if hasattr(model, "_tp_plan") and model._tp_plan is not None:
         hf_tp_plan.update(model._tp_plan)
 
-    if hasattr(model.model, "_tp_plan") and model.model._tp_plan is not None:
-        hf_tp_plan.update({f"model.{k}": v for k, v in model.model._tp_plan.items()})
+    if hasattr(inner_model, "_tp_plan") and inner_model._tp_plan is not None:
+        hf_tp_plan.update(
+            {f"{model_prefix}.{k}": v for k, v in inner_model._tp_plan.items()}
+        )
 
     hf_tp_plan = {k: translate_parallel_style(v) for k, v in hf_tp_plan.items()}
     return hf_tp_plan
