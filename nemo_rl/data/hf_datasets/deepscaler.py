@@ -37,25 +37,28 @@ def format_math(data):
 
 def prepare_deepscaler_dataset(seed=42):
     """Load and split the DeepScaler dataset into train and test sets."""
-    # Load the original dataset
-    original_ds = load_dataset("agentica-org/DeepScaleR-Preview-Dataset", split="train")
+    # Load the original dataset for training
+    train_ds = load_dataset("agentica-org/DeepScaleR-Preview-Dataset", split="train")
 
-    # Shuffle the dataset with the specified seed
-    shuffled_ds = original_ds.shuffle(seed=seed)
+    # Load hendrydong/aime24 dataset for validation
+    val_ds = load_dataset("HuggingFaceH4/aime_2024", split="train")
 
-    # Take 128 samples for test set
-    test_ds = shuffled_ds.select(range(128))
-
-    # Use the rest for training
-    train_ds = shuffled_ds.select(range(128, len(shuffled_ds)))
+    # Shuffle the training dataset with the specified seed
+    train_ds = train_ds.shuffle(seed=seed)
 
     # Format the examples, removing original columns
     train_formatted = train_ds.map(format_math, remove_columns=train_ds.column_names)
-    test_formatted = test_ds.map(format_math, remove_columns=test_ds.column_names)
+    val_formatted = val_ds.map(format_math, remove_columns=val_ds.column_names)
+
+    # Compute accuracy 16 times per sample (matching the DeepScaleR evaluation setting)
+    val_repeated = []
+    for _ in range(16):
+        val_repeated.extend(val_formatted)
+    val_formatted = val_formatted.from_list(val_repeated)
 
     return {
         "train": train_formatted,
-        "validation": test_formatted,
+        "validation": val_formatted,
     }
 
 
