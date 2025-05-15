@@ -33,16 +33,19 @@ What you can expect:
 - **Flexibility** with a modular design that allows easy integration and customization.
 - **Comprehensive documentation** that is both detailed and user-friendly, with practical examples.
 
+## 📣 News
+* [5/14/2025] [Reproduce DeepscaleR with NeMo RL!](docs/guides/grpo-deepscaler.md)
+
 ## Features
 
 ✅ _Available now_ | 🔜 _Coming in v0.3_
 
 - ✅ **Fast Generation** - vLLM backend for optimized inference.
 - ✅ **HuggingFace Integration** - Works with 1-32B models (Qwen2.5, Llama).
-- ✅ **Distributed Training** - FSDP support and Ray-based infrastructure.
+- ✅ **Distributed Training** - Fully Sharded Data Parallel (FSDP) support and Ray-based infrastructure.
 - ✅ **Environment Support** - Support for multi-environment training.
 - ✅ **Learning Algorithms** - GRPO (Group Relative Policy Optimization), SFT (Supervised Fine-Tuning), and DPO (Direct Preference Optimization).
-- ✅ **Multi-Turn RL** - multi-turn generation and training for RL with tool use, games, etc.
+- ✅ **Multi-Turn RL** - Multi-turn generation and training for RL with tool use, games, etc.
 - ✅ **Large Model Support** - Native PyTorch support for models up to 32B parameters.
 - ✅ **Advanced Parallelism** - PyTorch native FSDP2, TP, and SP for efficient training.
 - ✅ **Worker Isolation** - Process isolation between RL Actors (no worries about global state).
