@@ -50,7 +50,7 @@ def prepare_deepscaler_dataset(seed=42):
     train_formatted = train_ds.map(format_math, remove_columns=train_ds.column_names)
     val_formatted = val_ds.map(format_math, remove_columns=val_ds.column_names)
 
-    # Stack the validation dataset 4 times (original + 3 copies)
+    # Compute accuracy 16 times per sample (matching the DeepScaleR evaluation setting)
     val_repeated = []
     for _ in range(16):
         val_repeated.extend(val_formatted)
