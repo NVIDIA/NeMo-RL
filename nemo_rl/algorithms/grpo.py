@@ -575,7 +575,8 @@ def grpo_train(
                 metrics[k] = np.sum(v).item()
         metrics.update(rollout_metrics)
 
-        if metrics["token_mult_prob_error"] > (token_mult_prob_error_threshold := 1.05):
+        # track example with high token mult prob error above 1.05
+        if metrics["token_mult_prob_error"] > 1.05:
             logger.log_plot_token_mult_prob_error(
                 {
                     "prompt_lengths": repeated_batch["length"],
