@@ -348,8 +348,8 @@ class FSDP1PolicyWorker:
                         loss_metrics[k] /= num_global_batches
                     num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
-                    loss_metrics["global_valid_seqs"] = global_valid_seqs
-                    loss_metrics["global_valid_toks"] = global_valid_toks
+                    loss_metrics["global_valid_seqs"] = global_valid_seqs.item()
+                    loss_metrics["global_valid_toks"] = global_valid_toks.item()
 
                     # Backward pass
                     if not eval_mode:
