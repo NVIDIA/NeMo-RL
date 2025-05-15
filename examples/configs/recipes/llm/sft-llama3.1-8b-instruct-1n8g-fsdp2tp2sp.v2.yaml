@@ -31,6 +31,8 @@ policy:
     sequence_parallel: true
     activation_checkpointing: false
     tensor_parallel_size: 2
+  dynamic_batching:
+    enabled: False
   make_sequence_length_divisible_by: 2
   max_grad_norm: 1
   optimizer:
