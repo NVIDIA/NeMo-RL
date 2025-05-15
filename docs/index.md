@@ -15,6 +15,7 @@ cluster.md
 :caption: 🚀 E2E Examples
 :hidden:
 
+docs/guides/grpo-deepscaler.md
 guides/sft-openmathinstruct2.md
 ```
 
