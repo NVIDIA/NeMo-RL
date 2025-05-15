@@ -29,14 +29,14 @@ When using the above commands, we get the following training curve:
 Notably, we are able to achieve an average training reward of 0.65 in just 400 training steps.
 
 ## Evaluate the Model
-Throughout training, the checkpoints of the model will be saved to the `results` folder (specified by `checkpointing.checkpoint_dir`). To evaluate the model, we first need to convert the PyTorch distributed checkpoint to HuggingFace format as before. Then, to evaluate on the [AIME24 benchmark](https://huggingface.co/datasets/HuggingFaceH4/aime_2024), use the following command:
+Throughout training, the checkpoints of the model will be saved to the `results` folder (specified by `checkpointing.checkpoint_dir`). To evaluate the model, we first need to convert the PyTorch distributed checkpoint to Hugging Face format as before. Then, to evaluate on the [AIME24 benchmark](https://huggingface.co/datasets/HuggingFaceH4/aime_2024), use the following command:
 
 ```sh
 uv run examples/run_eval.py \
     generation.model_name=results/grpo-deepscaler-1.5b-8K/step_240/hf
 ```
 
-Use `generation.model_name` to specify the path to the HuggingFace checkpoint. In addition, we use AIME24 as the validation dataset and calculate pass@1 on it throughout training.
+Use `generation.model_name` to specify the path to the Hugging Face checkpoint. In addition, we use AIME24 as the validation dataset and calculate pass@1 on it throughout training.
 
 ## Evaluation Results
 Using the above instructions to train DeepSeek-R1-Distill-Qwen-1.5B on the DeepScaleR dataset, we can track the model's performance on the AIME24 benchmark throughout training. The following plot shows the evaluation metrics as training progresses:
