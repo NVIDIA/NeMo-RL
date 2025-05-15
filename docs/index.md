@@ -12,6 +12,13 @@ cluster.md
 ```
 
 ```{toctree}
+:caption: 🚀 E2E Examples
+:hidden:
+
+guides/sft-openmathinstruct2.md
+```
+
+```{toctree}
 :caption: 📚 Guides
 :hidden:
 

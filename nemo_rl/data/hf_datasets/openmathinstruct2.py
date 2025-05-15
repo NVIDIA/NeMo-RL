@@ -18,7 +18,7 @@ from datasets import load_dataset
 from nemo_rl.data.interfaces import TaskDataSpec
 
 
-def format_math(data):
+def format_math(data, output_key: str = "expected_answer"):
     return {
         "messages": [
             {
@@ -27,7 +27,7 @@ def format_math(data):
             },
             {
                 "role": "assistant",
-                "content": data["expected_answer"],
+                "content": data[output_key],
             },
         ],
         # For v0.1 release, nemo rl datasets require a task_name key such that user can map a task processor per unique task.
@@ -35,7 +35,12 @@ def format_math(data):
     }
 
 
-def prepare_openinstructmath2_dataset(split: str = "train_1M", seed=42, test_size=0.05):
+def prepare_openinstructmath2_dataset(
+    split: str = "train_1M",
+    seed=42,
+    test_size=0.05,
+    output_key: str = "expected_answer",
+):
     """Load and split the OpenMathInstruct-2 dataset into train and validation sets using HF's train_test_split."""
     print(
         "WARNING: For reproducible experiments, preprocess the dataset once and define your own HfDataset subclass that directly uses the preprocessed datasets."
@@ -49,10 +54,14 @@ def prepare_openinstructmath2_dataset(split: str = "train_1M", seed=42, test_siz
 
     # Format the examples, removing original columns
     train_formatted = split_ds["train"].map(
-        format_math, remove_columns=split_ds["train"].column_names
+        format_math,
+        remove_columns=split_ds["train"].column_names,
+        fn_kwargs={"output_key": output_key},
     )
     val_formatted = split_ds["test"].map(
-        format_math, remove_columns=split_ds["test"].column_names
+        format_math,
+        remove_columns=split_ds["test"].column_names,
+        fn_kwargs={"output_key": output_key},
     )
 
     return {
@@ -63,7 +72,12 @@ def prepare_openinstructmath2_dataset(split: str = "train_1M", seed=42, test_siz
 
 class OpenMathInstruct2Dataset:
     def __init__(
-        self, split: str = "train_1M", seed: int = 42, test_size: float = 0.05
+        self,
+        split: str = "train_1M",
+        seed: int = 42,
+        test_size: float = 0.05,
+        output_key: str = "expected_answer",
+        prompt_file: str = None,
     ):
         """Initialize the OpenMathInstruct2 dataset with train/validation split.
 
@@ -78,9 +92,10 @@ class OpenMathInstruct2Dataset:
             )
 
         self.formatted_ds = prepare_openinstructmath2_dataset(
-            split=split, seed=seed, test_size=test_size
+            split=split, seed=seed, test_size=test_size, output_key=output_key
         )
 
         self.task_spec = TaskDataSpec(
             task_name="OpenMathInstruct-2",
+            prompt_file=prompt_file,
         )
