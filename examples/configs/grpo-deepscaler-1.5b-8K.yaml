@@ -9,7 +9,7 @@ grpo:
   val_period: 10
   val_at_start: false
   max_val_samples: 480
-  val_batch_size: 64
+  val_batch_size: 32
 
 loss_fn:
   reference_policy_kl_penalty: 0.0
@@ -105,7 +105,7 @@ data:
 
 env:
   math:
-    num_workers: 8
+    num_workers: 16
 
 logger:
   log_dir: "logs"  # Base directory for all logs
