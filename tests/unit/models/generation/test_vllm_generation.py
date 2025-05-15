@@ -94,7 +94,7 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
     }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def cluster():
     """Create a virtual cluster for testing."""
     # Create a cluster with 1 node that has 2 GPU bundles
@@ -951,7 +951,7 @@ def test_vllm_non_divisible_batch_handling(policy):
     )
 
 
-def test_vllm_refit_non_collocated(
+def test_vllm_refit_non_collocated_handles_update_failure(
     policy_cluster_separate,
     generation_cluster_separate,
     tokenizer,
