@@ -20,7 +20,7 @@ The OpenMathInstruct-2 has several versions of different sizes. Configure the ve
 By default, the config uses the 1M subset (`data.split=train_1M`).
 
 ### Training Time
-The default config uses 8 GPUs (`cluster.gpus_per_node`) on 1 node (`cluster.num_nodes`), which should complete 1 epoch of training for the train_1M dataset in around 20 hours. For our experiments below, we use 8 nodes to speed up training, completing 1 epoch of training in less than 4 hours.
+The default config uses 8 GPUs (`cluster.gpus_per_node`) on 1 node (`cluster.num_nodes`), which should complete 1 epoch of training for the `train_1M` dataset (1855 steps) in around 20 hours. Additional nodes can be used to speed up training. We found in our experiments that using 8 nodes, we can complete 1 epoch of training for the `train_1M` dataset in less than 4 hours.
 
 ## Evaluate the Model
 Throughout training, the checkpoints of the model will be saved to the `results/sft_openmathinstruct2` folder (specified by `checkpointing.checkpoint_dir`). To evaluate the model, we first need to convert the PyTorch distributed checkpoint to Hugging Face format:
@@ -48,12 +48,16 @@ uv run examples/run_eval.py \
 Use `generation.model_name` to specify the path to the Hugging Face checkpoint.
 
 ## Results
-Using the above instructions to train a Llama-3.1-8B model for 1 epoch on the train_1M version of the OpenMathInstruct-2 dataset, we get the following loss curve:
 
-![image](../assets/sft-openmathinstruct2-loss.png)
+In this section we present the results of several reference experiments for the `train_1M` and `train` versions of the dataset.
+
+### train_1M
+Using the above instructions to train a Llama-3.1-8B model for 1 epoch on the `train_1M` version of the OpenMathInstruct-2 dataset, we get the following loss curve:
+
+![image](../assets/sft-openmathinstruct2-train1M-loss.png)
 
 
-Evaluating the resulting checkpoint on MATH-500, we get the following result:
+Evaluating the final checkpoint on MATH-500, we get the following result:
 
 ```
 ============================================================
@@ -67,3 +71,23 @@ score=0.5020 (251.0/500)
 ```
 
 As a reference, using NeMo-Aligner and NeMo-Skills (as is done in the [original OpenMathInstruct-2 paper](https://arxiv.org/abs/2410.01560)) to train and evaluate the same model on the same dataset achieves the same score of 0.5020 on MATH-500.
+
+### train
+We also trained a Llama-3.1-8B model for 10,000 steps on the full `train` version of the OpenMathInstruct-2 dataset. We obtain the following loss curve:
+
+![image](../assets/sft-openmathinstruct2-train-loss.png)
+
+Evaluating the checkpoint after 10,000 steps of training on MATH-500, we get the following result:
+
+```
+============================================================
+model_name='hf' dataset_name='MATH-500'
+max_new_tokens=2048 temperature=0.0 top_p=1.0 top_k=-1
+
+metric='pass@1' num_tests_per_prompt=1
+
+score=0.5800 (290.0/500)
+============================================================
+```
+
+Using NeMo-Aligner and NeMo-Skills to train the model in the same settings achieves a score of 0.5740 (287 / 500).
