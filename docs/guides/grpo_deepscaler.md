@@ -21,7 +21,7 @@ uv run examples/convert_dcp_to_hf.py --config=results/grpo-deepscaler-1.5b-8K/st
 
 Then when running the next command, we should use the HuggingFace checkpoint as the initial checkpoint. We train with 8K context window for 240 steps, 16K context window for 290 steps, and 24K context window for 50 steps. We run all experiments on a single 8XH100 80GB node or a single 8XA100 80GB node.
 
-## Evaluation Results
+## Training Curve
 When using the above commands, we get the following training curve:
 
 ![Training Performance](../assets/deepscaler_training_progress.png)
@@ -33,7 +33,7 @@ Throughout training, the checkpoints of the model will be saved to the `results`
 
 ```sh
 uv run examples/run_eval.py \
-    generation.model_name=results/grpo-deepscaler-1.5b-8K/step_290/hf
+    generation.model_name=results/grpo-deepscaler-1.5b-8K/step_240/hf
 ```
 
 Use `generation.model_name` to specify the path to the HuggingFace checkpoint. In addition, we use AIME24 as the validation dataset and calculate pass@1 on it throughout training.
