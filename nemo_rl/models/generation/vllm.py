@@ -32,6 +32,7 @@ from nemo_rl.models.generation.interfaces import (
     GenerationOutputSpec,
     verify_right_padding,
 )
+from nemo_rl.models.huggingface.common import ModelFlag
 
 
 class VllmSpecificArgs(TypedDict):
@@ -40,7 +41,6 @@ class VllmSpecificArgs(TypedDict):
     max_model_len: int
     # Additional arguments for vLLM inserted by nemo rl based on the context of when vllm is used
     skip_tokenizer_init: bool
-    load_format: str
 
 
 class VllmConfig(GenerationConfig):
@@ -180,10 +180,14 @@ class VllmGenerationWorker:
             # For non-TP mode, explicitly set executor to None to avoid Ray issues
             vllm_kwargs["distributed_executor_backend"] = None
 
+        load_format = self.cfg["vllm_cfg"]["load_format"]
+        if ModelFlag.VLLM_LOAD_FORMAT_AUTO.matches(self.model_name):
+            load_format = "auto"
+
         self.llm = vllm.LLM(
             model=self.model_name,
             # Training pipeline will set this to "dummy" and eval will load real weights using 'auto'
-            load_format=self.cfg["vllm_cfg"]["load_format"],
+            load_format=load_format,
             skip_tokenizer_init=self.cfg["vllm_cfg"]["skip_tokenizer_init"],
             tensor_parallel_size=self.cfg["vllm_cfg"]["tensor_parallel_size"],
             gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
