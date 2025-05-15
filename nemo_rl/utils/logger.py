@@ -619,7 +619,10 @@ class Logger(LoggerInterface):
     def log_plot_token_mult_prob_error(
         self, data: Dict[str, Any], step: int, name: str
     ) -> None:
-        """Log a plot of log probability samples.
+        """Log a plot of log probability errors in samples.
+        
+        This function logs & plots the per-token log-probabilities and errors over the sequence
+        for the sample with the highest multiplicative probability error in the batch.
 
         Args:
             log_data: Dictionary of log probability samples
