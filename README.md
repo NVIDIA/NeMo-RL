@@ -33,7 +33,7 @@ What you can expect:
 - **Comprehensive documentation** that is both detailed and user-friendly, with practical examples.
 
 ## 📣 News
-* [5/14/2025] [Reproduce DeepscaleR with NeMo RL!](docs/guides/grpo_deepscaler.md)
+* [5/14/2025] [Reproduce DeepscaleR with NeMo RL!](docs/guides/grpo-deepscaler.md)
 
 ## Features
 
