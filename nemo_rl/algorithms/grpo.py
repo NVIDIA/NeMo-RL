@@ -296,7 +296,13 @@ def refit_policy_generation(
     # do update
     for keys in split_keys:
         ipc_handles = policy.get_weights_ipc_handles(keys)
-        policy_generation.update_weights(ipc_handles)
+        if not policy_generation.update_weights(ipc_handles):
+            error_message = (
+                "❌ Error: Updating weights for the generation policy failed during refit.\n"
+                "This often indicates an issue with cuda-ipc or "
+                "a problem within the generation backend (e.g., vLLM worker).\n"
+            )
+            raise RuntimeError(error_message)
     policy.offload_after_refit()
     policy_generation.prepare_for_generation(tags=["kv_cache"])
 
