@@ -41,6 +41,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         tokenizer: AutoTokenizer,
         name_prefix: str = "hf_policy",
         workers_per_node: Optional[Union[int, List[int]]] = None,
+        bundle_indices_list: Optional[List[tuple]] = None,
         init_optimizer: bool = True,
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
@@ -75,7 +76,7 @@ class HfPolicy(PolicyInterface, GenerationInterface):
             cluster,
             worker_builder,
             name_prefix=name_prefix,
-            bundle_indices_list=node_bundle_indices,
+            bundle_indices_list=bundle_indices_list or node_bundle_indices,
         )
 
         if config["dynamic_batching"]["enabled"]:

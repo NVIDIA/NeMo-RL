@@ -20,10 +20,7 @@ import ray
 import torch
 
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
-from nemo_rl.distributed.virtual_cluster import (
-    PY_EXECUTABLES,
-    RayVirtualCluster,
-)
+from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES, RayVirtualCluster
 from nemo_rl.distributed.worker_groups import RayWorkerBuilder, RayWorkerGroup
 from nemo_rl.models.generation.interfaces import (
     GenerationConfig,
@@ -474,6 +471,7 @@ class VllmGeneration(GenerationInterface):
         config: VllmConfig,
         name_prefix: str = "vllm_policy",
         workers_per_node: Optional[Union[int, List[int]]] = None,
+        bundle_indices_list: Optional[List[tuple]] = None,
     ):
         """Initialize a vLLM policy with distributed workers."""
         # Store config
@@ -490,7 +488,6 @@ class VllmGeneration(GenerationInterface):
         )
 
         self.tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
-
         # Create worker builder for VllmGenerationWorker
         worker_builder = RayWorkerBuilder(VllmGenerationWorker, config)
 
@@ -511,6 +508,7 @@ class VllmGeneration(GenerationInterface):
                 worker_builder,
                 name_prefix=name_prefix,
                 workers_per_node=workers_per_node,
+                bundle_indices_list=bundle_indices_list,
             )
 
         # Number of data parallel groups is the number of tied worker groups
