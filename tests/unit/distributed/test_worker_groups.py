@@ -85,16 +85,6 @@ class MyTestActor:
 MY_TEST_ACTOR_FQN = f"{MyTestActor.__module__}.MyTestActor"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_ray_for_session():
-    if not ray.is_initialized():
-        # num_gpus=0 because tests don't require actual GPUs and it simplifies setup
-        ray.init(num_cpus=4, num_gpus=0, include_dashboard=False)
-    yield
-    if ray.is_initialized():
-        ray.shutdown()
-
-
 @pytest.fixture
 def register_test_actor(request):
     # Default to PY_EXECUTABLES.SYSTEM if no param is given
