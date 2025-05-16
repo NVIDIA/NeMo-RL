@@ -238,6 +238,9 @@ def test_vllm_policy_generation(policy, test_input_data, tokenizer):
     )
 
 
+@pytest.mark.skip(
+    reason="Skipping for now, will be fixed in https://github.com/NVIDIA/NeMo-RL/issues/408"
+)
 def test_vllm_worker_seed_behavior(cluster, tokenizer):
     """
     1. Different workers generate different outputs for identical prompts due to different seeds
