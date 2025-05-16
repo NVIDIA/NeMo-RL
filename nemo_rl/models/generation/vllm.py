@@ -202,6 +202,7 @@ class VllmGenerationWorker:
             worker_extension_cls="nemo_rl.models.generation.vllm_backend.VllmInternalWorkerExtension",
             enable_sleep_mode=True,
             disable_log_stats=True,
+            quantization='fp8',
             **vllm_kwargs,
         )
 

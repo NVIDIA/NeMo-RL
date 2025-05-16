@@ -37,9 +37,7 @@ version = {attr = "nemo_rl.__version__"}  # any module attribute compatible with
 readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.optional-dependencies]
-vllm = [
-    "vllm==0.8.4",
-]
+vllm = []
 
 [dependency-groups]
 build = [
