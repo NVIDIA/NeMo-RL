@@ -50,8 +50,6 @@ def _mute_output():
 
 @ray.remote
 class HFVerifyWorker:
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.SYSTEM
-
     def __init__(self):
         logging.getLogger("math_verify").setLevel(logging.CRITICAL)
 
@@ -101,14 +99,12 @@ class MathEnvironmentMetadata(TypedDict):
 
 @ray.remote
 class MathEnvironment(EnvironmentInterface):
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.SYSTEM
-
     def __init__(self, cfg: MathEnvConfig):
         self.cfg = cfg
         self.num_workers = cfg["num_workers"]
         self.workers = [
             HFVerifyWorker.options(
-                runtime_env={"py_executable": HFVerifyWorker.DEFAULT_PY_EXECUTABLE}
+                runtime_env={"py_executable": PY_EXECUTABLES.SYSTEM}
             ).remote()
             for _ in range(self.num_workers)
         ]

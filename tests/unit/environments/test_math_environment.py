@@ -17,6 +17,9 @@ import time
 import pytest
 import ray
 
+from nemo_rl.distributed.ray_actor_environment_registry import (
+    get_actor_python_env,
+)
 from nemo_rl.environments.math_environment import MathEnvironment
 
 
@@ -25,7 +28,9 @@ def math_env():
     """Create a MathEnvironment actor for testing."""
     env = MathEnvironment.options(
         runtime_env={
-            "py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE,
+            "py_executable": get_actor_python_env(
+                "nemo_rl.environments.math_environment.MathEnvironment"
+            ),
             "env_vars": dict(os.environ),
         }
     ).remote({"num_workers": 2})

@@ -34,9 +34,6 @@ from transformers.integrations.accelerate import find_tied_parameters
 from nemo_rl.algorithms.interfaces import LossFunction
 from nemo_rl.algorithms.loss_functions import LossType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
-from nemo_rl.distributed.virtual_cluster import (
-    PY_EXECUTABLES,
-)
 from nemo_rl.models.generation.interfaces import (
     GenerationDatumSpec,
     GenerationOutputSpec,
@@ -56,8 +53,6 @@ from nemo_rl.utils.native_checkpoint import (
 
 @ray.remote
 class FSDP1PolicyWorker:
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.BASE
-
     def __repr__(self):
         """Customizes the actor's prefix in the Ray logs.
 

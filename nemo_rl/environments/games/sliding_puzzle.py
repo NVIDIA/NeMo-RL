@@ -21,7 +21,6 @@ import torch
 
 from nemo_rl.data.interfaces import LLMMessageLogType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
-from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 from nemo_rl.environments.interfaces import (
     EnvironmentInterface,
     EnvironmentReturn,
@@ -341,7 +340,6 @@ class SlidingPuzzleRunner:
 
 @ray.remote
 class SlidingPuzzleEnv(EnvironmentInterface):
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.SYSTEM
     """Sliding Puzzle environment (Ray Actor)."""
 
     def __init__(self, cfg: Optional[SlidingPuzzleConfig] = None):

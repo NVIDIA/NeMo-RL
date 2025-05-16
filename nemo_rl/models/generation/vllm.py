@@ -21,7 +21,6 @@ import torch
 
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import (
-    PY_EXECUTABLES,
     RayVirtualCluster,
 )
 from nemo_rl.distributed.worker_groups import RayWorkerBuilder, RayWorkerGroup
@@ -49,8 +48,6 @@ class VllmConfig(GenerationConfig):
 
 @ray.remote
 class VllmGenerationWorker:
-    DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.VLLM
-
     def __repr__(self):
         """Customizes the actor's prefix in the Ray logs.
 
@@ -155,7 +152,8 @@ class VllmGenerationWorker:
             self.SamplingParams = vllm.SamplingParams
         except ImportError:
             raise ImportError(
-                "vLLM is not installed. Please check that VllmGenerationWorker.DEFAULT_PY_EXECUTABLE covers the vllm dependency. "
+                "vLLM is not installed. Please check that the py_executable in the runtime_env of VllmGenerationWorker "
+                "covers the vllm dependency. You may have to update nemo_rl/distributed/ray_actor_environment_registry.py. "
                 "If you are working interactively, you can install by running  `uv sync --extra vllm` anywhere in the repo."
             )
         vllm_kwargs = self.cfg.get("vllm_kwargs", {}).copy()
@@ -492,7 +490,9 @@ class VllmGeneration(GenerationInterface):
         self.tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
 
         # Create worker builder for VllmGenerationWorker
-        worker_builder = RayWorkerBuilder(VllmGenerationWorker, config)
+        worker_builder = RayWorkerBuilder(
+            "nemo_rl.models.generation.vllm.VllmGenerationWorker", config
+        )
 
         if self.tensor_parallel_size > 1:
             # For tensor parallelism, create node-aware worker groups
