@@ -60,7 +60,7 @@ What you can expect:
 
 Clone **NeMo RL**.
 ```sh
-git clone git@github.com:NVIDIA/NeMo-RL.git
+git clone git@github.com:NVIDIA/NeMo-RL.git nemo-rl
 cd nemo-rl
 ```
 
