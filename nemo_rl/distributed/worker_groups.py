@@ -85,6 +85,7 @@ class RayWorkerBuilder:
         self.ray_actor_class = ray_actor_class
         self.args = args
         self.kwargs = kwargs
+        self.actor_executable = None
 
     def __call__(
         self,
@@ -162,14 +163,10 @@ class RayWorkerBuilder:
             #  local venv first and then replace the py_executable with the local venv's python.
             #  The directory the venv will be created in is controlled by the env var
             #  NEMO_RL_VENV_DIR and defaults to $GIT_ROOT/venvs/.
-            unwrapped_cls = worker_class.__ray_actor_class__
-            venv_python = create_local_venv_on_each_node(
-                py_executable=options["runtime_env"]["py_executable"],
-                venv_name=f"{unwrapped_cls.__module__}.{unwrapped_cls.__name__}",
-            )
-            options["runtime_env"]["py_executable"] = venv_python
-            options["runtime_env"]["env_vars"]["VIRTUAL_ENV"] = venv_python
-            options["runtime_env"]["env_vars"]["UV_PROJECT_ENVIRONMENT"] = venv_python
+            assert self.actor_executable is not None, "Actor executable already set"
+            options["runtime_env"]["py_executable"] = self.actor_executable
+            options["runtime_env"]["env_vars"]["VIRTUAL_ENV"] = self.actor_executable
+            options["runtime_env"]["env_vars"]["UV_PROJECT_ENVIRONMENT"] = self.actor_executable
 
         return worker_class.options(**options).remote(*self.args, **worker_kwargs)
 
@@ -271,6 +268,18 @@ class RayWorkerGroup:
         self.master_address, self.master_port = (
             self.cluster.get_master_address_and_port()
         )
+
+        if hasattr(remote_worker_builder.ray_actor_class, "DEFAULT_PY_EXECUTABLE") and remote_worker_builder.ray_actor_class.DEFAULT_PY_EXECUTABLE.startswith("uv"):
+            # If the py_executable begins with uv it signals that we need to create a
+            #  local venv first and then replace the py_executable with the local venv's python.
+            #  The directory the venv will be created in is controlled by the env var
+            #  NEMO_RL_VENV_DIR and defaults to $GIT_ROOT/venvs/.
+            unwrapped_cls = remote_worker_builder.ray_actor_class.__ray_actor_class__
+            venv_python = create_local_venv_on_each_node(
+                py_executable=remote_worker_builder.ray_actor_class.DEFAULT_PY_EXECUTABLE,
+                venv_name=f"{unwrapped_cls.__module__}.{unwrapped_cls.__name__}",
+            )
+            remote_worker_builder.actor_executable = venv_python
 
         # Count total workers
         self.world_size = sum(len(indices) for _, indices in bundle_indices_list)

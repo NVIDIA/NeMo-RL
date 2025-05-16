@@ -106,8 +106,8 @@ def create_local_venv_on_each_node(py_executable: str, venv_name: str):
         "env_vars": {
             "VIRTUAL_ENV": "",
             "UV_PROJECT_ENVIRONMENT": "",
-            "NEMO_RL_VENV_DIR": os.environ.get("NEMO_RL_VENV_DIR", "/tmp/venvs"),
-        }
+            "NEMO_RL_VENV_DIR": os.environ.get("NEMO_RL_VENV_DIR", "/home/ray/venvs"),
+        },
     }
     # Launch one actor per node
     actors = [
