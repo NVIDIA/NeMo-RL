@@ -34,6 +34,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 from torch.utils.tensorboard import SummaryWriter
+from transformers import AutoTokenizer
 
 from nemo_rl.data.interfaces import LLMMessageLogType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
@@ -570,6 +571,63 @@ class Logger(LoggerInterface):
         """
         for logger in self.loggers:
             logger.log_hyperparams(params)
+
+    def log_conversations(
+        self,
+        batch_data: BatchedDataDict,
+        tokenizer: AutoTokenizer,
+        step: int,
+        prefix: Optional[str] = None,
+        jsonl_filename: Optional[str] = None,
+    ) -> None:
+        """Logs conversation data to W&B Table and/or a JSONL file."""
+        # Log to W&B Table
+        if self.wandb_logger:
+            try:
+                conversation_table = wandb.Table(
+                    columns=[
+                        "step",
+                        "sample_idx",
+                        "task_name",
+                        "conversation",
+                        "total_reward",
+                    ]
+                )
+                # Ensure necessary keys are present in batch_data
+                required_keys = ["message_log", "task_name", "total_reward"]
+                if not all(key in batch_data for key in required_keys):
+                    print(
+                        f"  ⚠️ Skipping W&B conversation logging: Batch data is missing one of {required_keys}"
+                    )
+                else:
+                    for i, conversation in enumerate(batch_data["message_log"]):
+                        task_name = batch_data["task_name"][i]
+                        total_reward = batch_data["total_reward"][i].items()
+
+                        conversation_table.add_data(
+                            step,
+                            i,
+                            task_name,
+                            tokenizer.apply_chat_template(
+                                conversation,
+                                tokenize=False,
+                                add_generation_prompt=False,
+                                add_special_tokens=False,
+                            ),
+                            total_reward,
+                        )
+                    self.wandb_logger.log_metrics(
+                        {"conversations": conversation_table}, step, prefix=prefix
+                    )
+
+            except Exception as e:
+                print(
+                    f"\n  ⚠️ Error logging conversations to W&B {prefix}/conversations table: {str(e)}"
+                )
+
+        # Log everything to JSONL file
+        if jsonl_filename:
+            self.log_batched_dict_as_jsonl(batch_data, jsonl_filename)
 
     def log_batched_dict_as_jsonl(
         self, to_log: BatchedDataDict | Dict[str, Any], filename: str

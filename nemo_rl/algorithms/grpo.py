@@ -350,7 +350,7 @@ def grpo_train(
             POLICY_GENERATION_STALE = False
         else:
             policy_generation.prepare_for_generation()
-        val_metrics, validation_timings = validate(
+        val_metrics, validation_timings, val_batch_data = validate(
             policy_generation,
             val_dataloader,
             tokenizer,
@@ -361,6 +361,15 @@ def grpo_train(
         policy_generation.finish_generation()
         logger.log_metrics(val_metrics, step, prefix="validation")
         logger.log_metrics(validation_timings, step, prefix="timing/validation")
+        logger.log_conversations(
+            batch_data=val_batch_data,
+            tokenizer=tokenizer,
+            step=step,
+            prefix="validation",
+            jsonl_filename=f"val_data_step{step}.jsonl"
+            if master_config["logger"]["tensorboard_enabled"]
+            else None,
+        )
 
     # Run grpo training (single-turn)
     batch: BatchedDataDict[DatumSpec]
@@ -513,7 +522,7 @@ def grpo_train(
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
-                val_metrics, validation_timings = validate(
+                val_metrics, validation_timings, val_batch_data = validate(
                     policy_generation,
                     val_dataloader,
                     tokenizer,
@@ -526,6 +535,15 @@ def grpo_train(
                     validation_timings, step + 1, prefix="timing/validation"
                 )
                 logger.log_metrics(val_metrics, step + 1, prefix="validation")
+                logger.log_conversations(
+                    batch_data=val_batch_data,
+                    tokenizer=tokenizer,
+                    step=step + 1,
+                    prefix="validation",
+                    jsonl_filename=f"val_data_step{step}.jsonl"
+                    if master_config["logger"]["tensorboard_enabled"]
+                    else None,
+                )
 
             ## Checkpointing
             consumed_samples += master_config["grpo"]["num_prompts_per_step"]
@@ -582,6 +600,17 @@ def grpo_train(
                 metrics[k] = np.sum(v).item()
         metrics.update(rollout_metrics)
 
+        # Log conversations to W&B Table
+        logger.log_conversations(
+            batch_data=repeated_batch,
+            tokenizer=tokenizer,
+            step=step + 1,
+            prefix="train",
+            jsonl_filename=f"train_data_step{step}.jsonl"
+            if master_config["logger"]["tensorboard_enabled"]
+            else None,
+        )
+
         timing_metrics = timer.get_timing_metrics(reduction_op="sum")
 
         print(f"  • Loss: {metrics['loss']:.4f}")
@@ -619,7 +648,7 @@ def validate(
     val_task_to_env: Dict[str, EnvironmentInterface],
     step: int,
     master_config: MasterConfig,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+) -> Tuple[Dict[str, Any], Dict[str, Any], BatchedDataDict]:
     """Run validation on the validation dataset."""
     if val_dataloader is None:
         print("  ⚠️ No validation dataloader provided, skipping validation")
@@ -632,6 +661,8 @@ def validate(
         total_rewards = []
         total_lengths = []
         all_message_logs = []  # Collect all message logs
+        # Accumulate validation conversations for logging
+        all_val_batches = []
 
         max_batches = (
             master_config["grpo"]["max_val_samples"]
@@ -662,6 +693,8 @@ def validate(
             )
             all_message_logs.extend(to_env)
 
+            all_val_batches.append(val_batch.get_dict())
+
         # Calculate validation metrics
         accuracy = sum(total_rewards) / len(total_rewards)
         avg_length = sum(total_lengths) / len(total_lengths)
@@ -690,6 +723,9 @@ def validate(
     timing_metrics = timer.get_timing_metrics(reduction_op="sum")
     validation_time = timing_metrics.get("total_validation_time", 0)
 
+    # Convert all_val_batches to BatchedDataDict
+    all_val_batches = BatchedDataDict.from_batches(all_val_batches)
+
     # Print summary of validation results
     print("\n📊 Validation Results:")
     print(f"    • Accuracy: {accuracy:.4f}")
@@ -704,4 +740,4 @@ def validate(
     # Make sure to reset the timer after validation
     timer.reset()
 
-    return val_metrics, timing_metrics
+    return val_metrics, timing_metrics, all_val_batches
