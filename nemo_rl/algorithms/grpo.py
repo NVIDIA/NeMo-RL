@@ -271,30 +271,23 @@ def setup(
 def refit_policy_generation(
     policy: PolicyInterface,
     policy_generation: GenerationInterface,
-    refit_buffer_size_gb: int,  # GB
+    refit_buffer_size_gb: int = None,
 ):
-    """Refit the policy generation interface with the latest policy weights."""
+    """Refit the policy_generation with the latest policy weights.
+
+    Args:
+        policy: The policy to provide weights to the inference engine.
+        policy_generation: The inference engine to refit.
+        refit_buffer_size_gb: The size of the buffer to use for refitting. If None, will compute by the remaining memory.
+    """
     policy.offload_before_refit()
     policy_generation.prepare_for_generation(tags=["weights"])
-    # Streaming update weights to save memory
-    state_dict_info = policy.prepare_weights_for_ipc()
-    # group keys to save time
-    available_bytes = refit_buffer_size_gb * (1024**3)
-    split_keys, keys = [], []
-    for key, size_in_bytes in state_dict_info:
-        if size_in_bytes > available_bytes:
-            if keys:
-                split_keys.append(keys)
-                keys = []
-            available_bytes = refit_buffer_size_gb * (1024**3)
-
-        keys.append(key)
-        available_bytes -= size_in_bytes
-
-    if len(keys) > 0:
-        split_keys.append(keys)
+    # get model param keys, which is grouped by size
+    grouped_param_keys = policy.prepare_weights_for_ipc(
+        refit_buffer_size_gb=refit_buffer_size_gb
+    )
     # do update
-    for keys in split_keys:
+    for keys in grouped_param_keys:
         ipc_handles = policy.get_weights_ipc_handles(keys)
         if not policy_generation.update_weights(ipc_handles):
             error_message = (
@@ -340,13 +333,12 @@ def grpo_train(
     consumed_samples = grpo_save_state["consumed_samples"]
     val_period = master_config["grpo"]["val_period"]
     val_at_start = master_config["grpo"]["val_at_start"]
-    refit_buffer_size_gb = master_config["policy"]["refit_buffer_size_gb"]
 
     # Run validation at the start if configured
     if val_at_start and step == 0:
         print("\n🔍 Running initial validation...")
         if NEED_REFIT and POLICY_GENERATION_STALE:
-            refit_policy_generation(policy, policy_generation, refit_buffer_size_gb)
+            refit_policy_generation(policy, policy_generation)
             POLICY_GENERATION_STALE = False
         else:
             policy_generation.prepare_for_generation()
@@ -389,11 +381,7 @@ def grpo_train(
             print(f"▶ Generating responses for batch of size {repeated_batch.size}...")
             with timer.time("prepare_for_generation"):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(
-                        policy,
-                        policy_generation,
-                        refit_buffer_size_gb,
-                    )
+                    refit_policy_generation(policy, policy_generation)
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
@@ -505,11 +493,7 @@ def grpo_train(
             # Run validation if it's a validation step
             if is_last_step or (val_period > 0 and (step + 1) % val_period == 0):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(
-                        policy,
-                        policy_generation,
-                        refit_buffer_size_gb,
-                    )
+                    refit_policy_generation(policy, policy_generation)
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
