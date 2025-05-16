@@ -12,12 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import tempfile
 from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
+from torchdata.stateful_dataloader import StatefulDataLoader
 
-from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.algorithms.utils import (
+    get_tokenizer,
+    log_metrics,
+    reduce_microbatch_metrics,
+    save_checkpoint,
+    setup_checkpointer,
+    setup_dataloaders,
+    validate_checkpointing_config,
+)
 from nemo_rl.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
+from nemo_rl.utils.checkpoint import CheckpointManager
 
 
 @pytest.fixture
@@ -126,3 +139,166 @@ def test_get_tokenizer_custom_jinja_template(conversation_messages):
     formatted = tokenizer.apply_chat_template(conversation_messages, tokenize=False)
     expected = get_format_with_simple_role_header(conversation_messages)
     assert formatted == expected
+
+
+@pytest.fixture
+def mock_checkpointer_config():
+    return {
+        "enabled": True,
+        "save_period": 100,
+        "checkpoint_dir": "test_checkpoints",
+        "keep_top_k": 3,
+        "metric_name": "validation_loss",
+        "higher_is_better": False,  # For loss metrics, lower is better
+    }
+
+
+@pytest.fixture
+def mock_algorithm_config():
+    return {
+        "val_period": 50,
+        "val_at_start": True,
+        "seed": 42,
+        "val_batch_size": 8,
+    }
+
+
+@pytest.fixture
+def mock_policy_config():
+    return {
+        "train_global_batch_size": 16,
+    }
+
+
+def test_setup_checkpointer(mock_checkpointer_config):
+    default_save_state = {"step": 0, "epoch": 0}
+
+    with patch("nemo_rl.utils.checkpoint.CheckpointManager") as mock_checkpoint_manager:
+        mock_checkpoint_manager.return_value.get_latest_checkpoint_path.return_value = (
+            None
+        )
+
+        checkpointer, last_checkpoint_path, save_state = setup_checkpointer(
+            mock_checkpointer_config, default_save_state
+        )
+
+        assert isinstance(checkpointer, CheckpointManager)
+        assert last_checkpoint_path is None
+        assert save_state == default_save_state
+
+
+def test_validate_checkpointing_config(mock_checkpointer_config, mock_algorithm_config):
+    # Test valid config
+    validate_checkpointing_config(mock_checkpointer_config, mock_algorithm_config)
+
+    # Test invalid config
+    invalid_config = mock_checkpointer_config.copy()
+    invalid_config["save_period"] = 75  # Not a multiple of val_period (50)
+
+    with pytest.raises(AssertionError):
+        validate_checkpointing_config(invalid_config, mock_algorithm_config)
+
+
+def test_setup_dataloaders(mock_algorithm_config, mock_policy_config):
+    # Create mock datasets
+    train_dataset = MagicMock()
+    train_dataset.__len__.return_value = 100
+    val_dataset = MagicMock()
+    val_dataset.__len__.return_value = 20
+
+    def mock_collate_fn(batch):
+        return batch
+
+    train_dataloader, val_dataloader = setup_dataloaders(
+        train_dataset,
+        val_dataset,
+        mock_collate_fn,
+        mock_algorithm_config,
+        mock_policy_config,
+    )
+
+    assert isinstance(train_dataloader, StatefulDataLoader)
+    assert isinstance(val_dataloader, StatefulDataLoader)
+    assert train_dataloader.batch_size == mock_policy_config["train_global_batch_size"]
+    assert val_dataloader.batch_size == mock_algorithm_config["val_batch_size"]
+
+
+def test_save_checkpoint(mock_checkpointer_config):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mock_checkpointer_config["checkpoint_dir"] = tmpdir
+        checkpointer = CheckpointManager(mock_checkpointer_config)
+        checkpointer.finalize_checkpoint = MagicMock()
+
+        master_config = {"model": "test"}
+        save_state = {"step": 100}
+        total_steps = 100
+        train_dataloader = MagicMock()
+        policy = MagicMock()
+        timer = MagicMock()
+        timer.time.return_value.__enter__.return_value = None
+
+        def mock_save(obj, path):
+            # Create an empty file at the specified path
+            with open(path, "w") as f:
+                f.write("")
+
+        with patch("torch.save", side_effect=mock_save):
+            save_checkpoint(
+                checkpointer,
+                master_config,
+                save_state,
+                total_steps,
+                train_dataloader,
+                policy,
+                timer,
+            )
+
+            # Verify policy.save_checkpoint was called
+            policy.save_checkpoint.assert_called_once()
+            # Verify train_dataloader state was saved in the tmp location
+            # in practice, this will be the actual checkpoint location,
+            # but we mocked the finalize_checkpoint fn to do nothing to avoid
+            # making this test too complex
+            assert os.path.exists(
+                os.path.join(tmpdir, "tmp_step_100/train_dataloader.pt")
+            )
+
+
+def test_reduce_microbatch_metrics():
+    metrics = {
+        "global_valid_seqs": [1, 2, 3],
+        "global_valid_toks": [4, 5, 6],
+        "loss": [0.1, 0.2, 0.3],
+        "accuracy": [0.8, 0.9, 1.0],
+    }
+
+    reduced = reduce_microbatch_metrics(metrics)
+
+    assert abs(reduced["global_valid_seqs"] - 2) < 1e-5  # Mean
+    assert abs(reduced["global_valid_toks"] - 5) < 1e-5  # Mean
+    assert abs(reduced["loss"] - 0.6) < 1e-5  # Sum
+    assert abs(reduced["accuracy"] - 2.7) < 1e-5  # Sum
+
+
+def test_log_metrics():
+    log_to_console = {"loss": 0.5, "accuracy": 0.9}
+    metrics = {"loss": 0.5, "accuracy": 0.9, "other_metric": 0.7}
+    timing_metrics = {
+        "total_step_time": 1.0,
+        "total_validation_time": 2.0,
+        "forward_time": 0.3,
+        "backward_time": 0.7,
+    }
+    step = 100
+    logger = MagicMock()
+
+    # Test training metrics
+    log_metrics(log_to_console, metrics, timing_metrics, step, logger, is_val=False)
+    logger.log_metrics.assert_any_call(metrics, step, prefix="train")
+    logger.log_metrics.assert_any_call(timing_metrics, step, prefix="timing/train")
+
+    # Test validation metrics
+    logger.reset_mock()
+    log_metrics(log_to_console, metrics, timing_metrics, step, logger, is_val=True)
+    logger.log_metrics.assert_any_call(metrics, step, prefix="validation")
+    logger.log_metrics.assert_any_call(timing_metrics, step, prefix="timing/validation")

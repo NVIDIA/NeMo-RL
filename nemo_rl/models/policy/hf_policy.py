@@ -13,6 +13,7 @@
 # limitations under the License.
 import os
 from collections import defaultdict
+from pathlib import Path
 from typing import List, Optional, Union
 
 import ray
@@ -39,17 +40,22 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         cluster: RayVirtualCluster,
         config: PolicyConfig,
         tokenizer: AutoTokenizer,
+        last_checkpoint_path: Optional[str] = None,
         name_prefix: str = "hf_policy",
         workers_per_node: Optional[Union[int, List[int]]] = None,
         init_optimizer: bool = True,
-        weights_path: Optional[str] = None,
-        optimizer_path: Optional[str] = None,
         init_reference_model: bool = True,
     ):
-        if weights_path:
-            weights_path = os.path.abspath(weights_path)
-        if optimizer_path:
-            optimizer_path = os.path.abspath(optimizer_path)
+        weights_path = (
+            os.path.abspath(Path(last_checkpoint_path) / "policy" / "weights")
+            if last_checkpoint_path
+            else None
+        )
+        optimizer_path = (
+            os.path.abspath(Path(last_checkpoint_path) / "policy" / "optimizer")
+            if last_checkpoint_path
+            else None
+        )
 
         node_bundle_indices = None
         self.tensor_parallel_size = 1

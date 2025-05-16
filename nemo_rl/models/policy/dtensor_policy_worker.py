@@ -29,7 +29,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.integrations.accelerate import find_tied_parameters
 
 from nemo_rl.algorithms.interfaces import LossFunction
-from nemo_rl.algorithms.loss_functions import LossType
+from nemo_rl.algorithms.types import LossType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import (
     PY_EXECUTABLES,
@@ -407,7 +407,6 @@ class DTensorPolicyWorker:
                     ## value when summing metrics across all microbatches
                     for k in loss_metrics.keys():
                         loss_metrics[k] /= num_global_batches
-                    num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
                     loss_metrics["global_valid_seqs"] = global_valid_seqs.item()
                     loss_metrics["global_valid_toks"] = global_valid_toks.item()
@@ -422,7 +421,7 @@ class DTensorPolicyWorker:
                         # but we want to sum them so we cancel out the average here
                         loss *= self.dp_size
                         loss.backward()
-                    if num_valid_samples > 0:
+                    if global_valid_seqs > 0:
                         mb_losses.append(loss.item())
                         all_mb_metrics.append(loss_metrics)
 
