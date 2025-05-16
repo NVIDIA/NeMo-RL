@@ -176,10 +176,9 @@ class RayWorkerBuilder:
                 #  local venv first and then replace the py_executable with the local venv's python.
                 #  The directory the venv will be created in is controlled by the env var
                 #  NEMO_RL_VENV_DIR and defaults to $GIT_ROOT/venvs/.
-                unwrapped_cls = worker_class.__ray_actor_class__
                 venv_python = create_local_venv(
                     py_executable=options["runtime_env"]["py_executable"],
-                    venv_name=f"{unwrapped_cls.__module__}.{unwrapped_cls.__name__}",
+                    venv_name=self.ray_actor_class_fqn,
                 )
                 options["runtime_env"]["py_executable"] = venv_python
             worker = worker_class.options(**options).remote(
@@ -237,7 +236,6 @@ class RayWorkerBuilder:
             #  local venv first and then replace the py_executable with the local venv's python.
             #  The directory the venv will be created in is controlled by the env var
             #  NEMO_RL_VENV_DIR and defaults to $GIT_ROOT/venvs/.
-            # unwrapped_cls = worker_class.__ray_actor_class__
             venv_python = create_local_venv(
                 py_executable=options["runtime_env"]["py_executable"],
                 venv_name=self.ray_actor_class_fqn,
@@ -673,8 +671,6 @@ class RayWorkerGroup:
                 try:
                     ray.kill(initializer)
                 except Exception as e:
-                    # Log or print, but don't let it mask original success status
-                    # We still want to know if the main worker shutdown failed.
                     print(f"Error killing initializer actor for a worker: {e}")
 
         # Clear worker lists
