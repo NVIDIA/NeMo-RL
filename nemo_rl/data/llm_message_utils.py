@@ -99,6 +99,7 @@ def get_keys_from_message_log(
     """Return a new LLMMessageLogType containing only the specified keys from each message.
 
     Args:
+        message_log: Original message log to extract keys from
         keys: List of keys to keep in each message
 
     Returns:

@@ -34,7 +34,6 @@ from nemo_rl.data.interfaces import (
 )
 from nemo_rl.data.llm_message_utils import (
     batched_message_log_to_flat_message,
-    get_keys_from_message_log,
 )
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import ClusterConfig, RayVirtualCluster
@@ -655,12 +654,7 @@ def validate(
 
             total_rewards.extend(rewards.tolist())
             total_lengths.append(gen_metrics["mean_gen_tokens_per_sample"])
-
-            # Collect message logs for later display
-            to_env = get_keys_from_message_log(
-                val_batch["message_log"], ["role", "content"]
-            )
-            all_message_logs.extend(to_env)
+            all_message_logs.extend(val_batch["message_log"])
 
         # Calculate validation metrics
         accuracy = sum(total_rewards) / len(total_rewards)
