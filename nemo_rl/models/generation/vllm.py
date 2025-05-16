@@ -441,10 +441,9 @@ class VllmGenerationWorker:
         """
         try:
             # Use collective_rpc to delegate to the UpdatableVllmInternalWorker implementation
-            self.llm.collective_rpc(
+            return self.llm.collective_rpc(
                 "update_weights_from_ipc_handles", args=(ipc_handles,)
-            )
-            return True
+            )[0]
         except Exception as e:
             print(f"Error updating weights: {e}")
             return False

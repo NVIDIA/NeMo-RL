@@ -73,11 +73,11 @@ score=0.5020 (251.0/500)
 As a reference, using NeMo-Aligner and NeMo-Skills (as is done in the [original OpenMathInstruct-2 paper](https://arxiv.org/abs/2410.01560)) to train and evaluate the same model on the same dataset achieves the same score of 0.5020 on MATH-500.
 
 ### train
-We also trained a Llama-3.1-8B model for 10,000 steps on the full `train` version of the OpenMathInstruct-2 dataset. We obtain the following loss curve:
+We also trained a Llama-3.1-8B model for 1 epoch on the full `train` version of the OpenMathInstruct-2 dataset. We obtain the following loss curve:
 
 ![image](../assets/sft-openmathinstruct2-train-loss.png)
 
-Evaluating the checkpoint after 10,000 steps of training on MATH-500, we get the following result:
+Evaluating the final checkpoint on MATH-500, we get the following result:
 
 ```
 ============================================================
@@ -86,8 +86,10 @@ max_new_tokens=2048 temperature=0.0 top_p=1.0 top_k=-1
 
 metric='pass@1' num_tests_per_prompt=1
 
-score=0.5800 (290.0/500)
+score=0.6220 (311.0/500)
 ============================================================
 ```
 
-Using NeMo-Aligner and NeMo-Skills to train the model in the same settings achieves a score of 0.5740 (287 / 500).
+Using NeMo-Aligner and NeMo-Skills to train the model in the same settings achieves a score of 0.6140 (307/500).
+
+As another point of reference, using a checkpoint after 10,000 steps of training using NeMo-RL achieves a score of 0.5800 (290.0/500).
