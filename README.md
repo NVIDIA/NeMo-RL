@@ -111,7 +111,7 @@ You can override any of the parameters listed in the yaml configuration file. Fo
 
 ```sh
 uv run python examples/run_grpo_math.py \
-  policy.model_name="meta-llama/Meta-Llama-3.2-1B-Instruct" \
+  policy.model_name="meta-llama/Llama-3.2-1B-Instruct" \
   checkpointing.checkpoint_dir="results/llama1b_math" \
   logger.wandb_enabled=True \
   logger.wandb.name="grpo-llama1b_math" \
