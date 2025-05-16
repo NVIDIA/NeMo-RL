@@ -107,7 +107,7 @@ def sliding_window_overwrite(model_name: str) -> dict:
     Returns:
         dict: Dictionary with overwrite values, or empty dict if no overwrites needed
     """
-    hf_config = AutoConfig.from_pretrained(model_name)
+    hf_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
     overwrite_dict = {}
 
     # Override sliding_window setting to address a HF mismatch relevant to use_sliding_window
