@@ -62,6 +62,17 @@ Clone **NeMo RL**.
 ```sh
 git clone git@github.com:NVIDIA/NeMo-RL.git nemo-rl
 cd nemo-rl
+
+# If you are using the Megatron backend, download the pinned versions of Megatron-LM and NeMo submodules 
+# by running:
+# git submodule update --init --recursive
+
+# Different branches of the repo can have different pinned versions of these third-party submodules. Ensure 
+# submodules are automatically updated after switching branches or pulling updates by configuring git with:
+# git config submodule.recurse true
+
+# **NOTE**: this setting will not download **new** or remove **old** submodules with the branch's changes.
+# You will have to run the full `git submodule update --init --recursive` command in these situations.
 ```
 
 Install `uv`.

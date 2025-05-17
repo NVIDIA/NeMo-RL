@@ -28,12 +28,14 @@ WORKDIR /opt/nemo-rl
 
 # First copy only the dependency files
 COPY pyproject.toml uv.lock ./
+COPY --link 3rdparty/ ./3rdparty/
 
 ENV UV_PROJECT_ENVIRONMENT=/opt/nemo_rl_venv
 ENV VIRTUAL_ENV=/opt/nemo_rl_venv
+ENV UV_LINK_MODE=copy
 
 # Create and activate virtual environment
-RUN <<"EOF"
+RUN <<"EOF" bash -exu
 uv venv /opt/nemo_rl_venv
 # uv sync has a more reliable resolver than simple uv pip install which can fail
 
@@ -42,6 +44,7 @@ uv venv /opt/nemo_rl_venv
 # Do everything in one layer to prevent large layers.
 
 uv sync --locked --extra vllm --no-install-project
+uv sync --locked --extra mcore --no-install-project --no-build-isolation 
 uv sync --locked --all-groups --no-install-project
 EOF
 

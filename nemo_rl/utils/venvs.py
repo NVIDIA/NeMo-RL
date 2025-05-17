@@ -75,6 +75,8 @@ def create_local_venv(py_executable: str, venv_name: str) -> str:
     # Command doesn't matter, since `uv` syncs the environment no matter the command.
     exec_cmd.extend(["echo", f"Finished creating venv {venv_path}"])
 
+    # Always run uv sync first to ensure the build requirements are set (for --no-build-isolation packages)
+    subprocess.run(["uv", "sync"], env=env, check=True)
     subprocess.run(exec_cmd, env=env, check=True)
 
     # Return the path to the python executable in the virtual environment
