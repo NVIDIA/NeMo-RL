@@ -198,7 +198,9 @@ def get_tokenizer(tokenizer_config: TokenizerConfig) -> AutoTokenizer:
         >>> assert formatted == " START: You are a helpful AI assistant. END. START: Hello! END."
         ```
     """
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_config["name"])
+    tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer_config["name"], trust_remote_code=True
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     if "chat_template" in tokenizer_config:

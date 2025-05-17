@@ -98,6 +98,7 @@ class FSDP1PolicyWorker:
             # Keeping the master weights in lower precision has shown to cause issues with convergence.
             # https://github.com/NVIDIA/NeMo-RL/issues/279 will fix the issue of CPU OOM for larger models.
             torch_dtype=torch.float32,
+            trust_remote_code=True,
             **sliding_window_overwrite(
                 model_name
             ),  # due to https://github.com/huggingface/transformers/issues/38002
@@ -110,6 +111,7 @@ class FSDP1PolicyWorker:
                 model_name,
                 device_map="cpu",  # load weights onto CPU initially
                 torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
+                trust_remote_code=True,
                 **sliding_window_overwrite(
                     model_name
                 ),  # due to https://github.com/huggingface/transformers/issues/38002
