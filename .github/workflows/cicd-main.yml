@@ -114,7 +114,7 @@ jobs:
           submodules: 'recursive'
       - name: Check lint
         run: |
-          pip install pre-commit
+          pip install pre-commit==3.6.0
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
 
