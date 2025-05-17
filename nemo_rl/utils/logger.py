@@ -27,6 +27,7 @@ import ray
 import requests
 import torch
 import wandb
+from matplotlib import pyplot as plt
 from prometheus_client.parser import text_string_to_metric_families
 from prometheus_client.samples import Sample
 from rich.box import ROUNDED
@@ -122,6 +123,15 @@ class TensorboardLogger(LoggerInterface):
         # Flatten the params because add_hparams does not support nested dicts
         self.writer.add_hparams(flatten_dict(params), {})
 
+    def log_plot(self, figure: plt.Figure, step: int, name: str) -> None:
+        """Log a plot to Tensorboard.
+
+        Args:
+            plot_data: Dictionary of plot data
+            step: Global step value
+        """
+        self.writer.add_figure(name, figure, step)
+
 
 class WandbLogger(LoggerInterface):
     """Weights & Biases logger backend."""
@@ -181,6 +191,15 @@ class WandbLogger(LoggerInterface):
             params: Dict of hyperparameters to log
         """
         self.run.config.update(params)
+
+    def log_plot(self, figure: plt.Figure, step: int, name: str) -> None:
+        """Log a plot to wandb.
+
+        Args:
+            figure: Matplotlib figure to log
+            step: Global step value
+        """
+        self.run.log({name: figure}, step=step)
 
 
 class GpuMetricSnapshot(TypedDict):
@@ -596,6 +615,73 @@ class Logger(LoggerInterface):
                 f.write(json.dumps({**sample, "idx": i}) + "\n")
 
         print(f"Logged data to {filepath}")
+
+    def log_plot_token_mult_prob_error(
+        self, data: Dict[str, Any], step: int, name: str
+    ) -> None:
+        """Log a plot of log probability errors in samples.
+
+        This function logs & plots the per-token log-probabilities and errors over the sequence
+        for the sample with the highest multiplicative probability error in the batch.
+
+        Args:
+            log_data: Dictionary of log probability samples
+            step: Global step value
+            name: Name of the plot
+        """
+        # find the sample with the highest log probability error
+        token_mask = data["token_mask"][:, 1:]
+        sample_mask = data["sample_mask"]
+        generation_logprobs = data["generation_logprobs"][:, 1:]
+        prev_logprobs = data["prev_logprobs"][:, 1:]
+        mask = token_mask * sample_mask.unsqueeze(-1)
+
+        diff = (generation_logprobs - prev_logprobs).abs() * token_mask
+        mask = token_mask * sample_mask.unsqueeze(-1)
+
+        mult_prob_error = (torch.exp(diff) * mask).sum(dim=-1) / mask.sum(dim=-1)
+
+        sample_idx = torch.argmax(mult_prob_error)
+        sample_error = mult_prob_error[sample_idx]
+
+        # plot the sample with the highest log probability error
+        # offset by 1 token for next token prediction
+        generation_start_idx, generation_end_idx = (
+            data["prompt_lengths"][sample_idx] - 1,
+            data["full_lengths"][sample_idx] - 1,
+        )
+
+        generation_logprob = generation_logprobs[
+            sample_idx, generation_start_idx:generation_end_idx
+        ]
+        prev_logprob = (
+            prev_logprobs[sample_idx, generation_start_idx:generation_end_idx]
+            * mask[sample_idx, generation_start_idx:generation_end_idx]
+        )
+        diff_i = diff[sample_idx, generation_start_idx:generation_end_idx]
+
+        fig, ax = plt.subplots()
+        step_idx = torch.arange(generation_start_idx, generation_end_idx)
+
+        ax.plot(step_idx, generation_logprob, label="logprob (inference engine)")
+        ax.plot(step_idx, prev_logprob, label="logprob (reference policy)")
+        ax.plot(step_idx, diff_i, label="abs logprob difference")
+
+        # Need to add annotation inside the plot area given title is not visible in wandb ui
+        ax.annotate(
+            f"token_mult_prob_error={sample_error:.4f}",
+            xy=(0.05, 0.05),
+            xycoords="axes fraction",
+        )
+
+        ax.set_xlabel("Token Position (starting from prompt end)")
+        ax.set_ylabel("Log Probability/Difference")
+        ax.legend()
+
+        for logger in self.loggers:
+            logger.log_plot(fig, step, name)
+
+        plt.close(fig)
 
     def __del__(self):
         """Clean up resources when the logger is destroyed."""
