@@ -52,7 +52,7 @@ class TEST_ASSETS:
         TEST_ASSETS_DIR, "tiny_qwen3_with_qwen3_tokenizer"
     )
     TINY_GEMMA3_MODEL_PATH = os.path.join(
-        _TEST_ASSETS_DIR, "tiny_gemma3_with_gemma3_tokenizer"
+        TEST_ASSETS_DIR, "tiny_gemma3_with_gemma3_tokenizer"
     )
 
 
