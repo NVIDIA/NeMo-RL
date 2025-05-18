@@ -29,31 +29,21 @@ from nemo_rl.algorithms.loss_functions import (
 from nemo_rl.algorithms.utils import calculate_baseline_and_std_per_prompt
 from nemo_rl.data import DataConfig
 from nemo_rl.data.datasets import AllTaskProcessedDataset, rl_collate_fn
-from nemo_rl.data.interfaces import (
-    DatumSpec,
-)
+from nemo_rl.data.interfaces import DatumSpec
 from nemo_rl.data.llm_message_utils import (
     batched_message_log_to_flat_message,
 )
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import ClusterConfig, RayVirtualCluster
-from nemo_rl.environments.interfaces import (
-    EnvironmentInterface,
-)
+from nemo_rl.environments.interfaces import EnvironmentInterface
 from nemo_rl.experience.rollouts import run_multi_turn_rollout
-from nemo_rl.models.generation.interfaces import (
-    GenerationInterface,
-)
+from nemo_rl.models.generation.interfaces import GenerationInterface
 from nemo_rl.models.generation.vllm import VllmGeneration
 from nemo_rl.models.interfaces import PolicyInterface
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.hf_policy import HfPolicy
 from nemo_rl.utils.checkpoint import CheckpointingConfig, CheckpointManager
-from nemo_rl.utils.logger import (
-    Logger,
-    LoggerConfig,
-    print_message_log_samples,
-)
+from nemo_rl.utils.logger import Logger, LoggerConfig, print_message_log_samples
 from nemo_rl.utils.timer import Timer
 
 # ===============================================================================
@@ -221,7 +211,20 @@ def setup(
         policy_generation = None
         print(f"  ✓ Using HF backend for generation with {policy_config['model_name']}")
     elif backend == "vllm":
-        policy_generation = VllmGeneration(cluster=cluster, config=generation_config)
+        # Get the placement from the master config if exist
+        bundle_indices_list = None
+        if "placement" in generation_config:
+            bundle_indices_list = [
+                (
+                    generation_config["placement"]["node"],
+                    generation_config["placement"]["gpus"],
+                )
+            ]
+        policy_generation = VllmGeneration(
+            cluster=cluster,
+            config=generation_config,
+            bundle_indices_list=bundle_indices_list,
+        )
         # Worker groups are not initialized until the first call to run something on workergroups.
         # vllm 0.8 fails in initialization if its called in the first training step since it has no clean view of the GPU memory (HF is sharing the same memory).
         policy_generation.finish_generation()
@@ -229,6 +232,37 @@ def setup(
             f"  ✓ Using vLLM backend for generation with {policy_config['model_name']}"
         )
 
+    # if we have LLM Judge, we need to initialize it
+
+    # ---------------------------------------------------------
+    # 1.  Judge vLLM engine (only if the YAML block is present)
+    # ---------------------------------------------------------
+    llm_judge_generation = None
+    if (
+        "llm_judge_generation" in master_config
+        and master_config["llm_judge_generation"]["backend"] == "vllm"
+    ):
+        llm_judge_cfg = master_config["llm_judge_generation"]
+        bundle_indices_list = None
+        if "placement" in llm_judge_cfg:
+            bundle_indices_list = [
+                (llm_judge_cfg["placement"]["node"], llm_judge_cfg["placement"]["gpus"])
+            ]
+        # Build the engine (tp_size==1 in your yaml)
+        llm_judge_generation = VllmGeneration(
+            cluster=cluster,
+            config=llm_judge_cfg,
+            name_prefix="vllm_judge",
+            bundle_indices_list=bundle_indices_list,
+        )
+        llm_judge_generation.finish_generation()  # preload weights
+
+        print(f"  ✓ Judge vLLM ready with {llm_judge_cfg['model_name']}")
+    bundle_indices_list = None
+    if "placement" in policy_config:
+        bundle_indices_list = [
+            (policy_config["placement"]["node"], policy_config["placement"]["gpus"])
+        ]
     policy = HfPolicy(
         cluster=cluster,
         config=policy_config,
@@ -240,6 +274,7 @@ def setup(
         if last_checkpoint_path
         else None,
         init_optimizer=True,
+        bundle_indices_list=bundle_indices_list,
     )
 
     loss_fn = ClippedPGLossFn(loss_config)
@@ -251,6 +286,7 @@ def setup(
     return (
         policy,
         policy_generation,
+        llm_judge_generation,
         cluster,
         dataloader,
         val_dataloader,
