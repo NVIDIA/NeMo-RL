@@ -25,8 +25,21 @@ sbatch \
     ray.sub
 ```
 
-Notes:
-* Some clusters may or may not need `--gres=gpu:8` to be added to the `sbatch` command.
+```{tip}
+Some Slurm clusters may or may not need `--gres=gpu:8` to be added to the `sbatch` command.
+```
+
+````{tip}
+The default number of CPUs assigned to each worker is `16 * GPUS_PER_NODE`. For users with a different
+number of CPUs per node, you may control this when launching via:
+
+```sh
+CPUS_PER_WORKER=64 \
+sbatch \
+    ... \
+    ray.sub
+```
+````
 
 Which will print the `SLURM_JOB_ID`:
 ```text
