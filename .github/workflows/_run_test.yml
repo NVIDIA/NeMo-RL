@@ -88,7 +88,7 @@ jobs:
               --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR \
               --volume /mnt/datadrive/TestData/nemo-rl/datasets:/opt/nemo-rl/datasets:ro \
               --volume /mnt/datadrive/TestData/nemo-rl/checkpoints:/home/TestData/nemo-rl/checkpoints:ro \
-              --volume /mnt/datadrive/TestData/nemo-rl/hf_home/hub:/home/TestData/nemo-rl/hf_home/hub \
+              --volume /mnt/datadrive/TestData/nemo-rl/hf_home_tmp/hub:/home/TestData/nemo-rl/hf_home/hub \
               --volume /mnt/datadrive/TestData/nemo-rl/hf_datasets_cache:/home/TestData/nemo-rl/hf_datasets_cache \
               nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }} \
               bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
