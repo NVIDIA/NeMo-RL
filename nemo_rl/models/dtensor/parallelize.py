@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from functools import lru_cache
 from typing import Callable, Union
 
 import torch
@@ -262,6 +263,7 @@ PARALLIZE_FUNCTIONS: dict[type[torch.nn.Module], Callable[..., torch.nn.Module]]
 }
 
 
+@lru_cache
 def translate_parallel_style(style: str):
     """Translate parallel style str to parallel type.
 
@@ -312,7 +314,30 @@ def get_hf_tp_plan(model):
             {f"{model_prefix}.{k}": v for k, v in inner_model._tp_plan.items()}
         )
 
-    hf_tp_plan = {k: translate_parallel_style(v) for k, v in hf_tp_plan.items()}
+    assert len(hf_tp_plan) > 0, (
+        f"Hugging Face tp plan is not supported for {model_cls}, please set dtensor_cfg.tensor_parallel_size to 1 or provide a custom parallel plan."
+    )
+
+    # hf tp plan not contain embed_tokens, we add it and set to rowwise_rep
+    if (
+        f"{model_prefix}.embed_tokens" not in hf_tp_plan
+        and not model.config.tie_word_embeddings
+    ):
+        hf_tp_plan[f"{model_prefix}.embed_tokens"] = "rowwise_rep"
+
+    for k, v in hf_tp_plan.items():
+        # speed up the tp plan for lm_head
+        if (
+            k == "lm_head"
+            and v == "colwise_rep"
+            and not model.config.tie_word_embeddings
+        ):
+            hf_tp_plan[k] = ColwiseParallel(
+                output_layouts=Shard(-1), use_local_output=False
+            )
+        else:
+            hf_tp_plan[k] = translate_parallel_style(v)
+
     return hf_tp_plan
 
 
