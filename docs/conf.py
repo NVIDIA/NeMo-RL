@@ -76,8 +76,8 @@ autodoc2_docstring_parser_regexes = [
 html_theme = "nvidia_sphinx_theme"
 html_theme_options = {
     "switcher": {
-      "json_url": "../versions1.json",
-      "version_match": release,
+        "json_url": "../versions1.json",
+        "version_match": release,
     }
 }
 html_extra_path = ["project.json", "versions1.json"]
