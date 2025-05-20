@@ -45,6 +45,7 @@ docker.md
 
 testing.md
 documentation.md
+debugging.md
 apidocs/index.rst
 ```
 
