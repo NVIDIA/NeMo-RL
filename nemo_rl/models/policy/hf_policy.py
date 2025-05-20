@@ -29,8 +29,6 @@ from nemo_rl.models.generation.interfaces import (
 )
 from nemo_rl.models.interfaces import PolicyInterface
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.dtensor_policy_worker import DTensorPolicyWorker
-from nemo_rl.models.policy.fsdp1_policy_worker import FSDP1PolicyWorker
 
 
 class HfPolicy(PolicyInterface, GenerationInterface):
@@ -55,11 +53,15 @@ class HfPolicy(PolicyInterface, GenerationInterface):
         self.tensor_parallel_size = 1
 
         if config["dtensor_cfg"]["enabled"]:
-            worker_builder_cls = DTensorPolicyWorker
+            worker_builder_cls = (
+                "nemo_rl.models.policy.dtensor_policy_worker.DTensorPolicyWorker"
+            )
             self.tensor_parallel_size = config["dtensor_cfg"]["tensor_parallel_size"]
             node_bundle_indices = self._get_tied_worker_bundle_indices(cluster)
         else:
-            worker_builder_cls = FSDP1PolicyWorker
+            worker_builder_cls = (
+                "nemo_rl.models.policy.fsdp1_policy_worker.FSDP1PolicyWorker"
+            )
 
         worker_builder = RayWorkerBuilder(
             worker_builder_cls,
