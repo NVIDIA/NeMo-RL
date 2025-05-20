@@ -44,24 +44,50 @@ class MultiWorkerFuture:
         worker group each worker belongs to, then selects only the first result from each group.
 
         Args:
-            worker_group: The RayWorkerGroup that created this bundle
+            worker_group: The RayWorkerGroup that spawned the futures.  The
+                mapping contained in worker_group.worker_to_tied_group_index
+                is required for the deduplication path.
 
         Returns:
             List of results, deduplicated by tied workers if respect_tied_workers is True
         """
-        # Basic case: Get all results
-        all_results = ray.get(self.futures)
+        from ray._raylet import ObjectRef, ObjectRefGenerator
 
-        # If we don't need to deduplicate by tied workers, return all results
+        # Flatten futures into a list of ObjectRefs
+        object_refs: list[ObjectRef] = []
+
+        # Map each ObjectRef back to the originating worker
+        ref_owner_indices: list[int] = []
+        has_generator = False
+
+        for idx, fut in enumerate(self.futures):
+            if isinstance(fut, ObjectRefGenerator):
+                # ray.get cannot be called directly on the generator object – it must be iterated to obtain the individual ObjectRef instances first.
+                for generated_ref in fut:
+                    object_refs.append(generated_ref)
+                    ref_owner_indices.append(self.used_workers[idx])
+                    has_generator = True
+            else:
+                object_refs.append(fut)
+                ref_owner_indices.append(self.used_workers[idx])
+
+        # Retrieve the concrete results.
+        all_results = ray.get(object_refs)
+
+        # If expanded generator was present we are in streaming mode.
+        # Every ObjectRef now corresponds to a unique, ordered chunk of data
+        if has_generator:
+            return all_results
+
         if not self.respect_tied_workers:
             return all_results
 
-        if not self.used_workers:
+        if not ref_owner_indices:
             return all_results
 
-        # Create tied worker sets based on used workers
+        # Create tied worker sets based on originating workers of each result
         active_tied_workers = {}
-        for i, worker_idx in enumerate(self.used_workers):
+        for i, worker_idx in enumerate(ref_owner_indices):
             tied_worker_idx = worker_group.worker_to_tied_group_index.get(worker_idx)
             if tied_worker_idx is None:
                 continue
@@ -149,6 +175,11 @@ class RayWorkerBuilder:
             placement_group_capture_child_tasks=True,
         )
         options["num_gpus"] = num_gpus
+
+        # Work-around for segmentation fault in `TaskEventBufferImpl::FlushEvents()` that can be triggered when the
+        # task-event stream is large.
+        options.setdefault("enable_task_events", False)
+
         # If the user hasn't specified a py_executable, use the worker class's default
         if not options.get("runtime_env", {}).get("py_executable", None) and hasattr(
             worker_class, "DEFAULT_PY_EXECUTABLE"

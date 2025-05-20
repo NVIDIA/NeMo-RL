@@ -51,6 +51,9 @@ class TEST_ASSETS:
     TINY_QWEN3_MODEL_PATH = os.path.join(
         _TEST_ASSETS_DIR, "tiny_qwen3_with_qwen3_tokenizer"
     )
+    TINY_GEMMA3_MODEL_PATH = os.path.join(
+        _TEST_ASSETS_DIR, "tiny_gemma3_with_gemma3_tokenizer"
+    )
 
 
 class UnitTestData(TypedDict):
@@ -488,6 +491,34 @@ def tiny_qwen3_model_path():
     )
     model = Qwen3ForCausalLM(config=config)
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
+    shutil.rmtree(model_path, ignore_errors=True)
+    model.save_pretrained(model_path)
+    tokenizer.save_pretrained(model_path)
+    del model, tokenizer
+    yield model_path
+
+
+@pytest.fixture(scope="session", autouse=True)
+def tiny_gemma3_model_path():
+    """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
+    import shutil
+
+    from transformers import AutoTokenizer, Gemma3ForCausalLM, Gemma3TextConfig
+
+    model_path = TEST_ASSETS.TINY_GEMMA3_MODEL_PATH
+    # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
+    # vocab_size=262144 so we can re-use gemma-3-1b tokenizer
+    config = Gemma3TextConfig(
+        num_hidden_layers=2,
+        hidden_size=64,
+        intermediate_size=32,
+        num_attention_heads=2,
+        vocab_size=262144,
+        tie_word_embeddings=True,
+        num_key_value_heads=2,
+    )
+    model = Gemma3ForCausalLM(config=config)
+    tokenizer = AutoTokenizer.from_pretrained("google/gemma-3-1b-it")
     shutil.rmtree(model_path, ignore_errors=True)
     model.save_pretrained(model_path)
     tokenizer.save_pretrained(model_path)

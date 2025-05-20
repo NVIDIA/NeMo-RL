@@ -1,6 +1,6 @@
 sft:
   max_num_epochs: 1
-  max_num_steps: 350
+  max_num_steps: 250
   val_period: 10
   val_batches: 8
   val_global_batch_size: 32
@@ -9,7 +9,7 @@ sft:
   seed: 42
 checkpointing:
   enabled: true
-  checkpoint_dir: results/sft-llama3.1-8b-instruct-1n8g-fsdp2tp2sp
+  checkpoint_dir: results/sft-llama3.1-8b-instruct-1n8g-fsdp1
   metric_name: val_loss
   higher_is_better: false
   keep_top_k: 3
@@ -26,12 +26,14 @@ policy:
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
   dtensor_cfg:
-    enabled: true
+    enabled: false
     cpu_offload: false
-    sequence_parallel: true
+    sequence_parallel: false
     activation_checkpointing: false
-    tensor_parallel_size: 2
-  make_sequence_length_divisible_by: 2
+    tensor_parallel_size: 1
+  dynamic_batching:
+    enabled: False
+  make_sequence_length_divisible_by: 1
   max_grad_norm: 1
   optimizer:
     name: torch.optim.AdamW
@@ -50,13 +52,13 @@ data:
   add_bos: true
   add_eos: true
 logger:
-  log_dir: logs/sft-llama3.1-8b-instruct-1n8g-fsdp2tp2sp
+  log_dir: logs/sft-llama3.1-8b-instruct-1n8g-fsdp1
   wandb_enabled: true
   tensorboard_enabled: true
   monitor_gpus: true
   wandb:
     project: nemo-rl
-    name: sft-llama3.1-8b-instruct-1n8g-fsdp2tp2sp
+    name: sft-llama3.1-8b-instruct-1n8g-fsdp1
   tensorboard:
     log_dir: tb_logs-sft-dev-squad
   gpu_monitoring:

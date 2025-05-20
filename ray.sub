@@ -183,7 +183,7 @@ monitor-sidecar &
 cat <<EOFINNER | tee /launch-worker.sh
 ray start --address "$ip_head" \
           --disable-usage-stats \
-          --resources="{\"worker_units\": $gpus_per_node}" \
+          --resources="{\"worker_units\": $gpus_per_node, \"slurm_managed_ray_cluster\": 1}" \
           --min-worker-port=${MIN_WORKER_PORT} \
           --max-worker-port=${MAX_WORKER_PORT} \
           \

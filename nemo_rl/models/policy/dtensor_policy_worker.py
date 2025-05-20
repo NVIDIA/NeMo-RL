@@ -29,6 +29,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.integrations.accelerate import find_tied_parameters
 
 from nemo_rl.algorithms.interfaces import LossFunction
+from nemo_rl.algorithms.loss_functions import LossType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import (
     PY_EXECUTABLES,
@@ -40,8 +41,13 @@ from nemo_rl.models.dtensor.parallelize import (
     get_logprobs_from_vocab_parallel_logits,
     to_local_if_dtensor,
 )
+from nemo_rl.models.huggingface.common import ModelFlag
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.utils import get_gpu_info, import_class_from_path
+from nemo_rl.models.policy.utils import (
+    get_gpu_info,
+    import_class_from_path,
+    sliding_window_overwrite,
+)
 from nemo_rl.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
@@ -83,17 +89,22 @@ def get_cpu_state_dict(
     for k, v in state_generator:
         val = to_local_if_dtensor(v)
 
-        cpu_tensor = torch.empty(
-            *val.shape, device="cpu", pin_memory=pin_memory, dtype=val.dtype
-        )
-        cpu_tensor.copy_(val, non_blocking=True)
-        new_state_dict[k] = cpu_tensor
+        if len(val.shape) == 0:
+            new_state_dict[k] = val.cpu()
+        else:
+            cpu_tensor = torch.empty(
+                *val.shape, device="cpu", pin_memory=pin_memory, dtype=val.dtype
+            )
+            cpu_tensor.copy_(val, non_blocking=True)
+            new_state_dict[k] = cpu_tensor
 
     torch.cuda.synchronize()
     return new_state_dict
 
 
-@ray.remote
+@ray.remote(
+    runtime_env={"env_vars": {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}}
+)
 class DTensorPolicyWorker:
     DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.BASE
 
@@ -130,6 +141,8 @@ class DTensorPolicyWorker:
             self.dtype = torch.float32
         elif self.cfg["precision"] == "bfloat16":
             self.dtype = torch.bfloat16
+        elif self.cfg["precision"] == "float16":
+            self.dtype = torch.float16
         else:
             raise ValueError(f"Unknown precision: {self.cfg['precision']}")
 
@@ -137,10 +150,19 @@ class DTensorPolicyWorker:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
+            # Always load the model in float32 to keep master weights in float32.
+            # Keeping the master weights in lower precision has shown to cause issues with convergence.
+            # https://github.com/NVIDIA/NeMo-RL/issues/279 will fix the issue of CPU OOM for larger models.
+            torch_dtype=torch.float32,
+            **sliding_window_overwrite(
+                model_name
+            ),  # due to https://github.com/huggingface/transformers/issues/38002
         )
         # caching since this property is not always preserved after FSDP
         self.num_tied_weights = len(find_tied_parameters(self.model))
+        self.skip_tie_check = os.environ.get(
+            "NRL_SKIP_TIED_WEIGHT_CHECK"
+        ) or ModelFlag.SKIP_DTENSOR_TIED_WEIGHTS_CHECK.matches(model_name)
 
         self.tokenizer = tokenizer
         # ------------------------------------------------
@@ -255,22 +277,31 @@ class DTensorPolicyWorker:
         mbs: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
-        skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
+        # Check if the model has tied weights
         if (
             self.num_tied_weights != 0
             and self.cfg["dtensor_cfg"]["tensor_parallel_size"] > 1
-            and not skip_tie_check
+            and not self.skip_tie_check
         ):
             raise ValueError(
-                f"Using dtensor policy with tp size {self.cfg['dtensor_cfg']['tensor_parallel_size']} for model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+                f"Using dtensor policy with tp size {self.cfg['dtensor_cfg']['tensor_parallel_size']} for model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/NeMo-RL/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )
-
         if gbs is None:
             gbs = self.cfg["train_global_batch_size"]
         if mbs is None:
             mbs = self.cfg["train_micro_batch_size"]
         local_gbs = gbs // self.dp_size
         dataset_size = data.get("input_ids").shape[0]
+        num_global_batches = dataset_size // local_gbs
+
+        # dim 1 is always assumed to be the sequence dim, sanity check this here
+        sequence_dim = 1
+        seq_dim_size = data.get("input_ids").shape[sequence_dim]
+        for k, v in data.items():
+            if torch.is_tensor(v) and len(v.shape) > 1:
+                assert v.shape[sequence_dim] == seq_dim_size, (
+                    f"Dim 1 must be the sequence dim, expected dim 1={seq_dim_size} but got shape {v.shape}"
+                )
 
         if eval_mode:
             ctx = torch.no_grad()
@@ -286,20 +317,52 @@ class DTensorPolicyWorker:
 
             losses = []
             all_mb_metrics = []
-            for gb_start in range(0, dataset_size, local_gbs):
+            for gb_idx, gb_start in enumerate(range(0, dataset_size, local_gbs)):
+                global_batch: BatchedDataDict = data.slice(
+                    gb_start, gb_start + local_gbs
+                )
+
+                assert "sample_mask" in global_batch, (
+                    "sample_mask must be present in the data!"
+                )
+                ## get the normalization factor for the loss
+                local_valid_seqs = torch.sum(global_batch["sample_mask"])
+
+                if not "token_mask" in global_batch:
+                    local_valid_toks = (
+                        local_valid_seqs * global_batch["input_ids"].shape[1]
+                    )
+                else:
+                    local_valid_toks = torch.sum(
+                        global_batch["token_mask"][:, 1:]
+                        * global_batch["sample_mask"].unsqueeze(-1)
+                    )
+
+                to_reduce = torch.tensor([local_valid_seqs, local_valid_toks]).cuda()
+                torch.distributed.all_reduce(to_reduce, group=self.dp_mesh.get_group())
+                global_valid_seqs, global_valid_toks = to_reduce[0], to_reduce[1]
+
+                if (
+                    hasattr(loss_fn, "loss_type")
+                    and loss_fn.loss_type == LossType.TOKEN_LEVEL
+                ):
+                    assert "token_mask" in global_batch, (
+                        "token_mask must be present in the data when using token-level loss"
+                    )
+
                 self.optimizer.zero_grad()
                 mb_losses = []
-
+                batch = data.get_batch(batch_idx=gb_idx, batch_size=local_gbs)
                 # Calculate number of microbatches to process
                 # make_microbatch_iterator assumes that the batch size is a multiple of the microbatch size
                 # so its safe to not check for the case where the last data slice is smaller than mbs
-                num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
+                if self.cfg["dynamic_batching"]["enabled"]:
+                    mb_iterator = batch.make_microbatch_iterator_with_dynamic_shapes()
+                else:
+                    mb_iterator = batch.make_microbatch_iterator(mbs)
 
-                for mb in data.slice(
-                    gb_start, gb_start + local_gbs
-                ).make_microbatch_iterator(mbs):
+                for mb in mb_iterator:
                     input_ids = mb.get("input_ids").cuda()
-
                     input_lengths = mb.get("input_lengths")
                     batch_size, seq_len = input_ids.shape
 
@@ -311,8 +374,6 @@ class DTensorPolicyWorker:
                         attention_mask[i, :length] = 1
 
                     with torch.autocast(device_type="cuda", dtype=self.dtype):
-                        batch_size, seq_len = input_ids.shape
-
                         attention_mask_input_all_ones = torch.ones(
                             (batch_size, seq_len),
                             dtype=torch.long,
@@ -335,17 +396,31 @@ class DTensorPolicyWorker:
                     else:
                         logits = outputs.logits
 
-                    loss, loss_metrics = loss_fn(logits, mb)
+                    # Divide logits by temperature
+                    if "generation" in self.cfg and self.cfg["generation"] is not None:
+                        logits.div_(self.cfg["generation"]["temperature"])
+
+                    loss, loss_metrics = loss_fn(
+                        logits, mb, global_valid_seqs, global_valid_toks
+                    )
+                    ## scale by the number of global batches so we get the correct
+                    ## value when summing metrics across all microbatches
+                    for k in loss_metrics.keys():
+                        loss_metrics[k] /= num_global_batches
                     num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
-                    # Backward pass
+                    loss_metrics["global_valid_seqs"] = global_valid_seqs.item()
+                    loss_metrics["global_valid_toks"] = global_valid_toks.item()
 
-                    # Loss is accumulated across microbatches so we need to scale by the number of microbatches
-                    loss = loss / num_microbatches
+                    # Backward pass
                     if not eval_mode:
                         ## NOTE: invalid samples should be multiplied
                         ## by zero in the loss function to prevent them
-                        ## from affecting the gradien
+                        ## from affecting the gradient calculation
+
+                        # when FSDP reduces the gradients over the DP dim, they're automatically averaged
+                        # but we want to sum them so we cancel out the average here
+                        loss *= self.dp_size
                         loss.backward()
                     if num_valid_samples > 0:
                         mb_losses.append(loss.item())
@@ -376,14 +451,16 @@ class DTensorPolicyWorker:
 
             # increment scheduler after all batches in rollout are processed
             self.scheduler.step()
+            # dynamic batch and sequence dims causes alot of fragmentation, so clear
+            # the memory allocator before moving on
+            torch.cuda.empty_cache()
 
             # Compute global loss across all ranks
             with torch.no_grad():
-                local_loss = torch.tensor(losses, device="cuda")
-                global_loss = torch.zeros_like(local_loss)
-                torch.distributed.all_reduce(local_loss, group=self.dp_mesh.get_group())
-                global_loss = local_loss / self.dp_size
-
+                global_loss = torch.tensor(losses, device="cuda")
+                torch.distributed.all_reduce(
+                    global_loss, group=self.dp_mesh.get_group()
+                )
             # Aggregate metrics across all microbatches
             mb_metrics = defaultdict(list)
             for m in all_mb_metrics:
@@ -392,7 +469,6 @@ class DTensorPolicyWorker:
 
             metrics = {
                 "global_loss": global_loss.cpu(),
-                "local_loss": local_loss.cpu(),
                 "grad_norm": grad_norm,
                 "rank": torch.distributed.get_rank(),
                 "all_mb_metrics": dict(mb_metrics),
@@ -401,7 +477,9 @@ class DTensorPolicyWorker:
             return metrics
 
     def get_logprobs(
-        self, data: BatchedDataDict, micro_batch_size: int = None
+        self,
+        data: BatchedDataDict,
+        micro_batch_size: int = None,
     ) -> BatchedDataDict:
         """Get the logprobs of the model for a batch of data.
 
@@ -420,19 +498,31 @@ class DTensorPolicyWorker:
             if micro_batch_size is not None
             else self.cfg["logprob_batch_size"]
         )
+
+        # dim 1 is always assumed to be the sequence dim, sanity check this here
+        sequence_dim = 1
+        seq_dim_size = data.get("input_ids").shape[sequence_dim]
+        for k, v in data.items():
+            if torch.is_tensor(v) and len(v.shape) > 1:
+                assert v.shape[sequence_dim] == seq_dim_size, (
+                    f"Dim 1 must be the sequence dim, expected dim 1={seq_dim_size} but got shape {v.shape}"
+                )
+
         all_log_probs = []
         self.model.eval()
 
         with unshard_fsdp2_model(self.model), torch.no_grad():
             data.to("cuda")
-            for lp_batch in data.make_microbatch_iterator(logprob_batch_size):
-                input_ids = lp_batch.get("input_ids")
+            if self.cfg["dynamic_batching"]["enabled"]:
+                mb_iterator = data.make_microbatch_iterator_with_dynamic_shapes()
+            else:
+                mb_iterator = data.make_microbatch_iterator(logprob_batch_size)
 
-                batch_size, seq_len = input_ids.shape
-
-                # Create attention mask
+            for lp_batch in mb_iterator:
+                input_ids = lp_batch.get("input_ids").cuda()
                 input_lengths = lp_batch.get("input_lengths")
 
+                batch_size, seq_len = input_ids.shape
                 # Create attention mask for right-padded data
                 attention_mask = torch.zeros(
                     (batch_size, seq_len), dtype=torch.long, device=input_ids.device
@@ -495,7 +585,16 @@ class DTensorPolicyWorker:
 
         # Concatenate all batches
         return_data = BatchedDataDict()
-        return_data["logprobs"] = torch.cat(all_log_probs, dim=0).cpu()
+
+        all_log_probs_padded = []
+        for lp in all_log_probs:
+            padding_needed = seq_dim_size - lp.shape[1]
+            if padding_needed > 0:
+                lp = torch.nn.functional.pad(
+                    lp, (0, padding_needed), mode="constant", value=0.0
+                )
+            all_log_probs_padded.append(lp)
+        return_data["logprobs"] = torch.cat(all_log_probs_padded, dim=0).cpu()
 
         return return_data
 

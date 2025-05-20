@@ -133,12 +133,13 @@ jobs:
   build-container:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     needs: [pre-flight]
-    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
+    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.30.0
     with:
       build-ref: ${{ github.sha }}
       image-name: nemo_rl_container
       dockerfile: docker/Dockerfile
       image-label: nemo-rl
+      target: hermetic
       build-args: |
         MAX_JOBS=32
         NEMO_RL_COMMIT=${{ github.sha }}
@@ -154,7 +155,7 @@ jobs:
       UNIT_TEST_SCRIPT: |
         cd /opt/nemo-rl
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
-          uv run --no-sync bash -x ./tests/run_unit.sh
+          uv run --no-sync bash -x ./tests/run_unit.sh --cov=nemo_rl --cov-report=term --cov-report=json
         else
           echo Skipping unit tests for docs-only level
         fi

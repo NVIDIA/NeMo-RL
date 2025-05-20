@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import contextlib
+import io
+import logging
 from typing import Dict, List, Optional, Tuple, TypedDict
 
 import ray
@@ -35,9 +38,32 @@ class MathEnvConfig(TypedDict):
     stop_strings: Optional[List[str]] = None  # Default stop strings for this env
 
 
+@contextlib.contextmanager
+def _mute_output():
+    devnull_out, devnull_err = io.StringIO(), io.StringIO()
+    with (
+        contextlib.redirect_stdout(devnull_out),
+        contextlib.redirect_stderr(devnull_err),
+    ):
+        yield
+
+
 @ray.remote
 class HFVerifyWorker:
     DEFAULT_PY_EXECUTABLE = PY_EXECUTABLES.SYSTEM
+
+    def __init__(self):
+        logging.getLogger("math_verify").setLevel(logging.CRITICAL)
+
+        # Use Latex and plain math extraction from predictions
+        # https://github.com/huggingface/Math-Verify?tab=readme-ov-file#extraction-targets
+        self.verify_func = math_metric(
+            gold_extraction_target=(LatexExtractionConfig(),),
+            pred_extraction_target=(
+                ExprExtractionConfig(),
+                LatexExtractionConfig(),
+            ),
+        )
 
     def verify(
         self, pred_responses: List[str], ground_truths: List[str]
@@ -54,25 +80,18 @@ class HFVerifyWorker:
         results = []
         for response, ground_truth in zip(pred_responses, ground_truths):
             try:
-                # Use Latex and plain math extraction from predictions
-                # https://github.com/huggingface/Math-Verify?tab=readme-ov-file#extraction-targets
-                verify_func = math_metric(
-                    gold_extraction_target=(LatexExtractionConfig(),),
-                    pred_extraction_target=(
-                        ExprExtractionConfig(),
-                        LatexExtractionConfig(),
-                    ),
-                )
-
                 ground_truth_parsable = "\\boxed{" + ground_truth + "}"
-                try:
-                    ret_score, _ = verify_func([ground_truth_parsable], [response])
-                except Exception:
-                    ret_score = 0.0
+                with _mute_output():
+                    try:
+                        ret_score, _ = self.verify_func(
+                            [ground_truth_parsable], [response]
+                        )
+                    except Exception:
+                        ret_score = 0.0
 
                 results.append(float(ret_score))
             except Exception:
-                results.append(0)
+                results.append(0.0)
         return results
 
 

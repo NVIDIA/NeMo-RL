@@ -32,6 +32,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.integrations.accelerate import find_tied_parameters
 
 from nemo_rl.algorithms.interfaces import LossFunction
+from nemo_rl.algorithms.loss_functions import LossType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import (
     PY_EXECUTABLES,
@@ -42,7 +43,11 @@ from nemo_rl.models.generation.interfaces import (
     verify_right_padding,
 )
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.utils import get_gpu_info, import_class_from_path
+from nemo_rl.models.policy.utils import (
+    get_gpu_info,
+    import_class_from_path,
+    sliding_window_overwrite,
+)
 from nemo_rl.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
@@ -89,7 +94,13 @@ class FSDP1PolicyWorker:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="cpu",  # load weights onto CPU initially
-            torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
+            # Always load the model in float32 to keep master weights in float32.
+            # Keeping the master weights in lower precision has shown to cause issues with convergence.
+            # https://github.com/NVIDIA/NeMo-RL/issues/279 will fix the issue of CPU OOM for larger models.
+            torch_dtype=torch.float32,
+            **sliding_window_overwrite(
+                model_name
+            ),  # due to https://github.com/huggingface/transformers/issues/38002
         )
         # caching since this property is not always preserved after FSDP
         self.num_tied_weights = len(find_tied_parameters(self.model))
@@ -99,6 +110,9 @@ class FSDP1PolicyWorker:
                 model_name,
                 device_map="cpu",  # load weights onto CPU initially
                 torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
+                **sliding_window_overwrite(
+                    model_name
+                ),  # due to https://github.com/huggingface/transformers/issues/38002
             )
         else:
             self.reference_model = None
@@ -231,7 +245,7 @@ class FSDP1PolicyWorker:
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
         if self.num_tied_weights != 0 and not skip_tie_check:
             raise ValueError(
-                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/nemo-rl/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
+                f"Using FSP1 with a model ({self.cfg['model_name']}) that has tied weights (num_tied_weights={self.num_tied_weights}) is not supported (https://github.com/NVIDIA/NeMo-RL/issues/227). Please use dtensor policy with tensor parallel == 1 instead."
             )
 
         if gbs is None:
@@ -240,6 +254,7 @@ class FSDP1PolicyWorker:
             mbs = self.cfg["train_micro_batch_size"]
         local_gbs = gbs // torch.distributed.get_world_size()
         dataset_size = data.get("input_ids").shape[0]
+        num_global_batches = dataset_size // local_gbs
 
         if eval_mode:
             ctx = torch.no_grad()
@@ -256,6 +271,38 @@ class FSDP1PolicyWorker:
             losses = []
             all_mb_metrics = []
             for gb_start in range(0, dataset_size, local_gbs):
+                global_batch: BatchedDataDict = data.slice(
+                    gb_start, gb_start + local_gbs
+                )
+
+                assert "sample_mask" in global_batch, (
+                    "sample_mask must be present in the data!"
+                )
+                ## get the normalization factor for the loss
+                local_valid_seqs = torch.sum(global_batch["sample_mask"])
+
+                if not "token_mask" in global_batch:
+                    local_valid_toks = (
+                        local_valid_seqs * global_batch["input_ids"].shape[1]
+                    )
+                else:
+                    local_valid_toks = torch.sum(
+                        global_batch["token_mask"][:, 1:]
+                        * global_batch["sample_mask"].unsqueeze(-1)
+                    )
+
+                to_reduce = torch.tensor([local_valid_seqs, local_valid_toks]).cuda()
+                torch.distributed.all_reduce(to_reduce)
+                global_valid_seqs, global_valid_toks = to_reduce[0], to_reduce[1]
+
+                if (
+                    hasattr(loss_fn, "loss_type")
+                    and loss_fn.loss_type == LossType.TOKEN_LEVEL
+                ):
+                    assert "token_mask" in global_batch, (
+                        "token_mask must be present in the data when using token-level loss"
+                    )
+
                 self.optimizer.zero_grad()
                 mb_losses = []
 
@@ -264,9 +311,7 @@ class FSDP1PolicyWorker:
                 # so its safe to not check for the case where the last data slice is smaller than mbs
                 num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
 
-                for mb in data.slice(
-                    gb_start, gb_start + local_gbs
-                ).make_microbatch_iterator(mbs):
+                for mb in global_batch.make_microbatch_iterator(mbs):
                     input_ids = mb.get("input_ids")
 
                     input_lengths = mb.get("input_lengths")
@@ -290,18 +335,31 @@ class FSDP1PolicyWorker:
                         else:
                             logits = outputs.logits
 
-                    loss, loss_metrics = loss_fn(logits, mb)
+                    # Divide logits by temperature
+                    if "generation" in self.cfg and self.cfg["generation"] is not None:
+                        logits.div_(self.cfg["generation"]["temperature"])
+
+                    loss, loss_metrics = loss_fn(
+                        logits, mb, global_valid_seqs, global_valid_toks
+                    )
+                    ## scale by the number of global batches so we get the correct
+                    ## value when summing metrics across all microbatches
+                    for k in loss_metrics.keys():
+                        loss_metrics[k] /= num_global_batches
                     num_valid_samples = loss_metrics["num_valid_samples"]
                     loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
+                    loss_metrics["global_valid_seqs"] = global_valid_seqs.item()
+                    loss_metrics["global_valid_toks"] = global_valid_toks.item()
 
                     # Backward pass
-
-                    # Loss is accumulated across microbatches, so we need to scale by the number of microbatches
-                    loss = loss / num_microbatches
                     if not eval_mode:
                         ## NOTE: invalid samples should be multiplied
                         ## by zero in the loss function to prevent them
-                        ## from affecting the gradient
+                        ## from affecting the gradient calculation
+
+                        # when FSDP reduces the gradients over the DP dim, they're automatically averaged
+                        # but we want to sum them so we cancel out the average here
+                        loss *= torch.distributed.get_world_size()
                         loss.backward()
                     if num_valid_samples > 0:
                         mb_losses.append(loss.item())
@@ -332,10 +390,8 @@ class FSDP1PolicyWorker:
 
             # Compute global loss across all ranks
             with torch.no_grad():
-                local_loss = torch.tensor(losses, device="cuda")
-                global_loss = torch.zeros_like(local_loss)
-                torch.distributed.all_reduce(local_loss)
-                global_loss = local_loss / torch.distributed.get_world_size()
+                global_loss = torch.tensor(losses, device="cuda")
+                torch.distributed.all_reduce(global_loss)
 
             # Aggregate metrics across all microbatches
             mb_metrics = defaultdict(list)
@@ -345,7 +401,6 @@ class FSDP1PolicyWorker:
 
             metrics = {
                 "global_loss": global_loss.cpu(),
-                "local_loss": local_loss.cpu(),
                 "grad_norm": grad_norm,
                 "rank": torch.distributed.get_rank(),
                 "all_mb_metrics": dict(mb_metrics),

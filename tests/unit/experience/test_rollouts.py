@@ -205,6 +205,7 @@ base_hf_test_config: PolicyConfig = {
         },
     },
     "dtensor_cfg": {"enabled": False},
+    "dynamic_batching": {"enabled": False},
 }
 
 base_vllm_test_config: VllmConfig = {
@@ -220,6 +221,7 @@ base_vllm_test_config: VllmConfig = {
     "stop_token_ids": None,
     "stop_strings": None,
     "vllm_cfg": {
+        "precision": "bfloat16",
         "tensor_parallel_size": 1,
         "max_model_len": 2048,
         "disable_log_stats": True,

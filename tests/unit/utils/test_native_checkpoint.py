@@ -29,13 +29,13 @@ from nemo_rl.utils.native_checkpoint import (
     load_checkpoint,
     save_checkpoint,
 )
-from tests.unit.test_utils import simple_loss
+from tests.unit.test_utils import SimpleLoss
 
 # Define basic test config
 simple_policy_config = {
-    "model_name": "meta-llama/Llama-3.2-1B",  # "hf-internal-testing/tiny-random-Gemma3ForCausalLM",
+    "model_name": "Qwen/Qwen3-0.6B",  # "hf-internal-testing/tiny-random-Gemma3ForCausalLM",
     "tokenizer": {
-        "name": "meta-llama/Llama-3.2-1B",
+        "name": "Qwen/Qwen3-0.6B",
     },
     "train_global_batch_size": 4,
     "train_micro_batch_size": 1,
@@ -60,7 +60,13 @@ simple_policy_config = {
         "activation_checkpointing": False,
         "tensor_parallel_size": 1,
     },
+    "dynamic_batching": {
+        "enabled": False,
+    },
     "max_grad_norm": 1.0,
+    "generation": {
+        "temperature": 1.0,
+    },
 }
 
 
@@ -296,9 +302,10 @@ def test_convert_dcp_to_hf(policy, num_gpus):
             "input_lengths": input_lengths,
             "attention_mask": attention_mask,
             "labels": torch.randint(0, 16000, (4, 128)),
+            "sample_mask": torch.ones(input_ids.shape[0]),
         }
     )
-    policy.train(dummy_fwd_dict, simple_loss)
+    policy.train(dummy_fwd_dict, SimpleLoss())
 
     with TemporaryDirectory() as tmp_dir:
         policy.save_checkpoint(
@@ -319,7 +326,7 @@ def test_convert_dcp_to_hf(policy, num_gpus):
             os.path.join(tmp_dir, "test_hf_and_dcp-hf-offline"),
             simple_policy_config["model_name"],
             # TODO: After the following PR gets merged:
-            # https://github.com/NVIDIA/nemo-rl/pull/148/files
+            # https://github.com/NVIDIA/NeMo-RL/pull/148/files
             # tokenizer should be copied from policy/tokenizer/* instead of relying on the model name
             # We can expose a arg at the top level --tokenizer_path to plumb that through.
             # This is more stable than relying on the current NeMo-RL get_tokenizer() which can

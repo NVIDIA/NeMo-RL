@@ -38,7 +38,7 @@ readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.optional-dependencies]
 vllm = [
-    "vllm==0.8.4",
+    "vllm==0.8.5",
 ]
 
 [dependency-groups]
@@ -64,6 +64,7 @@ test = [
     "pytest>=7.0.0",
     "pytest-timeout",
     "pytest-cov",
+    "pytest-asyncio",
 ]
 
 
@@ -79,7 +80,7 @@ exclude = '''
 '''
 
 [tool.pytest.ini_options]
-addopts = "--cov=nemo_rl --cov-report=term --cov-report=json -s -rA -x"
+addopts = "--durations=15 -s -rA -x"
 testpaths = ["tests"]
 python_files = "test_*.py"
 
