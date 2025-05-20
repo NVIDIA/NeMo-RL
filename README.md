@@ -38,6 +38,7 @@ What you can expect:
 
 ## Features
 
+
 ✅ _Available now_ | 🔜 _Coming in v0.3_
 
 - ✅ **Fast Generation** - vLLM backend for optimized inference.

@@ -14,18 +14,11 @@
 name: Validate PR title
 
 on:
-  pull_request_target:
-    types:
-      - opened
-      - edited
-      - synchronize
-      - reopened
   pull_request:
-    types:
-      - opened
-      - edited
-      - synchronize
-      - reopened
+    branches:
+      - "main"
+      - "r**"
+    types: [labeled, opened, synchronize, reopened]
 
 defaults:
   run:
@@ -36,5 +29,4 @@ permissions:
 
 jobs:
   semantic-pull-request:
-    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_semantic_pull_request.yml@v0.13.0
-    
+    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_semantic_pull_request.yml@bdba422c37285bbefa53110e6a9baf269f64669d
