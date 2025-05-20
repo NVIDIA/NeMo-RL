@@ -1,0 +1,6 @@
+# GRPO Algorithm Configuration
+defaults: "grpo_math_1B.yaml"
+
+env:
+  ifeval:
+    num_workers: 8
