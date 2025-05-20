@@ -80,3 +80,4 @@ html_theme_options = {
       "version_match": release,
     }
 }
+html_extra_path = ["project.json", "versions1.json"]
