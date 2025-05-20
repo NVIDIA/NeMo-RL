@@ -74,3 +74,9 @@ autodoc2_docstring_parser_regexes = [
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "nvidia_sphinx_theme"
+html_theme_options = {
+    "switcher": {
+      "json_url": "../versions1.json",
+      "version_match": release,
+    }
+}
