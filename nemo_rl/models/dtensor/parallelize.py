@@ -394,13 +394,22 @@ def _parallelize_model(
 
         # first use user's custom parallel plan
         if custom_parallel_plan is not None:
-            model_parallel_plan = import_class_from_path(custom_parallel_plan)
-            if isinstance(model_parallel_plan, FunctionType):
-                model_parallel_plan = model_parallel_plan()
-            assert isinstance(model_parallel_plan, dict), (
-                "custom_parallel_plan must be a path that points to a dict or a function that returns a dict"
-            )
-            print(f"Using custom parallel plan.")
+            if isinstance(custom_parallel_plan, dict):
+                model_parallel_plan = custom_parallel_plan
+            else:
+                try:
+                    model_parallel_plan = import_class_from_path(custom_parallel_plan)
+                    if isinstance(model_parallel_plan, FunctionType):
+                        model_parallel_plan = model_parallel_plan()
+                    assert isinstance(model_parallel_plan, dict)
+                except:
+                    raise ValueError(
+                        f"Your custom parallel plan is `{custom_parallel_plan}` which is not valid. Please ensure it is one of the following:\n"
+                        "1. A dictionary\n"
+                        "2. A path to a dictionary\n"
+                        "3. A path to a function that returns a dictionary"
+                    )
+            print("Using custom parallel plan.")
 
         # second use our optimized parallel plan
         elif model_cls in PARALLIZE_FUNCTIONS:
@@ -408,7 +417,7 @@ def _parallelize_model(
             try:
                 func = PARALLIZE_FUNCTIONS[model_cls]
                 model_parallel_plan = func(model, sequence_parallel)
-                print(f"Using optimized parallel plan.")
+                print("Using optimized parallel plan.")
             # fall back to the HF tp plan
             except Exception as e:
                 print(
