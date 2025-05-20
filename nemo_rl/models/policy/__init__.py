@@ -23,7 +23,7 @@ class DTensorConfig(TypedDict):
     sequence_parallel: bool
     activation_checkpointing: bool
     tensor_parallel_size: int
-    custom_parallel_plan: dict
+    custom_parallel_plan: str
 
 
 class TokenizerConfig(TypedDict):

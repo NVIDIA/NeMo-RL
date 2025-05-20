@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from functools import lru_cache
+from types import FunctionType
 from typing import Callable, Union
 
 import torch
@@ -40,6 +41,7 @@ from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
 from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM
 
 from nemo_rl.distributed.model_utils import from_parallel_logits_to_logprobs
+from nemo_rl.models.policy.utils import import_class_from_path
 
 
 class RotaryEmbedParallel(SequenceParallel):
@@ -349,7 +351,7 @@ def _parallelize_model(
     sequence_parallel: bool = False,
     activation_checkpointing: bool = False,
     cpu_offload: bool = False,
-    custom_parallel_plan: dict = None,
+    custom_parallel_plan: Union[dict, str] = None,
 ):
     """Parallelize a model using DTensor.
 
@@ -361,6 +363,10 @@ def _parallelize_model(
         sequence_parallel (bool, optional): Whether to use sequence parallelism. Defaults to False.
         activation_checkpointing (bool, optional): Whether to use activation checkpointing. Defaults to False.
         cpu_offload (bool, optional): Whether to enable cpu offloading for FSDP. Defaults to False.
+        custom_parallel_plan (Union[dict, str], optional): Custom parallel plan for the model. Defaults to None.
+            If it's a dict, it will be used as the parallel plan directly.
+            If it's a string, it must be a path that points to a dict or a function that returns a dict.
+            The usage example can refer to `docs/design-docs/fsdp2-parallel-plan.md`.
 
     Returns:
         The parallelized model.
@@ -388,9 +394,13 @@ def _parallelize_model(
 
         # first use user's custom parallel plan
         if custom_parallel_plan is not None:
-            model_parallel_plan = {
-                k: translate_parallel_style(v) for k, v in custom_parallel_plan.items()
-            }
+            model_parallel_plan = import_class_from_path(custom_parallel_plan)
+            if isinstance(model_parallel_plan, FunctionType):
+                model_parallel_plan = model_parallel_plan()
+            assert isinstance(model_parallel_plan, dict), (
+                "custom_parallel_plan must be a path that points to a dict or a function that returns a dict"
+            )
+            print(f"Using custom parallel plan.")
 
         # second use our optimized parallel plan
         elif model_cls in PARALLIZE_FUNCTIONS:
@@ -398,6 +408,7 @@ def _parallelize_model(
             try:
                 func = PARALLIZE_FUNCTIONS[model_cls]
                 model_parallel_plan = func(model, sequence_parallel)
+                print(f"Using optimized parallel plan.")
             # fall back to the HF tp plan
             except Exception as e:
                 print(
