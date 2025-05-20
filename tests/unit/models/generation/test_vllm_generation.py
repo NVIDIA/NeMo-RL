@@ -48,7 +48,11 @@ basic_vllm_test_config: VllmConfig = {
         "tensor_parallel_size": 1,
         "gpu_memory_utilization": 0.3,
         "max_model_len": 1024,
+        "async_engine": False,  # Default to False for synchronous tests
+        "skip_tokenizer_init": False,
+        "load_format": "auto",
     },
+    "vllm_kwargs": {},
 }
 
 
@@ -124,17 +128,15 @@ def tokenizer():
 
 @pytest.fixture(scope="function")
 def policy(cluster, tokenizer):
-    """Initialize the vLLM policy."""
-    # Create separate configs for each policy
-    vllm_config = basic_vllm_test_config.copy()
+    """Initialize the vLLM policy (synchronous by default)."""
+    vllm_config = deepcopy(basic_vllm_test_config)
+    # Ensure async_engine is False for the standard policy fixture
+    vllm_config["vllm_cfg"]["async_engine"] = False
     vllm_config = configure_generation_config(vllm_config, tokenizer)
-    policy = VllmGeneration(cluster, vllm_config)
-    yield policy
-
-    # Ensure policy is properly shutdown
+    p = VllmGeneration(cluster, vllm_config)
+    yield p
     try:
-        policy.shutdown()
-        # Force garbage collection to help release resources
+        p.shutdown()
         import gc
 
         gc.collect()
@@ -281,6 +283,73 @@ def test_vllm_policy_generation(policy, test_input_data, tokenizer):
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tensor_parallel_size", [1, 2])
+async def test_vllm_policy_generation_async(
+    cluster, test_input_data, tokenizer, tensor_parallel_size
+):
+    """Test vLLM policy async generation capabilities."""
+    # Ensure the policy is configured for async generation
+    # Create separate configs for each policy
+    hf_policy = None
+    async_policy = None
+    try:
+        vllm_config = deepcopy(basic_vllm_test_config)
+        vllm_config["vllm_cfg"]["async_engine"] = True
+        vllm_config = configure_generation_config(vllm_config, tokenizer)
+        vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
+        async_policy = VllmGeneration(cluster, vllm_config)
+
+        hf_config = get_basic_hf_test_config()
+        from nemo_rl.models.policy.hf_policy import HfPolicy
+
+        hf_policy = HfPolicy(cluster, hf_config, tokenizer)
+        refit_policy_generation(
+            hf_policy, async_policy, hf_config["refit_buffer_size_gb"]
+        )
+
+        print("Testing async generation...")
+        outputs = async_policy.generate_async(test_input_data)
+        # Validate outputs format
+        assert "output_ids" in outputs, "output_ids not found in generation output"
+        assert "logprobs" in outputs, "logprobs not found in generation output"
+        assert "generation_lengths" in outputs, (
+            "generation_lengths not found in generation output"
+        )
+        assert "unpadded_sequence_lengths" in outputs, (
+            "unpadded_sequence_lengths not found in generation output"
+        )
+
+        # Validate outputs shape and content
+        assert outputs["output_ids"].shape[0] == len(test_input_data["input_ids"]), (
+            "Wrong batch size in output"
+        )
+        assert outputs["generation_lengths"].shape[0] == len(
+            test_input_data["input_ids"]
+        ), "Wrong batch size in generation_lengths"
+
+        # Decode and check outputs
+        generated_sequences = outputs["output_ids"]
+        generated_texts = tokenizer.batch_decode(
+            generated_sequences, skip_special_tokens=True
+        )
+
+        print(f"Generated texts: {generated_texts}")
+
+        # All texts should have a non-zero length and be longer than inputs
+        assert all(len(text) > 0 for text in generated_texts), (
+            "Some generated texts are empty"
+        )
+
+    finally:
+        # Clean up resources
+        print("Cleaning up resources...")
+        if async_policy:
+            async_policy.shutdown()
+        if hf_policy and hasattr(hf_policy, "shutdown"):
+            hf_policy.shutdown()
+
+
 @pytest.mark.skip(
     reason="Skipping for now, will be fixed in https://github.com/NVIDIA/NeMo-RL/issues/408"
 )
@@ -425,8 +494,11 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
 
 
 @pytest.mark.timeout(140)
+@pytest.mark.parametrize("async_engine", [True, False])
 @pytest.mark.parametrize("enable_dtensor", [True, False])
-def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
+def test_vllm_generation_with_hf_training(
+    cluster, tokenizer, enable_dtensor, async_engine
+):
     """1. Use vLLM for generation
     2. Use HF policy for training and logprob computation
 
@@ -437,6 +509,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
+    vllm_config["vllm_cfg"]["async_engine"] = async_engine
     vllm_config = configure_generation_config(vllm_config, tokenizer)
 
     hf_config = get_basic_hf_test_config(enable_dtensor=enable_dtensor)
@@ -491,7 +564,12 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
-        generation_results = vllm_policy.generate(test_input_data, greedy=True)
+        if async_engine:
+            generation_results = vllm_policy.generate_async(
+                test_input_data, greedy=True
+            )
+        else:
+            generation_results = vllm_policy.generate(test_input_data, greedy=True)
         vllm_policy.finish_generation()
         # Validate generation outputs
         assert "output_ids" in generation_results, (
@@ -587,7 +665,11 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
         # Step 4: Use vLLM for generation again to complete the workflow
         print("Using vLLM for generation again...")
         vllm_policy.prepare_for_generation()
-        final_generation = vllm_policy.generate(test_input_data)
+        if async_engine:
+            final_generation = vllm_policy.generate_async(test_input_data)
+        else:
+            final_generation = vllm_policy.generate(test_input_data)
+
         assert "output_ids" in final_generation, (
             "Final generation should contain output_ids"
         )
