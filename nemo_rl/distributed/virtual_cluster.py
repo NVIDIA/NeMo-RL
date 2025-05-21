@@ -76,9 +76,6 @@ def init_ray(log_dir: Optional[str] = None) -> None:
     If that cluster uses the same CUDA_VISIBLE_DEVICES or Slurm managed tag we will reuse it.
     Otherwise, we will detach and start a fresh local cluster.
     """
-    if "UV_CACHE_DIR" not in os.environ:
-        logging.warning("UV_CACHE_DIR is not set, using default cache dir")
-
     # Set up runtime environment
     runtime_env = {
         "env_vars": dict(os.environ),  # Pass thru all user environment variables

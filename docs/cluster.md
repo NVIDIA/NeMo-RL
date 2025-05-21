@@ -73,22 +73,46 @@ Now that you are on the head node, you can launch the command as follows:
 uv run ./examples/run_grpo_math.py
 ```
 
-### Slurm UV_CACHE_DIR
+### Slurm Environment Variables
 
-There several choices for `UV_CACHE_DIR` when using `ray.sub`:
+All Slurm environment variables described below can be added to the `sbatch`
+invocation of `ray.sub`. For example, `GPUS_PER_NODE=8` can be specified as follows:
 
-1. (default) `UV_CACHE_DIR` defaults to `$SLURM_SUBMIT_DIR/uv_cache` when not specified the shell environment, and is mounted to head and worker nodes to serve as a persistent cache between runs.
-2. Use the warm uv cache from our docker images:
-    ```sh
-    ...
-    UV_CACHE_DIR=/home/ray/.cache/uv \
-    sbatch ... \
-        ray.sub
+```sh
+GPUS_PER_NODE=8 \
+... \
+sbatch ray.sub \
+   ...
+```
+#### Common Environment Configuration
+``````{list-table}
+:header-rows: 1
+
+* - Environment Variable
+  - Explanation
+* - `CONTAINER`
+  - (Required) Specifies the container image to be used for the Ray cluster.
+    Use either a docker image from a registry or a squashfs (if using enroot/pyxis).
+* - `MOUNTS`
+  - (Required) Defines paths to mount into the container. Examples:
+    ```md
+    * `MOUNTS="$PWD:$PWD"` (mount in current working directory (CWD))
+    * `MOUNTS="$PWD:$PWD,/nfs:/nfs:ro"` (mounts the current working directory and `/nfs`, with `/nfs` mounted as read-only)
     ```
+* - `COMMAND`
+  - Command to execute after the Ray cluster starts. If empty, the cluster idles and enters interactive mode (see the [Slurm interactive instructions](#interactive-launching)).
+* - `HF_HOME`
+  - Sets the cache directory for huggingface-hub assets (e.g., models/tokenizers).
+* - `WANDB_API_KEY`
+  - Setting this allows you to use the wandb logger without having to run `wandb login`.
+* - `HF_TOKEN`
+  - Setting the token used by huggingface-hub. Avoids having to run the `huggingface-cli login`
+* - `HF_DATASETS_CACHE`
+  - Sets the cache dir for downloaded Huggingface datasets.
+``````
 
-(1) is more efficient in general since the cache is not ephemeral and is persisted run to run; but for users that
-don't want to persist the cache, you can use (2), which is just as performant as (1) if the `uv.lock` is 
-covered by warmed cache.
+:::{tip}
+When `HF_TOKEN`, `WANDB_API_KEY`, `HF_HOME`, and `HF_DATASETS_CACHE` are set in your shell environment using `export`, they are automatically passed to `ray.sub`. For instance, if you set:
 
 ### Slurm Environment Variables
 
@@ -144,6 +168,16 @@ this token will be available to your NeMo RL run. Consider adding these exports 
 * - Environment Variable
     (and default)
   - Explanation
+* - `UV_CACHE_DIR_OVERRIDE`
+  - By default, this variable does not need to be set. If unset, `ray.sub` uses the 
+    `UV_CACHE_DIR` defined within the container (defaulting to `/root/.cache/uv`). 
+    `ray.sub` intentionally avoids using the `UV_CACHE_DIR` from the user's host 
+    environment to prevent the host's cache from interfering with the container's cache. 
+    Set `UV_CACHE_DIR_OVERRIDE` if you have a customized `uv` environment (e.g., 
+    with pre-downloaded packages or specific configurations) that you want to persist 
+    and reuse across container runs. This variable should point to a path on a shared 
+    filesystem accessible by all nodes (head and workers). This path will be mounted 
+    into the container and will override the container's default `UV_CACHE_DIR`.
 * - `CPUS_PER_WORKER=128`
   - CPUs each Ray worker node claims. Default is `16 * GPUS_PER_NODE`.
 * - `GPUS_PER_NODE=8`
