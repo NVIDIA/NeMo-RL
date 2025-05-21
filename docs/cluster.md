@@ -29,18 +29,6 @@ sbatch \
 Some Slurm clusters may or may not need `--gres=gpu:8` to be added to the `sbatch` command.
 ```
 
-````{tip}
-The default number of CPUs assigned to each worker is `16 * GPUS_PER_NODE`. For users with a different
-number of CPUs per node, you may control this when launching via:
-
-```sh
-CPUS_PER_WORKER=64 \
-sbatch \
-    ... \
-    ray.sub
-```
-````
-
 Which will print the `SLURM_JOB_ID`:
 ```text
 Submitted batch job 1980204
@@ -103,6 +91,82 @@ There several choices for `UV_CACHE_DIR` when using `ray.sub`:
 don't want to persist the cache, you can use (2), which is just as performant as (1) if the `uv.lock` is 
 covered by warmed cache.
 
+### Slurm Environment Variables
+
+All Slurm environment variables described below can be added to the `sbatch`
+invocation of `ray.sub`. For example, `GPUS_PER_NODE=8` can be specified as follows:
+
+```sh
+GPUS_PER_NODE=8 \
+... \
+sbatch ray.sub \
+   ...
+```
+#### Common Environment Configuration
+``````{list-table}
+:header-rows: 1
+
+* - Environment Variable
+  - Explanation
+* - `CONTAINER`
+  - (Required) Specifies the container image to be used for the Ray cluster.
+    Use either a docker image from a registry or a squashfs (if using enroot/pyxis).
+* - `MOUNTS`
+  - (Required) Defines paths to mount into the container. Examples:
+    ```md
+    * `MOUNTS="$PWD:$PWD"` (mount in current working directory (CWD))
+    * `MOUNTS="$PWD:$PWD,/nfs:/nfs:ro"` (mount in CWD and another mount as read-only)
+    ```
+* - `COMMAND`
+  - Command to execute after the Ray cluster starts. If empty, cluster idles.
+    and enters interactive mode. See the [Slurm interactive instructions](#interactive-launching)
+``````
+#### Advanced Environment Configuration
+``````{list-table}
+:header-rows: 1
+
+* - Environment Variable
+    (and default)
+  - Explanation
+* - `CPUS_PER_WORKER=128`
+  - CPUs each Ray worker node claims. Default is `16 * GPUS_PER_NODE`.
+* - `GPUS_PER_NODE=8`
+  - GPUs each Ray worker node claims. Look up 
+  number using `nvidia-smi` on worker nodes.
+* - `BASE_LOG_DIR=$SLURM_SUBMIT_DIR`
+  - Base directory for storing Ray logs. Defaults to the Slurm submission directory ([SLURM_SUBMIT_DIR](https://slurm.schedmd.com/sbatch.html#OPT_SLURM_SUBMIT_DIR)).
+* - `NODE_MANAGER_PORT=53001`
+  - Port for the Ray node manager on worker nodes.
+* - `OBJECT_MANAGER_PORT=53003`
+  - Port for the Ray object manager on worker nodes.
+* - `RUNTIME_ENV_AGENT_PORT=53005`
+  - Port for the Ray runtime environment agent on worker nodes.
+* - `DASHBOARD_AGENT_GRPC_PORT=53007`
+  - gRPC port for the Ray dashboard agent on worker nodes.
+* - `METRICS_EXPORT_PORT=53009`
+  - Port for exporting metrics from worker nodes.
+* - `PORT=6379`
+  - Main port for the Ray head node.
+* - `RAY_CLIENT_SERVER_PORT=10001`
+  - Port for the Ray client server on the head node.
+* - `DASHBOARD_GRPC_PORT=52367`
+  - gRPC port for the Ray dashboard on the head node.
+* - `DASHBOARD_PORT=8265`
+  - Port for the Ray dashboard UI on the head node. This is also the port
+    used by the Ray distributed debugger.
+* - `DASHBOARD_AGENT_LISTEN_PORT=52365`
+  - Listening port for the dashboard agent on the head node.
+* - `MIN_WORKER_PORT=54001`
+  - Minimum port in the range for Ray worker processes.
+* - `MAX_WORKER_PORT=54257`
+  - Maximum port in the range for Ray worker processes.
+
+``````
+
+:::{note}
+For the most part, you will not need to change ports unless these
+are already taken by some other service backgrounded on your cluster.
+:::
 
 ## Kubernetes
 
