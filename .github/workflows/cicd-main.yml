@@ -214,6 +214,9 @@ jobs:
           name: unit-test-coverage-report
           path: .
 
+      - name: Fix coverage paths
+        run: sed -i 's|/opt/nemo-rl/||g' coverage.json
+
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4
         with:
