@@ -115,12 +115,29 @@ sbatch ray.sub \
   - (Required) Defines paths to mount into the container. Examples:
     ```md
     * `MOUNTS="$PWD:$PWD"` (mount in current working directory (CWD))
-    * `MOUNTS="$PWD:$PWD,/nfs:/nfs:ro"` (mount in CWD and another mount as read-only)
+    * `MOUNTS="$PWD:$PWD,/nfs:/nfs:ro"` (mounts the current working directory and `/nfs`, with `/nfs` mounted as read-only)
     ```
 * - `COMMAND`
-  - Command to execute after the Ray cluster starts. If empty, cluster idles.
-    and enters interactive mode. See the [Slurm interactive instructions](#interactive-launching)
+  - Command to execute after the Ray cluster starts. If empty, the cluster idles and enters interactive mode (see the [Slurm interactive instructions](#interactive-launching)).
+* - `HF_HOME`
+  - Sets the cache directory for huggingface-hub assets (e.g., models/tokenizers).
+* - `WANDB_API_KEY`
+  - Setting this allows you to use the wandb logger without having to run `wandb login`.
+* - `HF_TOKEN`
+  - Setting the token used by huggingface-hub. Avoids having to run the `huggingface-cli login`
+* - `HF_DATASETS_CACHE`
+  - Sets the cache dir for downloaded Huggingface datasets.
 ``````
+
+:::{tip}
+When `HF_TOKEN`, `WANDB_API_KEY`, `HF_HOME`, and `HF_DATASETS_CACHE` are set in your shell environment using `export`, they are automatically passed to `ray.sub`. For instance, if you set:
+
+```sh
+export HF_TOKEN=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
+this token will be available to your NeMo RL run. Consider adding these exports to your shell configuration file, such as `~/.bashrc`.
+:::
+
 #### Advanced Environment Configuration
 ``````{list-table}
 :header-rows: 1
@@ -131,8 +148,7 @@ sbatch ray.sub \
 * - `CPUS_PER_WORKER=128`
   - CPUs each Ray worker node claims. Default is `16 * GPUS_PER_NODE`.
 * - `GPUS_PER_NODE=8`
-  - GPUs each Ray worker node claims. Look up 
-  number using `nvidia-smi` on worker nodes.
+  - Number of GPUs each Ray worker node claims. To determine this, run `nvidia-smi` on a worker node.
 * - `BASE_LOG_DIR=$SLURM_SUBMIT_DIR`
   - Base directory for storing Ray logs. Defaults to the Slurm submission directory ([SLURM_SUBMIT_DIR](https://slurm.schedmd.com/sbatch.html#OPT_SLURM_SUBMIT_DIR)).
 * - `NODE_MANAGER_PORT=53001`
@@ -160,7 +176,6 @@ sbatch ray.sub \
   - Minimum port in the range for Ray worker processes.
 * - `MAX_WORKER_PORT=54257`
   - Maximum port in the range for Ray worker processes.
-
 ``````
 
 :::{note}
