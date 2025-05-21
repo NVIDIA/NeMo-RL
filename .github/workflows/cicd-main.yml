@@ -208,14 +208,14 @@ jobs:
     if: ${{ contains('L0 L1 L2', needs.pre-flight.outputs.test_level) }}
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
         with:
           name: unit-test-coverage-report
           path: .
-
-      - name: Fix coverage paths
-        run: sed -i 's|/opt/nemo-rl/||g' coverage.json
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4
