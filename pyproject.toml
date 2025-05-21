@@ -86,7 +86,6 @@ python_files = "test_*.py"
 [tool.coverage.run]
 concurrency = ["thread", "multiprocessing"]
 omit = ["/tmp/*"]
-relative_files = true
 
 [tool.coverage.paths]
 source = ["nemo_rl/", "/opt/nemo-rl/nemo_rl/"]
