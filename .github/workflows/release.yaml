@@ -16,7 +16,7 @@ name: "Release NeMo-RL"
 on:
   workflow_dispatch:
     inputs:
-      release-ref: 
+      release-ref:
         description: Ref (SHA or branch name) to release
         required: true
         type: string
@@ -29,14 +29,13 @@ on:
         description: Branch for version bump
         required: true
         type: string
-          
+
 jobs:
   release:
-    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_release_library.yml@v0.22.6
+    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_release_library.yml@e5ed473459ff63a8a11936ecced86b9ad3c244fd
     with:
       release-ref: ${{ inputs.release-ref }}
       python-package: nemo_rl
-      python-version: "3.11"
       library-name: NeMo-RL
       dry-run: ${{ inputs.dry-run }}
       version-bump-branch: ${{ inputs.version-bump-branch }}
