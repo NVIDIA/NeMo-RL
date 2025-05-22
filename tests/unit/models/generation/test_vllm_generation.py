@@ -26,12 +26,14 @@ from nemo_rl.models.generation.interfaces import configure_generation_config
 from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy import PolicyConfig
 
+model_name = "Qwen/Qwen2.5-32B"
+# model_name = "meta-llama/Llama-3.1-8B-Instruct"
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
-    "model_name": "Qwen/Qwen3-0.6B",  # Small model for testing
+    "model_name": model_name,
     "tokenizer": {
-        "name": "Qwen/Qwen3-0.6B",
+        "name": model_name,
     },
     "dtype": "bfloat16",
     "max_new_tokens": 5,
@@ -44,7 +46,7 @@ basic_vllm_test_config: VllmConfig = {
         "precision": "bfloat16",
         "tensor_parallel_size": 1,
         "pipeline_parallel_size": 1,
-        "gpu_memory_utilization": 0.3,
+        "gpu_memory_utilization": 0.6,
         "max_model_len": 1024,
         "async_engine": False,  # Default to False for synchronous tests
         "skip_tokenizer_init": False,
@@ -107,10 +109,10 @@ def cluster():
     """Create a virtual cluster for testing."""
     # Create a cluster with 1 node that has 2 GPU bundles
     virtual_cluster = RayVirtualCluster(
-        bundle_ct_per_node_list=[1, 1],  # 1 node with 2 GPU bundle
+        bundle_ct_per_node_list=[8, 8],  # 1 node with 2 GPU bundle
         use_gpus=True,
         max_colocated_worker_groups=2,
-        num_gpus_per_node=2,  # Use available GPUs
+        num_gpus_per_node=8,  # Use available GPUs
         name="vllm-test-cluster",
     )
     yield virtual_cluster
@@ -282,8 +284,8 @@ def skip_tied_weight_check_for_all():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tensor_parallel_size", [1])
-@pytest.mark.parametrize("pipeline_parallel_size", [2])
+@pytest.mark.parametrize("tensor_parallel_size", [4])
+@pytest.mark.parametrize("pipeline_parallel_size", [1])
 async def test_vllm_policy_generation_async(
     cluster, test_input_data, tokenizer, tensor_parallel_size, pipeline_parallel_size
 ):
@@ -298,17 +300,33 @@ async def test_vllm_policy_generation_async(
         vllm_config = configure_generation_config(vllm_config, tokenizer)
         vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
         vllm_config["vllm_cfg"]["pipeline_parallel_size"] = pipeline_parallel_size
-        async_policy = VllmGeneration(cluster, vllm_config)
-        hf_config = get_basic_hf_test_config()
+        hf_config = get_basic_hf_test_config(enable_dtensor=True)
+        hf_config["dtensor_cfg"]["tensor_parallel_size"] = 8
+        hf_config["dtensor_cfg"]["sequence_parallel"] = True
+        hf_config["dtensor_cfg"]["activation_checkpointing"] = True
         from nemo_rl.models.policy.hf_policy import HfPolicy
 
+        async_policy = VllmGeneration(cluster, vllm_config)
+        async_policy.finish_generation()
+        print("creating hf policy...")
+        import time
+
+        time.sleep(10)
+        print(
+            "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
+        )
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
+
         refit_policy_generation(
             hf_policy, async_policy, hf_config["refit_buffer_size_gb"]
         )
+        import time
 
+        print("sleeping!!!!")
+        time.sleep(5)
         print("Testing async generation...")
-        outputs = async_policy.generate_async(test_input_data)
+        for i in range(1000):
+            outputs = async_policy.generate_async(test_input_data)
         # Validate outputs format
         assert "output_ids" in outputs, "output_ids not found in generation output"
         assert "logprobs" in outputs, "logprobs not found in generation output"

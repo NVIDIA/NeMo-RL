@@ -293,7 +293,8 @@ def refit_policy_generation(
     if len(keys) > 0:
         split_keys.append(keys)
     # do update
-    for keys in split_keys:
+    for i, keys in enumerate(split_keys):
+        print(f"Updating weights for {i} of {len(split_keys)}...")
         ipc_handles = policy.get_weights_ipc_handles(keys)
         if not policy_generation.update_weights(ipc_handles):
             error_message = (
