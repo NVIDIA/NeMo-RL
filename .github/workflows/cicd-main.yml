@@ -115,7 +115,7 @@ jobs:
           pip install pre-commit
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
-  
+
   mypy-check:
     name: Mypy check
     needs: [pre-flight]
@@ -236,6 +236,7 @@ jobs:
           file: ./coverage.json
           flags: unit-tests
           verbose: true
+          override_branch	: ${{ github.event_name == 'merge_group' && 'main' || '' }}
 
   CI_QA_Gate:
     name: CI quality check
