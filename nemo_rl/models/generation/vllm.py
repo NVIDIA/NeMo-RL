@@ -149,6 +149,14 @@ class VllmGenerationWorker:
         self.fraction_of_gpus = fraction_of_gpus
         self.is_model_owner = bundle_indices is not None
 
+        # Add debug information about bundle_indices and model ownership
+        if self.is_model_owner:
+            print(
+                f"[VLLM DEBUG] Worker is a model owner with bundle_indices: {bundle_indices}"
+            )
+        else:
+            print("[VLLM DEBUG] Worker is NOT a model owner (bundle_indices is None)")
+
         # Skip model loading if we're not the model owner
         if not self.is_model_owner:
             self.llm = None
@@ -190,7 +198,18 @@ class VllmGenerationWorker:
             )
 
             # Set bundle indices for parallel workers
-            os.environ["VLLM_RAY_BUNDLE_INDICES"] = ",".join(map(str, bundle_indices))
+            # For pipeline parallelism, we need to provide all bundle indices to vLLM
+            print(
+                f"[VLLM DEBUG] Model owner with pipeline_parallel_size={self.pipeline_parallel_size}, tensor_parallel_size={self.tensor_parallel_size}"
+            )
+            print(f"[VLLM DEBUG] Setting VLLM_RAY_BUNDLE_INDICES to {bundle_indices}")
+
+            # Convert the indices to strings and join them
+            bundle_indices_str = ",".join(map(str, bundle_indices))
+            os.environ["VLLM_RAY_BUNDLE_INDICES"] = bundle_indices_str
+            print(
+                f"[VLLM DEBUG] VLLM_RAY_BUNDLE_INDICES environment variable set to: {os.environ.get('VLLM_RAY_BUNDLE_INDICES')}"
+            )
 
             # Use Ray for distributed execution in parallel mode
             vllm_kwargs["distributed_executor_backend"] = "ray"
@@ -810,6 +829,9 @@ class VllmGeneration(GenerationInterface):
 
         With a unified placement group (single PG for all resources), we need to create
         tied worker groups by directly assigning the correct bundle indices.
+
+        For pipeline parallelism, vLLM requires ALL of the GPUs to be visible
+        to the first worker as a single group in VLLM_RAY_BUNDLE_INDICES.
         """
         # Get the placement groups from the cluster
         placement_groups = cluster.get_placement_groups()
@@ -820,30 +842,72 @@ class VllmGeneration(GenerationInterface):
 
         unified_pg = placement_groups[0]
         total_bundles = len(unified_pg.bundle_specs)
+        print(
+            f"[VLLM DEBUG] Found {total_bundles} total bundles in the unified placement group"
+        )
 
         # Calculate total parallelism size
         tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
         pipeline_parallel_size = self.cfg["vllm_cfg"]["pipeline_parallel_size"]
         total_parallel_size = tensor_parallel_size * pipeline_parallel_size
+        print(
+            f"[VLLM DEBUG] tp={tensor_parallel_size}, pp={pipeline_parallel_size}, total={total_parallel_size}"
+        )
 
+        # For pipeline parallelism (pp > 1), vLLM needs to see ALL GPUs at once
+        if pipeline_parallel_size > 1:
+            print(
+                f"[VLLM DEBUG] Using pipeline parallelism mode with pp={pipeline_parallel_size}"
+            )
+
+            # For pipeline parallelism, we need a SINGLE worker group that contains
+            # exactly one worker of each type (tp*pp workers total)
+            # All of these workers need to be aware of each other
+
+            # Make sure we have enough bundles for at least one complete pp group
+            if total_bundles < total_parallel_size:
+                raise ValueError(
+                    f"Cannot create a pipeline parallel group with tensor_parallel_size={tensor_parallel_size} "
+                    f"and pipeline_parallel_size={pipeline_parallel_size} (total={total_parallel_size}). "
+                    f"Make sure the unified placement group has at least {total_parallel_size} GPUs, but only found {total_bundles}."
+                )
+
+            # For pipeline parallelism, we use exactly the necessary number of GPUs
+            # to form a single pp group (tp*pp)
+            bundle_indices = list(range(total_parallel_size))
+            print(
+                f"[VLLM DEBUG] Created pipeline parallel worker group with bundle indices: {bundle_indices}"
+            )
+
+            # Return a single pp group
+            # This will create ONE model owner worker that gets all the bundle indices
+            # and set up a single Ray process with workers on all the specified GPUs
+            return [(0, bundle_indices)]
+
+        # For pure tensor parallelism (pp=1), create separate groups
+        print(
+            f"[VLLM DEBUG] Using tensor parallelism mode with tp={tensor_parallel_size}"
+        )
         tied_worker_groups = []
 
-        # Create tied worker groups of size total_parallel_size from the unified bundle list
-        num_tied_groups = total_bundles // total_parallel_size
+        # Create tied worker groups of size tensor_parallel_size
+        num_tied_groups = total_bundles // tensor_parallel_size
 
         for group_idx in range(num_tied_groups):
-            start_idx = group_idx * total_parallel_size
-            end_idx = start_idx + total_parallel_size
+            start_idx = group_idx * tensor_parallel_size
+            end_idx = start_idx + tensor_parallel_size
             # Create a tied worker group with consecutive bundle indices
             # Use node_idx=0 since we have a unified placement group
             bundle_indices = list(range(start_idx, end_idx))
             tied_worker_groups.append((0, bundle_indices))
+            print(
+                f"[VLLM DEBUG] Created tensor parallel worker group {group_idx} with bundle indices: {bundle_indices}"
+            )
 
         if not tied_worker_groups:
             raise ValueError(
-                f"Cannot create any parallel tied worker groups with tensor_parallel_size={tensor_parallel_size} "
-                f"and pipeline_parallel_size={pipeline_parallel_size} (total={total_parallel_size}). "
-                f"Make sure the unified placement group has at least {total_parallel_size} GPUs."
+                f"Cannot create any tensor parallel tied worker groups with size {tensor_parallel_size}. "
+                f"Make sure the unified placement group has at least {tensor_parallel_size} GPUs."
             )
 
         return tied_worker_groups

@@ -334,36 +334,48 @@ class RayWorkerGroup:
             # In this case, each worker is its own group (no tied workers)
             bundle_indices_list = []
 
-            # Determine how many workers per node
+            # Get placement groups
+            placement_groups = self.cluster.get_placement_groups()
+
+            # Determine how many workers per node/placement group
             if workers_per_node is None:
-                workers_per_node = [
-                    pg.bundle_count for pg in self.cluster.get_placement_groups()
-                ]
+                # Default: use one worker per bundle in each placement group
+                workers_per_group = [pg.bundle_count for pg in placement_groups]
             elif isinstance(workers_per_node, int):
-                workers_per_node = [workers_per_node] * self.cluster.node_count()
-            elif not isinstance(workers_per_node, list):
+                # Single value for all placement groups
+                workers_per_group = [workers_per_node] * len(placement_groups)
+            elif isinstance(workers_per_node, list):
+                # List of values - validate length
+                if len(workers_per_node) == 1 and len(placement_groups) == 1:
+                    # Special case for unified placement group
+                    workers_per_group = workers_per_node
+                elif len(workers_per_node) != len(placement_groups):
+                    raise ValueError(
+                        f"workers_per_node list length ({len(workers_per_node)}) must match "
+                        f"number of placement groups ({len(placement_groups)})"
+                    )
+                else:
+                    workers_per_group = workers_per_node
+            else:
                 raise ValueError(
-                    "workers_per_node must be None(for default node distribution), an int, or a list"
+                    "workers_per_node must be None (for default distribution), an int, or a list"
                 )
 
-            # Validate workers_per_node
-            assert len(workers_per_node) == self.cluster.node_count(), (
-                "workers_per_node_list must be the same length as the number of nodes in the virtual cluster"
-            )
-            assert all(
-                [
-                    workers_per_node[i] <= pg.bundle_count
-                    for i, pg in enumerate(self.cluster.get_placement_groups())
-                ]
-            ), (
-                "workers_per_node must be less than or equal to the number of bundles in the placement groups"
-            )
+            # Validate workers_per_group
+            for i, (pg, worker_count) in enumerate(
+                zip(placement_groups, workers_per_group)
+            ):
+                if worker_count > pg.bundle_count:
+                    raise ValueError(
+                        f"Placement group {i} has {pg.bundle_count} bundles, "
+                        f"but {worker_count} workers were requested"
+                    )
 
-            # Create bundle_indices_list where each worker is its own group
-            for node_idx, worker_count in enumerate(workers_per_node):
-                for local_idx in range(worker_count):
+                # Create bundle_indices for each worker (one per bundle)
+                # All in the same placement group (idx 0 for unified group)
+                for bundle_idx in range(worker_count):
                     # Each worker is its own single-element group
-                    bundle_indices_list.append((node_idx, [local_idx]))
+                    bundle_indices_list.append((0, [bundle_idx]))
 
         # Create workers based on the bundle_indices_list
         self._create_workers_from_bundle_indices(
@@ -388,13 +400,24 @@ class RayWorkerGroup:
         self.world_size = sum(len(indices) for _, indices in bundle_indices_list)
         global_rank = 0
 
+        # Get all placement groups
+        placement_groups = self.cluster.get_placement_groups()
+
+        # With a unified placement group approach, we should only have one placement group
+        is_unified_approach = len(placement_groups) == 1
+
         for group_idx, (node_idx, local_bundle_indices) in enumerate(
             bundle_indices_list
         ):
             current_group = []
 
-            # Get the placement group for this node
-            pg = self.cluster.get_placement_groups()[node_idx]
+            # Get the appropriate placement group
+            if is_unified_approach:
+                # In the unified approach, always use the single placement group
+                pg = placement_groups[0]
+            else:
+                # In the multi-group approach, use the node-specific placement group
+                pg = placement_groups[node_idx]
 
             # Check if this group has multiple workers (for tensor or pipeline parallelism)
             is_parallel_group = len(local_bundle_indices) > 1
@@ -415,10 +438,10 @@ class RayWorkerGroup:
                     }
                 )
 
-                # Only the first worker in each group gets bundle_indices for parallel groups
-                # Non-parallel groups (single worker) always get bundle_indices
+                # Only the first worker in each group gets bundle_indices
+                # This ensures only one worker per group is the model owner
                 worker_bundle_indices = None
-                if local_rank == 0 or not is_parallel_group:
+                if local_rank == 0:
                     worker_bundle_indices = (node_idx, local_bundle_indices)
 
                 # Create a descriptive name based on group structure

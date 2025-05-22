@@ -281,7 +281,7 @@ class RayVirtualCluster:
         # This better supports vLLM and other frameworks that prefer a single placement group
         self._node_placement_groups = [
             placement_group(
-                bundles=all_bundles, strategy=strategy, name=f"{self.name}-unified"
+                bundles=all_bundles, strategy="SPREAD", name=f"{self.name}-unified"
             )
         ]
 

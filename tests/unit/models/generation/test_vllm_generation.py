@@ -107,7 +107,7 @@ def cluster():
     """Create a virtual cluster for testing."""
     # Create a cluster with 1 node that has 2 GPU bundles
     virtual_cluster = RayVirtualCluster(
-        bundle_ct_per_node_list=[2],  # 1 node with 2 GPU bundle
+        bundle_ct_per_node_list=[1, 1],  # 1 node with 2 GPU bundle
         use_gpus=True,
         max_colocated_worker_groups=2,
         num_gpus_per_node=2,  # Use available GPUs
@@ -282,8 +282,8 @@ def skip_tied_weight_check_for_all():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tensor_parallel_size", [1, 2])
-@pytest.mark.parametrize("pipeline_parallel_size", [1])
+@pytest.mark.parametrize("tensor_parallel_size", [1])
+@pytest.mark.parametrize("pipeline_parallel_size", [2])
 async def test_vllm_policy_generation_async(
     cluster, test_input_data, tokenizer, tensor_parallel_size, pipeline_parallel_size
 ):
