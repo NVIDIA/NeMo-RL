@@ -96,7 +96,6 @@ sudo dpkg -i cuda-keyring_1.1-1_all.deb
 sudo apt-get update
 sudo apt-get install cudnn-cuda-12
 ```
-
 -->
 
 Install `uv`.
