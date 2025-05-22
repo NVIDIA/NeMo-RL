@@ -39,15 +39,17 @@ class ModelFlag(Enum):
     def matches(self, model_name: str) -> bool:
         match self:
             case ModelFlag.SKIP_DTENSOR_TIED_WEIGHTS_CHECK:
-                return is_gemma3_model(model_name)
+                return is_gemma_model(model_name)
             case ModelFlag.VLLM_LOAD_FORMAT_AUTO:
-                return is_gemma3_model(model_name)
+                return is_gemma_model(model_name)
             case _:
                 raise ValueError(f"Unknown ModelFlag: {self}")
 
 
-def is_gemma3_model(model_name: str) -> bool:
+def is_gemma_model(model_name: str) -> bool:
     hf_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
-    return hasattr(hf_config, "model_type") and (
-        hf_config.model_type == "gemma3" or hf_config.model_type == "gemma3_text"
-    )
+    return hasattr(hf_config, "model_type") and hf_config.model_type in [
+        "gemma2",
+        "gemma3",
+        "gemma3_text",
+    ]
