@@ -38,6 +38,7 @@ from nemo_rl.models.huggingface.common import ModelFlag
 
 class VllmSpecificArgs(TypedDict):
     tensor_parallel_size: int
+    pipeline_parallel_size: int
     gpu_memory_utilization: float
     max_model_len: int
     # Additional arguments for vLLM inserted by nemo rl based on the context of when vllm is used
@@ -132,6 +133,7 @@ class VllmGenerationWorker:
 
         self.model_name = self.cfg["model_name"]
         self.tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
+        self.pipeline_parallel_size = self.cfg["vllm_cfg"]["pipeline_parallel_size"]
         self.gpu_memory_utilization = self.cfg["vllm_cfg"]["gpu_memory_utilization"]
         self.fraction_of_gpus = fraction_of_gpus
         self.is_model_owner = bundle_indices is not None
@@ -192,6 +194,7 @@ class VllmGenerationWorker:
             load_format=load_format,
             skip_tokenizer_init=self.cfg["vllm_cfg"]["skip_tokenizer_init"],
             tensor_parallel_size=self.cfg["vllm_cfg"]["tensor_parallel_size"],
+            pipeline_parallel_size=self.cfg["vllm_cfg"]["pipeline_parallel_size"],
             gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
             enable_prefix_caching=torch.cuda.get_device_capability()[0] >= 8,
             dtype=self.cfg["vllm_cfg"]["precision"],
