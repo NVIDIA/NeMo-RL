@@ -806,36 +806,44 @@ class VllmGeneration(GenerationInterface):
         self.dp_size = self.worker_group.group_count
 
     def _get_tied_worker_bundle_indices(self, cluster):
-        """Calculate bundle indices for tensor and pipeline parallel workers."""
-        # Get the placement groups (nodes) from the cluster
+        """Calculate bundle indices for tensor and pipeline parallel workers.
+
+        With a unified placement group (single PG for all resources), we need to create
+        tied worker groups by directly assigning the correct bundle indices.
+        """
+        # Get the placement groups from the cluster
         placement_groups = cluster.get_placement_groups()
 
-        tied_worker_groups = []
+        # There should be a single unified placement group
+        if not placement_groups:
+            raise ValueError("No placement groups available in the cluster")
+
+        unified_pg = placement_groups[0]
+        total_bundles = len(unified_pg.bundle_specs)
 
         # Calculate total parallelism size
         tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
         pipeline_parallel_size = self.cfg["vllm_cfg"]["pipeline_parallel_size"]
         total_parallel_size = tensor_parallel_size * pipeline_parallel_size
 
-        # For each node (placement group), create tied worker groups of size total_parallel_size
-        for node_idx, pg in enumerate(placement_groups):
-            # How many bundles (GPUs) are on this node
-            bundles_on_node = pg.bundle_count
-            tied_worker_groups_on_node = bundles_on_node // total_parallel_size
+        tied_worker_groups = []
 
-            if tied_worker_groups_on_node > 0:
-                for group_idx in range(tied_worker_groups_on_node):
-                    # Local bundle indices for this tied worker group (consecutive GPUs on this node)
-                    start_idx = group_idx * total_parallel_size
-                    end_idx = start_idx + total_parallel_size
-                    local_bundle_indices = list(range(start_idx, end_idx))
-                    tied_worker_groups.append((node_idx, local_bundle_indices))
+        # Create tied worker groups of size total_parallel_size from the unified bundle list
+        num_tied_groups = total_bundles // total_parallel_size
+
+        for group_idx in range(num_tied_groups):
+            start_idx = group_idx * total_parallel_size
+            end_idx = start_idx + total_parallel_size
+            # Create a tied worker group with consecutive bundle indices
+            # Use node_idx=0 since we have a unified placement group
+            bundle_indices = list(range(start_idx, end_idx))
+            tied_worker_groups.append((0, bundle_indices))
 
         if not tied_worker_groups:
             raise ValueError(
                 f"Cannot create any parallel tied worker groups with tensor_parallel_size={tensor_parallel_size} "
                 f"and pipeline_parallel_size={pipeline_parallel_size} (total={total_parallel_size}). "
-                f"Make sure each node has at least {total_parallel_size} GPUs."
+                f"Make sure the unified placement group has at least {total_parallel_size} GPUs."
             )
 
         return tied_worker_groups

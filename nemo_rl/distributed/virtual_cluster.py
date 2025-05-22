@@ -220,13 +220,16 @@ class RayVirtualCluster:
             )
 
     def _init_placement_groups(self, strategy: str):
-        """Creates placement groups for each node in the cluster. Has empty groups for nodes that don't have any bundles.
+        """Creates a single placement group containing all bundles from all nodes.
+
+        This approach better supports vLLM and other frameworks that prefer having
+        a single placement group for all resources.
 
         Args:
             strategy: Ray placement group strategy
 
         Returns:
-            List of placement groups, one per node
+            List with a single placement group containing all bundles
         """
         if self._node_placement_groups is not None:
             return self._node_placement_groups
@@ -259,19 +262,27 @@ class RayVirtualCluster:
         # num_gpus_per_bundle == 1 indicates that there is 1 GPU per process
         num_gpus_per_bundle = 1 if self.use_gpus else 0
 
-        resources = [
-            [
-                {"CPU": num_cpus_per_bundle, "GPU": num_gpus_per_bundle}
-                for _ in range(bundle_count)
-            ]
-            for bundle_count in self._bundle_ct_per_node_list
-        ]
+        # resources = [
+        #     [
+        #         {"CPU": num_cpus_per_bundle, "GPU": num_gpus_per_bundle}
+        #         for _ in range(bundle_count)
+        #     ]
+        #     for bundle_count in self._bundle_ct_per_node_list
+        # ]
+        # Create a single unified bundle list instead of separate lists per node
+        all_bundles = []
+        for bundle_count in self._bundle_ct_per_node_list:
+            for _ in range(bundle_count):
+                all_bundles.append(
+                    {"CPU": num_cpus_per_bundle, "GPU": num_gpus_per_bundle}
+                )
 
+        # Create a single placement group with all bundles
+        # This better supports vLLM and other frameworks that prefer a single placement group
         self._node_placement_groups = [
             placement_group(
-                bundles=bundles, strategy=strategy, name=f"{self.name}-node-{i}"
+                bundles=all_bundles, strategy=strategy, name=f"{self.name}-unified"
             )
-            for i, bundles in enumerate(resources)
         ]
 
         # Add timeout to prevent hanging indefinitely
@@ -295,9 +306,10 @@ class RayVirtualCluster:
         return self._node_placement_groups
 
     def get_placement_groups(self):
-        """Returns a list of placement groups that have at least one bundle, filtering out empty nodes.
+        """Returns a list of placement groups that have at least one bundle.
 
-        This represents the "virtual cluster" - only nodes that are actually being used.
+        In the unified placement group approach, this will typically return a single
+        placement group containing all bundles.
 
         Returns:
             List of placement groups that have at least one bundle
@@ -308,7 +320,12 @@ class RayVirtualCluster:
         return self._world_size
 
     def node_count(self):
-        return len(self.get_placement_groups())
+        """Returns an estimate of the number of nodes represented by bundles.
+
+        Since we're using a unified placement group, we approximate this by returning
+        the length of the bundle_ct_per_node_list that has non-zero bundles.
+        """
+        return sum(1 for count in self._bundle_ct_per_node_list if count > 0)
 
     def get_master_address_and_port(self):
         """Gets the master address and port for the distributed training setup.
@@ -320,7 +337,7 @@ class RayVirtualCluster:
         if not self._node_placement_groups:
             self.get_placement_groups()
 
-        # Find first non-empty placement group
+        # Use the first bundle in the unified placement group
         pg = self.get_placement_groups()[0]
         if pg.bundle_specs:
             # Launch port finder on the first bundle of this placement group
