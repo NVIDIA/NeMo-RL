@@ -14,7 +14,7 @@
 
 from functools import lru_cache
 from types import FunctionType
-from typing import Callable, Union
+from typing import Callable, Optional, Union
 
 import torch
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -25,6 +25,7 @@ from torch.distributed.fsdp import CPUOffloadPolicy, MixedPrecisionPolicy, fully
 from torch.distributed.tensor import DTensor
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
+    ParallelStyle,
     PrepareModuleInput,
     PrepareModuleOutput,
     RowwiseParallel,
@@ -254,7 +255,9 @@ def _parallelize_qwen(
     return base_model_tp_plan
 
 
-PARALLIZE_FUNCTIONS: dict[type[torch.nn.Module], Callable[..., torch.nn.Module]] = {
+PARALLIZE_FUNCTIONS: dict[
+    type[torch.nn.Module], Callable[..., dict[str, ParallelStyle]]
+] = {
     Qwen2ForCausalLM: _parallelize_qwen,
     Qwen3ForCausalLM: _parallelize_qwen,
     LlamaForCausalLM: _parallelize_llama,
@@ -292,7 +295,21 @@ def translate_parallel_style(style: str):
 def get_hf_tp_plan(model):
     """Get the Hugging Face tensor parallel plan from the model.
 
+    This function:
+    - Retrieves TP strategies from model class, instance, and inner model levels.
+    - Handles special cases for `embed_tokens` and `lm_head` for speed up.
+    - Converts string-based parallel styles to DTensor parallelization strategies.
+
     Taken and modified from: https://github.com/NVIDIA/NeMo/blob/6c6169db01bcca73ae8ad3ac35242fadbb9a78ba/nemo/lightning/pytorch/strategies/utils.py#L532
+
+    Args:
+        model: A Hugging Face model instance
+
+    Returns:
+        dict: A dictionary mapping model component paths to their parallelization strategies
+
+    Raises:
+        AssertionError: If no TP plan is found
     """
     model_cls = type(model)
     if model_cls == Gemma3ForConditionalGeneration:
@@ -317,7 +334,8 @@ def get_hf_tp_plan(model):
         )
 
     assert len(hf_tp_plan) > 0, (
-        f"Hugging Face tp plan is not supported for {model_cls}, please set dtensor_cfg.tensor_parallel_size to 1 or provide a custom parallel plan."
+        f"Hugging Face tp plan is not supported for {model_cls}, please set dtensor_cfg.tensor_parallel_size to 1 or provide a custom_parallel_plan. "
+        "The usage example of custom_parallel_plan can refer to `docs/design-docs/fsdp2-parallel-plan.md`."
     )
 
     # hf tp plan not contain embed_tokens, we add it and set to rowwise_rep
@@ -344,26 +362,31 @@ def get_hf_tp_plan(model):
 
 
 def _parallelize_model(
-    model: Union[Qwen2ForCausalLM, LlamaForCausalLM],
+    model: Union[
+        Qwen2ForCausalLM,
+        LlamaForCausalLM,
+        Gemma3ForCausalLM,
+        Gemma3ForConditionalGeneration,
+    ],
     dp_mesh: DeviceMesh,
     tp_mesh: DeviceMesh,
     param_dtype: torch.dtype,
     sequence_parallel: bool = False,
     activation_checkpointing: bool = False,
     cpu_offload: bool = False,
-    custom_parallel_plan: Union[dict, str] = None,
+    custom_parallel_plan: Optional[Union[dict, str]] = None,
 ):
     """Parallelize a model using DTensor.
 
     Args:
-        model (Union[Qwen2ForCausalLM, LlamaForCausalLM]): The model to parallelize.
-        dp_mesh (DeviceMesh): Device mesh for data parallelism.
-        tp_mesh (DeviceMesh): Device mesh for tensor parallelism.
-        param_dtype (torch.dtype): Data type for model parameters.
-        sequence_parallel (bool, optional): Whether to use sequence parallelism. Defaults to False.
-        activation_checkpointing (bool, optional): Whether to use activation checkpointing. Defaults to False.
-        cpu_offload (bool, optional): Whether to enable cpu offloading for FSDP. Defaults to False.
-        custom_parallel_plan (Union[dict, str], optional): Custom parallel plan for the model. Defaults to None.
+        model: The model to parallelize.
+        dp_mesh: Device mesh for data parallelism.
+        tp_mesh: Device mesh for tensor parallelism.
+        param_dtype: Data type for model parameters.
+        sequence_parallel: Whether to use sequence parallelism. Defaults to False.
+        activation_checkpointing: Whether to use activation checkpointing. Defaults to False.
+        cpu_offload: Whether to enable cpu offloading for FSDP. Defaults to False.
+        custom_parallel_plan: Custom parallel plan for the model. Defaults to None.
             If it's a dict, it will be used as the parallel plan directly.
             If it's a string, it must be a path that points to a dict or a function that returns a dict.
             The usage example can refer to `docs/design-docs/fsdp2-parallel-plan.md`.
@@ -376,11 +399,11 @@ def _parallelize_model(
     """
     model_cls = type(model)
     if model_cls == Gemma3ForConditionalGeneration:
-        layers = model.language_model.model.layers
+        layers: torch.nn.ModuleList = model.language_model.model.layers  # type: ignore
         num_attention_heads = model.config.text_config.num_attention_heads
         num_key_value_heads = model.config.text_config.num_key_value_heads
     else:
-        layers = model.model.layers
+        layers: torch.nn.ModuleList = model.model.layers  # type: ignore
         num_attention_heads = model.config.num_attention_heads
         num_key_value_heads = model.config.num_key_value_heads
 
