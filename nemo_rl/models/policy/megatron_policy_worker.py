@@ -90,14 +90,15 @@ from nemo_rl.models.generation.interfaces import (
     GenerationOutputSpec,
     verify_right_padding,
 )
+from nemo_rl.models.megatron.converters.common import MegatronToHFConverter
 from nemo_rl.models.megatron.common import (
     broadcast_tensor,
     forward_step_arbitrary_loss,
 )
 from nemo_rl.models.megatron.refit_utils import (
-    gather_and_convert_params,
+    gather_params,
     get_global_param_key_to_local_key_map,
-    get_param_conversion_recipe_dict,
+    get_tp_dim,
 )
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.utils import get_gpu_info
@@ -363,6 +364,7 @@ class MegatronPolicyWorker:
             self.checkpointing_context,
         ) = setup_megatron_model(self.megatron_cfg, load_optimizer=init_optimizer)
         self.model = self.model[0]  # Get the first model from the list
+
         for name, item in self.model.state_dict().items():
             if isinstance(item, torch.Tensor):
                 item = item.detach().to(device="cpu", non_blocking=True, copy=True)
@@ -425,6 +427,8 @@ class MegatronPolicyWorker:
         self.converter_type = self.cfg["megatron_cfg"]["converter_type"]
         self._held_gather_buffer = None
 
+        self.megatron_to_hf_converter = MegatronToHFConverter(hf_model_name, self.model)
+
     def is_alive(self):
         return True
 
@@ -443,14 +447,14 @@ class MegatronPolicyWorker:
         """Train the policy on a batch of data with a given loss function."""
         torch.cuda.empty_cache()
         self.model.zero_grad_buffer()
-        if hasattr(self.model, 'inference_params'):
+        if hasattr(self.model, "inference_params"):
             self.model.inference_params = None
 
         # Reset any cached attention states
         for module in self.model.modules():
-            if hasattr(module, 'reset_inference_cache'):
+            if hasattr(module, "reset_inference_cache"):
                 module.reset_inference_cache()
-            if hasattr(module, '_inference_key_value_memory'):
+            if hasattr(module, "_inference_key_value_memory"):
                 module._inference_key_value_memory = None
 
         if gbs is None:
@@ -514,7 +518,9 @@ class MegatronPolicyWorker:
                 )
                 # grad_norm and num_zeros_in_grad will be None on ranks without trainable params,
                 # so we must gather across mp ranks
-                grad_norm: float = reduce_max_stat_across_model_parallel_group(grad_norm)
+                grad_norm: float = reduce_max_stat_across_model_parallel_group(
+                    grad_norm
+                )
                 num_zeros_in_grad: float = reduce_max_stat_across_model_parallel_group(
                     num_zeros_in_grad
                 )
@@ -590,7 +596,9 @@ class MegatronPolicyWorker:
             "global_loss": loss.cpu(),
             "rank": torch.distributed.get_rank(),
             "all_mb_metrics": dict(mb_metrics),
-            "grad_norm": mb_metrics["grad_norm"][-1], # TODO @sahilj: return an average or something later
+            "grad_norm": mb_metrics["grad_norm"][
+                -1
+            ],  # TODO @sahilj: return an average or something later
         }
         return metrics
 
@@ -891,21 +899,20 @@ class MegatronPolicyWorker:
         # Collect parameter info
         param_info = []
 
+        # Dictionary of modules we can quickly look up to check if a module has TP
+        named_modules_dict = dict(self.model.named_modules())
+
         # Process each parameter in the model
         for name, param in self.model.state_dict().items():
             # Skip _extra_state entries (these are metadata, not actual weights)
             if "_extra_state" in name:
                 continue
 
-            # Use the conversion dict to get the appropriate recipe for this parameter.
-            recipe_dict, _ = get_param_conversion_recipe_dict(
-                name, self.converter_type, self.megatron_cfg.model_config
-            )
-            tp = 1
-            if name in recipe_dict:
-                recipe = recipe_dict[name]
-                if "tp" in recipe and recipe["tp"] is not None:
-                    tp = tp_world_size
+            tp_dim = get_tp_dim(self.model, name, named_modules_dict)
+            if tp_dim is not None:
+                tp = tp_world_size
+            else:
+                tp = 1
 
             # Calculate size for this parameter
             prec_to_bytes = {
@@ -915,7 +922,7 @@ class MegatronPolicyWorker:
             }
             scale = prec_to_bytes[self.dtype] / prec_to_bytes[param.dtype]
             size_in_bytes = param.element_size() * param.numel() * tp * scale
-            param_info.append(((name, recipe.get("hf", None)), size_in_bytes))
+            param_info.append((name, size_in_bytes))
 
         # Include buffers (non-parameter tensors)
         for name, buffer in self.model.named_buffers():
@@ -966,12 +973,14 @@ class MegatronPolicyWorker:
         param_name_to_rank_and_key = get_global_param_key_to_local_key_map(
             self.model, self.megatron_cfg.model_config, keys
         )
-        gathered_params = gather_and_convert_params(
+        gathered_megatron_params = gather_params(
             self.model,
-            self.converter_type,
-            self.megatron_cfg.model_config,
             param_name_to_rank_and_key,
         )
+        gathered_hf_params = self.megatron_to_hf_converter.convert(
+            gathered_megatron_params, self.model.config
+        )
+
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -981,14 +990,14 @@ class MegatronPolicyWorker:
 
         # Create IPC handles for each parameter
         all_handles = []
-        for key, tensor in gathered_params.items():
+        for key, tensor in gathered_hf_params.items():
             handle = reduce_tensor(tensor.detach())
             all_handles.append((key, handle))
 
         # Store references to avoid premature garbage collection
-        self._held_gather_buffer = gathered_params
+        self._held_gather_buffer = gathered_hf_params
         shapes = {}
-        for key, tensor in gathered_params.items():
+        for key, tensor in gathered_hf_params.items():
             shapes[key] = tensor.shape
 
         return {device_uuid: all_handles}
@@ -1106,7 +1115,7 @@ class MegatronPolicyWorker:
                     optimizer_to_save = self.optimizer
                 if self.scheduler is not None:
                     scheduler_to_save = self.scheduler
-            
+
             # Ensure model is in eval mode for consistent saving, unless actively training
             # This is a common practice, though NeMo's save might handle this.
             # For safety, if not in training loop, setting to eval.
@@ -1124,7 +1133,7 @@ class MegatronPolicyWorker:
             )
             print(f"Saved checkpoint to {weights_path}")
 
-            if not is_training: # Restore training state if it was changed
+            if not is_training:  # Restore training state if it was changed
                 self.model.train()
 
         except Exception as e:
@@ -1170,13 +1179,17 @@ class MegatronPolicyWorker:
                     optimizer_to_load = self.optimizer
                 else:
                     if get_rank_safe() == 0:
-                        print("Warning: Optimizer state loading requested, but self.optimizer is None. Optimizer state will not be loaded.")
+                        print(
+                            "Warning: Optimizer state loading requested, but self.optimizer is None. Optimizer state will not be loaded."
+                        )
                 if self.scheduler is not None:
                     scheduler_to_load = self.scheduler
                 else:
-                     if get_rank_safe() == 0:
-                        print("Warning: Scheduler state loading requested, but self.scheduler is None. Scheduler state will not be loaded.")
-            
+                    if get_rank_safe() == 0:
+                        print(
+                            "Warning: Scheduler state loading requested, but self.scheduler is None. Scheduler state will not be loaded."
+                        )
+
             # Model should be on device before loading. load_checkpoint expects this.
             # self.model.to('cuda') # Already handled by setup and prepare_for_training/inference
 

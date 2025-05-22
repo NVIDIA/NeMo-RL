@@ -15,32 +15,13 @@
 from enum import Enum
 
 from .common import (
-    SafeDict,
     get_all_rank_ids_in_group,
     get_global_layer_num,
     get_local_layer_num,
 )
-from .llama import mcore_te_to_hf_llama
-from .qwen2 import mcore_te_to_hf_qwen2
-
-
-class ModelType(Enum):
-    LLAMA = "LlamaForCausalLM"
-    QWEN2 = "Qwen2ForCausalLM"
-
-
-REGISTRY = {
-    ModelType.LLAMA: mcore_te_to_hf_llama,
-    ModelType.QWEN2: mcore_te_to_hf_qwen2,
-}
-# Allow indexing by string name
-for key in list(REGISTRY.keys()):
-    REGISTRY[key.value] = REGISTRY[key]
 
 __all__ = [
     "get_all_rank_ids_in_group",
     "get_local_layer_num",
     "get_global_layer_num",
-    "REGISTRY",
-    "SafeDict",
 ]

@@ -16,28 +16,49 @@ from typing import Dict, List, Tuple
 
 import torch
 from megatron.core import parallel_state
+from megatron.core.tensor_parallel.layers import (
+    VocabParallelEmbedding,
+    ColumnParallelLinear,
+    RowParallelLinear,
+)
 from nemo.collections.llm.gpt.model.base import GPTConfig
 
 import nemo_rl.models.megatron.converters as model_converters
 
 
-def get_param_conversion_recipe_dict(
-    name, converter_type: model_converters.ModelType, model_cfg: GPTConfig
-):
-    converter_dict = model_converters.REGISTRY[converter_type]
+def get_tp_dim(model, param_name, named_modules_dict):
+    # pass in named_modules_dict so we can get it ahead of time instead
+    # of once for each param
+    if not param_name.endswith(".weight") and not param_name.endswith(".bias"):
+        return None
 
-    local_layer = model_converters.get_local_layer_num(name)
-    global_layer = (
-        model_converters.get_global_layer_num(name, model_cfg)
-        if local_layer is not None
-        else None
-    )
-    format_dict = model_converters.SafeDict(l=local_layer, gl=global_layer)
-
-    formatted_mapping = {
-        k.format_map(format_dict): rec for k, rec in converter_dict.items()
-    }
-    return formatted_mapping, format_dict
+    prefix = ""
+    if hasattr(model, "module"):
+        prefix = "module."
+        if hasattr(model.module, "module"):
+            prefix = "module.module."
+    key = prefix + ".".join(param_name.split(".")[:-1])
+    module = named_modules_dict.get(key)
+    if module is None:
+        print(f"Module {key} not found in named_modules_dict")
+        return None
+    if hasattr(module, "parallel_mode"):
+        # TE layers have parallel_mode we can check directly
+        if module.parallel_mode == "column":
+            return 0
+        elif module.parallel_mode == "row":
+            return 1
+        else:
+            return None
+    elif isinstance(module, VocabParallelEmbedding) or isinstance(
+        module, ColumnParallelLinear
+    ):
+        return 0
+    elif isinstance(module, RowParallelLinear):
+        return 1
+    # TODO(yifu): moe layers
+    else:
+        return None
 
 
 @torch.no_grad()
@@ -49,7 +70,7 @@ def get_global_param_key_to_local_key_map(
     Args:
         model: The model to get the mapping for.
         model_cfg: The model configuration.
-        keys: The keys to get the mapping for. Tuple of (local_key, global_hf_key)
+        keys: The local_keys to get the mapping for.
 
     Returns:
         A dictionary mapping global parameter keys to a tuple of (rank, local parameter key).
@@ -63,7 +84,7 @@ def get_global_param_key_to_local_key_map(
     # The global key is computed by replacing the local layer number (after "layers.")
     # with its corresponding global layer number (if applicable).
     local_map = {}
-    for local_key, _ in keys:
+    for local_key in keys:
         if local_key not in model.state_dict():
             continue
         local_layer = model_converters.get_local_layer_num(local_key)
@@ -100,16 +121,16 @@ def get_global_param_key_to_local_key_map(
 
 
 @torch.no_grad()
-def gather_and_convert_params(
+def gather_params(
     model,
-    converter_type: model_converters.ModelType,
-    model_cfg: GPTConfig,
     param_name_to_rank_and_key,
 ):
     import time
+
     st = time.time()
     # Process each parameter (by its unique global key) one at a time.
     gathered_params = {}
+    named_modules_dict = dict(model.named_modules())
     for gk in sorted(param_name_to_rank_and_key.keys()):
         owner_pp_global_rank, owner_raw_key = param_name_to_rank_and_key[gk]
 
@@ -117,51 +138,30 @@ def gather_and_convert_params(
         if torch.distributed.get_rank() == owner_pp_global_rank:
             param = model.state_dict()[owner_raw_key]
 
-            # Use the conversion dict to get the appropriate recipe for this parameter.
-            recipe_dict, format_dict = get_param_conversion_recipe_dict(
-                owner_raw_key, converter_type, model_cfg
-            )
-            recipe = recipe_dict.get(owner_raw_key, None)
-            if recipe is None and "_extra_state" not in owner_raw_key:
-                print(
-                    f"WARNING: {owner_raw_key} has no recipe mapping for conversion",
-                    flush=True,
-                )
-                hf_mapping = {"None": None}
+            # Check if param is TP-sharded
+            tp_dim = get_tp_dim(model, owner_raw_key, named_modules_dict)
+
+            # If the parameter is TP-sharded, gather its slices on GPU.
+            if tp_dim is not None:
+                tp_group = parallel_state.get_tensor_model_parallel_group()
+                tp_world_size = torch.distributed.get_world_size(tp_group)
+                gathered_slices = [
+                    torch.empty_like(param) for _ in range(tp_world_size)
+                ]
+                torch.distributed.all_gather(gathered_slices, param, group=tp_group)
+                full_param = torch.cat(gathered_slices, dim=tp_dim).to(torch.bfloat16)
             else:
-                # If the parameter is TP-sharded, gather its slices on GPU.
-                if recipe.get("tp", None) is not None:
-                    tp_group = parallel_state.get_tensor_model_parallel_group()
-                    tp_world_size = torch.distributed.get_world_size(tp_group)
-                    gathered_slices = [
-                        torch.empty_like(param) for _ in range(tp_world_size)
-                    ]
-                    torch.distributed.all_gather(gathered_slices, param, group=tp_group)
-                    full_param = torch.cat(gathered_slices, dim=recipe["tp"]).to(
-                        torch.bfloat16
-                    )
-                else:
-                    full_param = torch.clone(param).to(torch.bfloat16)
+                full_param = torch.clone(param).to(torch.bfloat16)
 
-                # Convert the parameter using the provided function or mapping.
-                if recipe.get("hf_func", None) is not None:
-                    hf_mapping = recipe["hf_func"](full_param, model_cfg)
-                    hf_mapping = {
-                        k.format_map(format_dict): v for k, v in hf_mapping.items()
-                    }
-                elif recipe.get("hf", None) is not None:
-                    hf_mapping = {recipe["hf"].format_map(format_dict): full_param}
-                else:
-                    raise NotImplementedError(
-                        f"No conversion recipe found for {owner_raw_key}"
-                    )
+            # Use the original parameter key without conversion
+            param_mapping = {gk: full_param}
         else:
-            hf_mapping = None  # Non-owner ranks will receive the converted tensors.
+            param_mapping = None  # Non-owner ranks will receive the tensors.
 
-        # Broadcast the list of target HF parameter keys from the owner.
+        # Broadcast the list of target parameter keys from the owner.
         pp_group = parallel_state.get_pipeline_model_parallel_group()
         if torch.distributed.get_rank() == owner_pp_global_rank:
-            target_keys = [list(hf_mapping.keys())]
+            target_keys = [list(param_mapping.keys())]
         else:
             target_keys = [None]  # Placeholder to be filled by broadcast.
 
@@ -171,10 +171,10 @@ def gather_and_convert_params(
         if "None" in target_keys[0]:
             continue
 
-        # For each converted tensor (could be more than one per original parameter), broadcast it individually.
+        # For each tensor, broadcast it individually.
         for target_key in target_keys[0]:
             if torch.distributed.get_rank() == owner_pp_global_rank:
-                tensor_to_send = hf_mapping[target_key]
+                tensor_to_send = param_mapping[target_key]
             else:
                 tensor_to_send = None
             # Broadcast tensor metadata (shape and dtype) to allocate GPU buffer on receiving ranks.
@@ -197,5 +197,5 @@ def gather_and_convert_params(
 
     torch.cuda.empty_cache()
     torch.cuda.synchronize()
-    print(f'Time taken to gather and convert params: {time.time() - st}')
+    print(f"Time taken to gather params: {time.time() - st}")
     return gathered_params

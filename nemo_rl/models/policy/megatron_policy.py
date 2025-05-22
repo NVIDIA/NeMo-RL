@@ -166,7 +166,9 @@ class MegatronPolicy(PolicyInterface, GenerationInterface):
         # Aggregate the results
         aggregated_results = {}
         aggregated_results["loss"] = results[0]["global_loss"]
-        aggregated_results["grad_norm"] = torch.tensor(results[0]["grad_norm"], device="cpu")
+        aggregated_results["grad_norm"] = torch.tensor(
+            results[0]["grad_norm"], device="cpu"
+        )
         # aggregated_results["sums"] = results[0]["sums"]
 
         # Aggregate metrics across all workers
