@@ -236,7 +236,7 @@ jobs:
           file: ./coverage.json
           flags: unit-tests
           verbose: true
-          override_branch	: ${{ github.event_name == 'merge_group' && 'main' || '' }}
+          override_branch: ${{ github.event_name == 'merge_group' && 'main' || '' }}
 
   CI_QA_Gate:
     name: CI quality check
