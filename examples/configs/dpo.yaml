@@ -41,7 +41,7 @@ policy:
   ## TODO(@ashors) support
   #logprob_batch_size: ${policy.train_micro_batch_size}
   max_total_sequence_length: 1024
-  precision: "float32"
+  precision: "bfloat16"
   fsdp_offload_enabled: false
   activation_checkpointing_enabled: false
 
@@ -52,11 +52,12 @@ policy:
     activation_checkpointing: false
     tensor_parallel_size: 1
 
+  dynamic_batching:
+    enabled: false
+
   # makes the training sequence length divisible by the tensor parallel size
   # this is useful for sequence parallel training
   make_sequence_length_divisible_by: ${policy.dtensor_cfg.tensor_parallel_size}
-  ## NOTE: there is a known issue with gradient clipping when using Dtensor
-  ## if using dtensor, set max_grad_norm to NULL
   max_grad_norm: 1.0
 
   optimizer:

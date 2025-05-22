@@ -16,20 +16,20 @@ import argparse
 import os
 import pprint
 from functools import partial
-from typing import Dict, Any
+from typing import Any
 
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
-from nemo_reinforcer.algorithms.sft import MasterConfig, sft_train, setup
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.data import DataConfig, hf_datasets
-from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
-from nemo_reinforcer.data.interfaces import TaskDataSpec, DatumSpec
-from nemo_reinforcer.data.llm_message_utils import get_formatted_message_log
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
-from nemo_reinforcer.utils.config import load_config
-from nemo_reinforcer.utils.logger import get_next_experiment_dir
+from nemo_rl.algorithms.sft import MasterConfig, setup, sft_train
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.data import DataConfig, hf_datasets
+from nemo_rl.data.datasets import AllTaskProcessedDataset
+from nemo_rl.data.interfaces import DatumSpec, TaskDataSpec
+from nemo_rl.data.llm_message_utils import get_formatted_message_log
+from nemo_rl.distributed.virtual_cluster import init_ray
+from nemo_rl.utils.config import load_config, parse_hydra_overrides
+from nemo_rl.utils.logger import get_next_experiment_dir
 
 
 def parse_args():
@@ -40,10 +40,7 @@ def parse_args():
     )
 
     # Parse known args for the script
-    args, remaining = parser.parse_known_args()
-
-    # Convert remaining args to OmegaConf format
-    overrides = OmegaConf.from_dotlist(remaining)
+    args, overrides = parser.parse_known_args()
 
     return args, overrides
 
@@ -52,13 +49,14 @@ def parse_args():
 # Data Processing
 # =======================================================
 def sft_preprocessor(
-    datum_dict: Dict[str, Any],
+    datum_dict: dict[str, Any],
     task_data_spec: TaskDataSpec,
     tokenizer,
     max_seq_length: int,
     idx: int,
     add_bos: bool = True,
     add_eos: bool = True,
+    add_generation_prompt: bool = False,
 ) -> DatumSpec:
     """Process a datum dictionary for SFT training."""
     message_log = get_formatted_message_log(
@@ -67,6 +65,7 @@ def sft_preprocessor(
         task_data_spec,
         add_bos_token=add_bos,
         add_eos_token=add_eos,
+        add_generation_prompt=add_generation_prompt,
     )
 
     length = sum(len(m["token_ids"]) for m in message_log)
@@ -104,6 +103,12 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
             data_config["input_key"],
             data_config["output_key"],
         )
+    elif data_cls == "openmathinstruct2":
+        data = hf_datasets.OpenMathInstruct2Dataset(
+            split=data_config["split"],
+            output_key=data_config["output_key"],
+            prompt_file=data_config["prompt_file"],
+        )
     else:
         raise ValueError(f"Unknown dataset class: {data_cls}")
     print(
@@ -122,6 +127,7 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
             sft_preprocessor,
             add_bos=data_config["add_bos"],
             add_eos=data_config["add_eos"],
+            add_generation_prompt=data_config["add_generation_prompt"],
         ),
         max_seq_length=data_config["max_input_seq_length"],
     )
@@ -134,6 +140,7 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig):
             sft_preprocessor,
             add_bos=data_config.get("add_bos", True),
             add_eos=data_config.get("add_eos", True),
+            add_generation_prompt=data_config["add_generation_prompt"],
         ),
         max_seq_length=data_config["max_input_seq_length"],
     )
@@ -154,7 +161,7 @@ def main():
 
     if overrides:
         print(f"Overrides: {overrides}")
-        config = OmegaConf.merge(config, overrides)
+        config = parse_hydra_overrides(config, overrides)
 
     config: MasterConfig = OmegaConf.to_container(config, resolve=True)
     print("Applied CLI overrides")

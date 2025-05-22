@@ -11,11 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+import time
+
 import pytest
 import ray
-from nemo_reinforcer.environments.math_environment import MathEnvironment
-import time
-import os
+
+from nemo_rl.distributed.ray_actor_environment_registry import (
+    get_actor_python_env,
+)
+from nemo_rl.environments.math_environment import MathEnvironment
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +28,9 @@ def math_env():
     """Create a MathEnvironment actor for testing."""
     env = MathEnvironment.options(
         runtime_env={
-            "py_executable": MathEnvironment.DEFAULT_PY_EXECUTABLE,
+            "py_executable": get_actor_python_env(
+                "nemo_rl.environments.math_environment.MathEnvironment"
+            ),
             "env_vars": dict(os.environ),
         }
     ).remote({"num_workers": 2})
@@ -229,3 +236,20 @@ def test_math_env_various_batches(math_env, batch_size):
         "Terminated flags should be a tensor of shape (batch_size,)"
     )
     assert all(result.terminateds == 1.0), "All terminated flags should be 1.0"
+
+
+def test_math_exception_handling(math_env):
+    """Test MathEnvironment step with an exception in the verify function."""
+    message_log_batch = [
+        [
+            {"role": "user", "content": "Question"},
+            {"role": "assistant", "content": "\\boxed{Eq(x**2/16 + y**2/12, 1)}"},
+        ]
+    ]
+    metadata = [{"ground_truth": "Eq(x**2/4 + y**2/3, 1)"}]
+
+    result = ray.get(math_env.step.remote(message_log_batch, metadata))
+
+    # Program should not crash
+    assert result.rewards.shape == (1,), "Rewards should be a tensor of shape (1,)"
+    assert result.rewards[0] == 0.0, "Reward should be 0.0"

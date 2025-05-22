@@ -13,19 +13,18 @@
 # limitations under the License.
 
 import os
-import pytest
 import sys
+
 from datasets import Dataset
 
 abspath = os.path.abspath(__file__)
 sys.path.append("/".join(abspath.split("/")[:-4]))
 
 from examples.run_grpo_math import math_data_processor
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.data.datasets import AllTaskProcessedDataset
-from nemo_reinforcer.data.interfaces import TaskDataSpec
-from nemo_reinforcer.models.policy import TokenizerConfig
-
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.data.datasets import AllTaskProcessedDataset
+from nemo_rl.data.interfaces import TaskDataSpec
+from nemo_rl.models.policy import TokenizerConfig
 
 basic_tokenizer_test_config: TokenizerConfig = {
     "name": "Qwen/Qwen2.5-Math-1.5B-Instruct",

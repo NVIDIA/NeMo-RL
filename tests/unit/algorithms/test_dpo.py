@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-import torch
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from nemo_reinforcer.algorithms.dpo import add_ref_logprobs_to_data
+import torch
+
+from nemo_rl.algorithms.dpo import add_ref_logprobs_to_data
 
 
 class MockPolicy:

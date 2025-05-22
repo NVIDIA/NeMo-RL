@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 import torch
 from torchdata.stateful_dataloader import StatefulDataLoader
-from nemo_reinforcer.algorithms.sft import sft_train, _default_sft_save_state
-from nemo_reinforcer.algorithms.loss_functions import NLLLoss
+
+from nemo_rl.algorithms.loss_functions import NLLLoss
+from nemo_rl.algorithms.sft import _default_sft_save_state, sft_train
 
 
 @pytest.fixture
@@ -113,8 +115,8 @@ def test_exit_on_max_steps(mock_components):
         sft_save_state,
     )
 
-    # Verify we only trained for 12 steps
-    assert mock_components["policy"].train.call_count == 12
+    # Verify we only trained for 12 + 1 steps. The extra 1 step is the final validation step.
+    assert mock_components["policy"].train.call_count == 12 + 1
 
 
 def test_exit_on_max_epochs(mock_components):
@@ -139,5 +141,5 @@ def test_exit_on_max_epochs(mock_components):
         sft_save_state,
     )
 
-    # Verify we trained for exactly two epochs (20 batches)
-    assert mock_components["policy"].train.call_count == 20
+    # Verify we trained for exactly two epochs (20 batches) + 1 validation step
+    assert mock_components["policy"].train.call_count == 20 + 1

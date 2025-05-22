@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-import torch
 from unittest.mock import MagicMock
 
-from nemo_reinforcer.data.datasets import dpo_collate_fn
-from nemo_reinforcer.data.interfaces import DatumSpec
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
+import torch
+
+from nemo_rl.data.datasets import dpo_collate_fn
+from nemo_rl.data.interfaces import DatumSpec
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 
 
 def test_dpo_collate_fn():

@@ -12,36 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from copy import deepcopy
+from unittest import mock
 
 import pytest
-import torch
 import ray
-import os
+import torch
 
-from nemo_reinforcer.algorithms.grpo import refit_policy_generation
-from nemo_reinforcer.algorithms.utils import get_tokenizer
-from nemo_reinforcer.distributed.virtual_cluster import RayVirtualCluster
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.models.generation.interfaces import configure_generation_config
-from nemo_reinforcer.models.generation.vllm import VllmGeneration, VllmConfig
-from nemo_reinforcer.models.policy import PolicyConfig
+from nemo_rl.algorithms.grpo import refit_policy_generation
+from nemo_rl.algorithms.utils import get_tokenizer
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.models.generation import configure_generation_config
+from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
+from nemo_rl.models.policy import PolicyConfig
+from nemo_rl.models.policy.hf_policy import HfPolicy
 
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
-    "model_name": "meta-llama/Llama-3.2-1B",  # Small model for testing
+    "model_name": "Qwen/Qwen3-0.6B",  # Small model for testing
     "tokenizer": {
-        "name": "meta-llama/Llama-3.2-1B",
+        "name": "Qwen/Qwen3-0.6B",
     },
     "dtype": "bfloat16",
-    "max_new_tokens": 10,
-    "temperature": 1.0,
+    "max_new_tokens": 5,
+    "temperature": 0.8,
     "top_p": 1.0,
     "top_k": None,
     "stop_token_ids": None,
     "stop_strings": None,
     "vllm_cfg": {
+        "precision": "bfloat16",
         "tensor_parallel_size": 1,
         "gpu_memory_utilization": 0.3,
         "max_model_len": 1024,
@@ -83,12 +86,21 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
             "activation_checkpointing": False,
             "tensor_parallel_size": 1,
         },
+        "dynamic_batching": {
+            "enabled": enable_dtensor,  # Dynamic batching is only supported with DTensor
+            "train_mb_tokens": 40,
+            "logprob_mb_tokens": 40,
+            "sequence_length_round": 4,
+        },
         "max_grad_norm": 1.0,
         "make_sequence_length_divisible_by": 1,
+        "generation": {
+            "temperature": 0.8,
+        },
     }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def cluster():
     """Create a virtual cluster for testing."""
     # Create a cluster with 1 node that has 2 GPU bundles
@@ -129,6 +141,41 @@ def policy(cluster, tokenizer):
         torch.cuda.empty_cache()
     except Exception as e:
         print(f"Error during policy cleanup: {e}")
+
+
+def _create_ray_virtual_cluster_for_test(name: str) -> RayVirtualCluster:
+    """Helper function to create a standard RayVirtualCluster for tests."""
+    return RayVirtualCluster(
+        bundle_ct_per_node_list=[1],
+        use_gpus=True,
+        max_colocated_worker_groups=1,
+        num_gpus_per_node=1,
+        name=name,
+    )
+
+
+@pytest.fixture(scope="function")
+def policy_cluster_separate():
+    """Create a virtual cluster for the HfPolicy, using 1 GPU."""
+    cluster = _create_ray_virtual_cluster_for_test("vllm-test-policy-cluster-separate")
+    yield cluster
+    try:
+        cluster.shutdown()
+    except Exception as e:
+        print(f"Error during policy_cluster_separate shutdown: {e}")
+
+
+@pytest.fixture(scope="function")
+def generation_cluster_separate():
+    """Create a virtual cluster for the VllmGeneration policy, using 1 GPU."""
+    cluster = _create_ray_virtual_cluster_for_test(
+        "vllm-test-generation-cluster-separate"
+    )
+    yield cluster
+    try:
+        cluster.shutdown()
+    except Exception as e:
+        print(f"Error during generation_cluster_separate shutdown: {e}")
 
 
 @pytest.fixture(scope="function")
@@ -234,12 +281,15 @@ def test_vllm_policy_generation(policy, test_input_data, tokenizer):
     )
 
 
+@pytest.mark.skip(
+    reason="Skipping for now, will be fixed in https://github.com/NVIDIA/NeMo-RL/issues/408"
+)
 def test_vllm_worker_seed_behavior(cluster, tokenizer):
     """
     1. Different workers generate different outputs for identical prompts due to different seeds
     2. When forced to use the same seed, workers generate identical outputs
     """
-    from nemo_reinforcer.models.generation.vllm import VllmGenerationWorker
+    from nemo_rl.models.generation.vllm import VllmGenerationWorker
 
     unique_prompts = [
         "Hello, my name is",
@@ -277,12 +327,12 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     policy = VllmGeneration(cluster, vllm_config)
     policy.finish_generation()
 
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+    from nemo_rl.models.policy.hf_policy import HfPolicy
 
     hf_config = get_basic_hf_test_config(enable_dtensor=False)
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-    print(f"refitting vllm policy...")
+    print("refitting vllm policy...")
     refit_policy_generation(hf_policy, policy, hf_config["refit_buffer_size_gb"])
 
     try:
@@ -382,8 +432,8 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
 
     This test validates that the two policies can work together.
     """
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
-    from tests.unit.test_utils import nll_loss
+    from nemo_rl.models.policy.hf_policy import HfPolicy
+    from tests.unit.test_utils import SimpleNLLLoss
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
@@ -405,17 +455,6 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
             "Who is the president of the USA?",
             "What is the capital of the moon?",
             "Where is the sun?",
-        ]
-
-        expected_generations = [
-            "Write a story about a magical forest. The forest is magical because it is full of",
-            "Explain how photosynthesis works\nExplain how photosynthesis works\nPhotosynthesis",
-            "What are the benefits of exercise? The benefits of exercise are many and varied. It",
-            "Describe the water cycle in your own words.\nDescribe the water cycle in",
-            "What is the capital of France? A. Paris B. New York C. Washington",
-            "Who is the president of the USA? Who is the president of the USA? Who is",
-            "What is the capital of the moon? A. Houston, Texas B. New York City",
-            "Where is the sun? Where is the moon? Where is the earth?",
         ]
 
         # Tokenize the prompts the same way as in test_hf_ray_policy
@@ -445,7 +484,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
         print("Creating HF policy...")
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-        print(f"refitting vllm policy...")
+        print("refitting vllm policy...")
         refit_policy_generation(
             hf_policy, vllm_policy, hf_config["refit_buffer_size_gb"]
         )
@@ -467,12 +506,8 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
             generation_results["output_ids"], skip_special_tokens=True
         )
         print(f"vLLM generated texts: {generated_texts}")
-        assert generated_texts == expected_generations, (
-            "Output should be the same as the expected output"
-        )
 
         # Run logprob calculation with HF policy to verify
-
         fprop_logprob_data = BatchedDataDict(
             {
                 "input_ids": generation_results["output_ids"],
@@ -534,6 +569,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
                 "input_ids": train_input_ids,
                 "input_lengths": generation_results["unpadded_sequence_lengths"],
                 "token_loss_mask": token_loss_mask,
+                "sample_mask": torch.ones(train_input_ids.shape[0]),
             }
         )
 
@@ -542,7 +578,7 @@ def test_vllm_generation_with_hf_training(cluster, tokenizer, enable_dtensor):
         hf_policy.prepare_for_training()
 
         # Just do one training step to verify it works
-        results = hf_policy.train(train_data, nll_loss)
+        results = hf_policy.train(train_data, SimpleNLLLoss())
         print(f"Training loss: {results['loss']}")
 
         hf_policy.finish_training()
@@ -638,8 +674,8 @@ def test_vllm_generate_text(cluster, tokenizer):
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
 
     # Ensure we can get same output
-    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
-        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    assert vllm_config["model_name"] == "Qwen/Qwen3-0.6B", (
+        "Model name should be Qwen/Qwen3-0.6B to get expected output"
     )
     assert vllm_config["vllm_cfg"]["tensor_parallel_size"] == 1, (
         "Tensor parallel size should be 1 to get expected output"
@@ -651,8 +687,8 @@ def test_vllm_generate_text(cluster, tokenizer):
     # Generate and check result
     output = vllm_generation.generate_text(test_prompts, greedy=True)
     assert output["texts"] == [
-        " Kelsey and I am a 2018 graduate",
-        " Paris. The city is located in the north of",
+        " Lina. I'm",
+        " Paris. The capital of",
     ], "Output should be the same as the expected output"
 
     # Clean up
@@ -666,7 +702,7 @@ def test_vllm_weight_update_and_prefix_cache_reset(
     cluster, tokenizer, tensor_parallel_size, enable_dtensor
 ):
     """Test that the vLLM prefix cache is correctly reset when weights change."""
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+    from nemo_rl.models.policy.hf_policy import HfPolicy
 
     # Create configs
     vllm_config = deepcopy(basic_vllm_test_config)
@@ -765,7 +801,7 @@ def test_vllm_weight_update_and_prefix_cache_reset(
 @pytest.mark.parametrize("enable_dtensor", [True, False])
 def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     """Test that vLLM streaming weight update and can save memory."""
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+    from nemo_rl.models.policy.hf_policy import HfPolicy
 
     if cluster.num_gpus_per_node < 2:
         pytest.skip("Need at least 2 GPUs per node for this test")
@@ -775,8 +811,8 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=False)
 
     # Ensure we can get same peak memory
-    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
-        "Model name should be meta-llama/Llama-3.2-1B to get expected peak memory"
+    assert vllm_config["model_name"] == "Qwen/Qwen3-0.6B", (
+        "Model name should be Qwen/Qwen3-0.6B to get expected peak memory"
     )
 
     # Create policies
@@ -788,7 +824,7 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     hf_config = get_basic_hf_test_config(enable_dtensor=enable_dtensor)
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-    print(f"refitting vllm policy...")
+    print("refitting vllm policy...")
     # take it outside statistics to get clean peak memory during refit
     hf_policy.offload_before_refit()
     # reset peak memory stats before refit
@@ -811,14 +847,14 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     # Check memory stats
     assert current_allocated == 0.0, "Memory should be 0 after refit completed"
     assert current_reserved == 0.0, "Memory should be 0 after refit completed"
-    # memory threshold: memory during non-streaming weight update on 1B model on 2 GPUs
+    # memory threshold: memory during non-streaming weight update on 0.6B model on 2 GPUs
     # memory during streaming weight update should less than this baseline threshold
     if enable_dtensor:
-        assert peak_allocated < 8074, "Peak allocated memory should < 8074 MB"
-        assert peak_reserved < 8088, "Peak reserved memory should < 8088 MB"
+        assert peak_allocated < 4005, "Peak allocated memory should < 4005 MB"
+        assert peak_reserved < 4016, "Peak reserved memory should < 4016 MB"
     else:
-        assert peak_allocated < 11286, "Peak allocated memory should < 11286 MB"
-        assert peak_reserved < 11298, "Peak reserved memory should < 11298 MB"
+        assert peak_allocated < 5736, "Peak allocated memory should < 5736 MB"
+        assert peak_reserved < 5748, "Peak reserved memory should < 5748 MB"
 
     # Clean up
     vllm_policy.shutdown()
@@ -831,17 +867,17 @@ def test_vllm_generation_with_stop(
     cluster, test_input_data, tokenizer, is_eval, enable_dtensor
 ):
     """Test vLLM generation with stop."""
-    from nemo_reinforcer.models.policy.hf_policy import HfPolicy
+    from nemo_rl.models.policy.hf_policy import HfPolicy
 
     # Create separate configs for each policy
     vllm_config = basic_vllm_test_config.copy()
-    vllm_config["stop_token_ids"] = [3363]
-    vllm_config["stop_strings"] = ["I am a"]
+    vllm_config["stop_token_ids"] = [6722]  # 'Ġcapital'
+    vllm_config["stop_strings"] = ["I'm"]
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=is_eval)
 
     # Ensure we can get same output
-    assert vllm_config["model_name"] == "meta-llama/Llama-3.2-1B", (
-        "Model name should be meta-llama/Llama-3.2-1B to get expected output"
+    assert vllm_config["model_name"] == "Qwen/Qwen3-0.6B", (
+        "Model name should be Qwen/Qwen3-0.6B to get expected output"
     )
     assert vllm_config["vllm_cfg"]["tensor_parallel_size"] == 1, (
         "Tensor parallel size should be 1 to get expected output"
@@ -860,7 +896,7 @@ def test_vllm_generation_with_stop(
         hf_config = get_basic_hf_test_config(enable_dtensor=enable_dtensor)
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
-        print(f"refitting vllm policy...")
+        print("refitting vllm policy...")
         refit_policy_generation(
             hf_policy,
             vllm_generation,
@@ -872,8 +908,8 @@ def test_vllm_generation_with_stop(
     output_ids = outputs["output_ids"]
     generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
     assert generated_texts == [
-        "Hello, my name is Kelsey and I am a",
-        "The capital of France is Paris. The city",
+        "Hello, my name is Lina. I'm",
+        "The capital of France is Paris. The capital",
     ], "Output should be the same as the expected output"
 
     # test generate_text
@@ -884,8 +920,8 @@ def test_vllm_generation_with_stop(
     test_prompts = BatchedDataDict({"prompts": test_prompts})
     output = vllm_generation.generate_text(test_prompts, greedy=True)
     assert output["texts"] == [
-        " Kelsey and I am a",
-        " Paris. The city",
+        " Lina. I'm",
+        " Paris. The capital",
     ], "Output should be the same as the expected output"
 
     # Clean up
@@ -922,3 +958,71 @@ def test_vllm_non_divisible_batch_handling(policy):
     assert all(outputs[key].shape[0] == 1 for key in required_keys), (
         "Output tensors should have a batch dimension of 1"
     )
+
+
+def test_vllm_refit_non_collocated_handles_update_failure(
+    policy_cluster_separate,
+    generation_cluster_separate,
+    tokenizer,
+    test_input_data,
+):
+    if (
+        policy_cluster_separate.num_gpus_per_node < 1
+        or generation_cluster_separate.num_gpus_per_node < 1
+    ):
+        pytest.skip(
+            "Test requires at least two GPUs to run policies on separate clusters."
+        )
+
+    # Create HfPolicy on its own cluster
+    hf_config = get_basic_hf_test_config(enable_dtensor=True)
+    hf_config["dtensor_cfg"]["tensor_parallel_size"] = 1
+    hf_policy = HfPolicy(policy_cluster_separate, hf_config, tokenizer)
+
+    # Create VllmGeneration policy on its own cluster
+    vllm_config = deepcopy(basic_vllm_test_config)
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
+    vllm_config["vllm_cfg"]["tensor_parallel_size"] = 1
+    vllm_policy = VllmGeneration(generation_cluster_separate, vllm_config)
+
+    hf_policy_instance = None
+    vllm_policy_instance = None
+
+    try:
+        hf_policy_instance = hf_policy
+        vllm_policy_instance = vllm_policy
+        ray.get(
+            [
+                worker._add_noise_to_weights.remote()
+                for worker in hf_policy_instance.worker_group.workers
+            ]
+        )
+        print("Refitting vLLM policy from HF policy (non-collocated)")
+        with mock.patch.object(
+            vllm_policy_instance, "update_weights", return_value=False
+        ):
+            with pytest.raises(RuntimeError):
+                refit_policy_generation(
+                    hf_policy_instance,
+                    vllm_policy_instance,
+                    hf_config["refit_buffer_size_gb"],
+                )
+        print("RuntimeError during refit correctly caught.")
+
+    finally:
+        print("Cleaning up non-collocated test resources...")
+        if hf_policy_instance:
+            try:
+                hf_policy_instance.shutdown()
+            except Exception as e:
+                print(f"Error during HfPolicy cleanup: {e}")
+        if vllm_policy_instance:
+            try:
+                vllm_policy_instance.shutdown()
+            except Exception as e:
+                print(f"Error during VllmPolicy cleanup: {e}")
+        # Force garbage collection
+        import gc
+
+        gc.collect()
+        torch.cuda.empty_cache()

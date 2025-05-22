@@ -1,0 +1,175 @@
+#!/bin/bash
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################
+# This is a helper script to launch a release test on slurm.
+# It reads a demarcated section of the script to extract the config,
+# and uses that to determine how many nodes and how many chained jobs to launch.
+#
+# It also creates a code snapshot to ensure that the code is reproducible and subsequent
+# jobs can be launched with the same code. It also creates a continue.sh in the code
+# snapshot directory to continue launching the job even if the original invocation was
+# forgotten.
+#
+# Usage:
+#   CONTAINER=... ACCOUNT=... PARTITION=... ./launch <script_path> <another_script_path> ...
+#
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+PROJECT_ROOT=$(realpath $SCRIPT_DIR/..)
+
+# Function to extract config from a script
+extract_config() {
+    local script_path="$1"
+    local config=$(sed -n '/^# =\+ BEGIN CONFIG =\+/,/^# =\+ END CONFIG =\+/p' "$script_path" | 
+                   grep -v "^#" | 
+                   grep "=" )
+    if [[ -z "$config" ]]; then
+        echo "[ERROR]: No config section found in script_path=$script_path"
+        echo "[ERROR]: Please add and update a section in the script with these variables:"
+        echo
+        echo "# ===== BEGIN CONFIG ====="
+        echo "NUM_NODES=1        # How many nodes this job uses"
+        echo "STEPS_PER_RUN=60   # Approximately how many steps reached in one job"
+        echo "MAX_STEPS=60       # Max training steps"
+        echo 'NUM_RUNS=$(( (MAX_STEPS + STEPS_PER_RUN - 1) / STEPS_PER_RUN ))  # Round up'
+        echo "NUM_MINUTES=240    # How many minutes one job is (SLURM specific)"
+        echo "# ===== END CONFIG ====="
+        return 1
+    fi 1>&2
+    echo "$config"
+}
+
+check_file_in_version_control_and_get_relpath_from_git_root() {
+    local script_path="$1"
+    # Check if the script is tracked in git (assumes we're in the repo already)
+    rel_path_from_git_root=$(git ls-files --full-name --error-unmatch "$script_path")
+    ret_code=$?
+    if [[ $ret_code -ne 0 ]]; then
+        echo "[ERROR]: Script '$script_path' is not tracked in version control." >&2
+        echo "[ERROR]: This may cause reproducibility issues. Add it to git to continue." >&2
+        return 1
+    fi
+    echo "$rel_path_from_git_root"
+}
+
+set -eou pipefail
+
+if [[ $# -eq 0 ]]; then
+    echo "Error: No script provided."
+    echo "Usage: CONTAINER=... ACCOUNT=... PARTITION=... $0 <script_path> <another_script_path> ..."
+    exit 1
+fi
+
+# Check for mandatory environment variables
+for VAR in "HF_HOME" "HF_DATASETS_CACHE"; do
+    if [[ -z "${!VAR:-}" ]]; then
+        echo "[ERROR]: $VAR environment variable is not set."
+        echo "[ERROR]: Please set $VAR to specify the appropriate Hugging Face directory."
+        echo "Example: export $VAR=/path/to/appropriate/directory"
+        exit 1
+    fi
+done
+
+CONTAINER=$CONTAINER
+ACCOUNT=$ACCOUNT
+PARTITION=$PARTITION
+MOUNTS=${MOUNTS:-}
+# DRYRUN=1 prints the runs and how much compute they use
+# DRYRUN=2 additionally creates the snapshots (helpful to run a hermetic example manually or share a repro)
+DRYRUN=${DRYRUN:-}
+IS_RELEASE=${IS_RELEASE:-}  # Adds extra configuration for wandb to track this in the right project
+NOW=$(date '+%y%m%d-%H%M%S')
+
+if [[ -n "$MOUNTS" ]]; then
+    # Comma needed since we always mount PWD
+    MOUNTS=",$MOUNTS"
+fi
+
+SCRIPTS=""
+for SCRIPT in $@; do
+    if [[ ! -f "$SCRIPT" ]]; then
+        echo "Error: Script '$SCRIPT' does not exist or is not a file."
+        echo "Please provide a valid script path."
+        exit 1
+    fi
+    SCRIPTS+=" $SCRIPT"
+done
+
+total_gpu_hours=0
+
+for SCRIPT in $SCRIPTS; do
+    # Extract and evaluate the config
+    if ! config=$(extract_config $SCRIPT); then
+        # Error message is already printed by extract_config
+        exit 1
+    fi
+    eval "$config"
+
+    # NUM_RUNS * NUM_NODES * NUM_GPUS * (NUM_MINUTES / 60)
+    gpu_hours=$((NUM_RUNS * NUM_NODES * 8 * NUM_MINUTES / 60))
+    total_gpu_hours=$((total_gpu_hours + gpu_hours))
+    echo "[INFO]: $gpu_hours GPUhrs to run $SCRIPT"
+    if [[ "${DRYRUN}" -eq 1 ]]; then
+        echo "[DRY_RUN]: Skipping creation of snapshot and submission of $SCRIPT."
+        continue
+    fi
+
+    rel_script=$(check_file_in_version_control_and_get_relpath_from_git_root $SCRIPT)
+    
+    EXP_NAME=$(basename $SCRIPT .sh)
+    SNAPSHOT_DIR=$(bash $PROJECT_ROOT/tools/code_snapshot.sh $EXP_NAME)
+
+    # Now use the variables
+    for i in $(seq 1 $NUM_RUNS); do
+        echo "Submitting $i/$NUM_RUNS job with ${NUM_NODES} nodes for $(basename $SCRIPT)"
+        JOB_NAME=$(basename $SCRIPT .sh)
+
+        RELEASE_ARGS=()
+        if [[ -n "${IS_RELEASE}" ]]; then
+            RELEASE_ARGS=(
+                logger.wandb.project=nemo-rl-release
+                logger.wandb.name=$(basename $SCRIPT .sh)-$(git rev-parse --short HEAD)
+            )
+        fi
+    
+        # TODO: jq install is just to be backward compatible with older containers. Should eventually remove.
+        cat <<EOF >$SNAPSHOT_DIR/continue.sh
+#!/bin/bash
+SCRIPT_DIR=\$( cd -- "\$( dirname -- "\${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+cd \$SCRIPT_DIR
+
+HF_HOME=$HF_HOME \\
+HF_DATASETS_CACHE=$HF_DATASETS_CACHE \\
+COMMAND="apt install -y jq && uv run $rel_script ${RELEASE_ARGS[@]}" \\
+CONTAINER=$CONTAINER \\
+MOUNTS="$SNAPSHOT_DIR:$SNAPSHOT_DIR${MOUNTS}" \\
+sbatch \\
+    --nodes=$NUM_NODES \\
+    --account=$ACCOUNT \\
+    --job-name=$ACCOUNT:$JOB_NAME \\
+    --partition=$PARTITION \\
+    --time=0:${NUM_MINUTES}:0 \\
+    --gres=gpu:8 \\
+    --output=slurm-${NOW}-%j-${JOB_NAME}-${i}.${NUM_RUNS}.out \\
+    ray.sub
+EOF
+        if [[ "${DRYRUN}" -eq 2 ]]; then
+            echo "[DRY_RUN]: Skipping submission of $SCRIPT. Find the snapshot at $SNAPSHOT_DIR and manually launch with 'bash continue.sh'"
+        else
+            bash $SNAPSHOT_DIR/continue.sh
+        fi
+    done
+done
+echo [INFO]: Total GPU hours: $total_gpu_hours

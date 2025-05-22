@@ -13,11 +13,12 @@
 # limitations under the License.
 
 import time
-import pytest
-import numpy as np
 from unittest.mock import patch
 
-from nemo_reinforcer.utils.timer import Timer
+import numpy as np
+import pytest
+
+from nemo_rl.utils.timer import Timer
 
 
 class TestTimer:

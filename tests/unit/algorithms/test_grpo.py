@@ -11,28 +11,28 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import pytest
-import torch
-import ray
-from typing import Dict, List, Tuple
 
-from nemo_reinforcer.experience.rollouts import calculate_rewards
-from nemo_reinforcer.distributed.batched_data_dict import BatchedDataDict
-from nemo_reinforcer.data.interfaces import DatumSpec, LLMMessageLogType
-from nemo_reinforcer.environments.interfaces import (
+import pytest
+import ray
+import torch
+
+from nemo_rl.data.interfaces import DatumSpec, LLMMessageLogType
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.environments.interfaces import (
     EnvironmentInterface,
     EnvironmentReturn,
 )
+from nemo_rl.experience.rollouts import calculate_rewards
 
 
 @ray.remote(num_cpus=0)
 class MockEnvironment(EnvironmentInterface):
-    def __init__(self, rewards: List[float]):
+    def __init__(self, rewards: list[float]):
         self.rewards = rewards
         self._calls = 0
 
     def step(
-        self, messages: List[LLMMessageLogType], env_info: List[dict]
+        self, messages: list[LLMMessageLogType], env_info: list[dict]
     ) -> EnvironmentReturn:
         self._calls += 1
         return (
@@ -52,15 +52,15 @@ class MockEnvironment(EnvironmentInterface):
 
     def global_post_process_and_metrics(
         self, batch: BatchedDataDict
-    ) -> Tuple[BatchedDataDict, dict]:
+    ) -> tuple[BatchedDataDict, dict]:
         return batch, {}
 
 
 def create_mock_batch(
     num_samples: int,
-    task_names: List[str],
-    message_logs: List[LLMMessageLogType],
-    extra_env_info: List[dict] = None,
+    task_names: list[str],
+    message_logs: list[LLMMessageLogType],
+    extra_env_info: list[dict] = None,
 ) -> BatchedDataDict[DatumSpec]:
     """Helper function to create a mock batch for testing."""
     if extra_env_info is None:

@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+from pathlib import Path
+
+import numpy as np
 import pytest
 import torch
-import numpy as np
-from pathlib import Path
-from nemo_reinforcer.utils.checkpoint import CheckpointManager
+import yaml
+
+from nemo_rl.utils.checkpoint import CheckpointManager
 
 
 @pytest.fixture
@@ -60,8 +63,8 @@ def test_init_tmp_checkpoint(checkpoint_manager, checkpoint_dir):
         assert isinstance(saved_metadata["numpy"], (int, float))
 
     # Check if config was saved
-    with open(save_dir / "config.json", "r") as f:
-        saved_config = json.load(f)
+    with open(save_dir / "config.yaml", "r") as f:
+        saved_config = yaml.safe_load(f)
         assert saved_config == run_config
 
 

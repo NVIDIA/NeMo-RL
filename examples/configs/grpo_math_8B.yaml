@@ -20,7 +20,11 @@ policy:
   refit_buffer_size_gb: 4 # used for refitting inference engine, the unit is GB
 
   dtensor_cfg:
-    enabled: False
+    enabled: True
+
+  dynamic_batching:
+    train_mb_tokens: 4096
+    logprob_mb_tokens: 8192
 
   optimizer:
     name: "torch.optim.AdamW"
@@ -35,12 +39,13 @@ policy:
       kwargs:
         start_factor: 0.1
         end_factor: 1.0
-        total_iters: 50
+        # The scheduler iteration is per GPRO step and is decoupled with the optimizer step (may be >=1 per GPRO step)
+        total_iters: 13
     - name: "torch.optim.lr_scheduler.ConstantLR"
       kwargs:
         factor: 1.0
         total_iters: 10000000000
-    - milestones: [50]
+    - milestones: [13]
 
   generation:
     backend: "vllm"

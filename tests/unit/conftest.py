@@ -11,32 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from io import StringIO
-import time
-import pytest
-from nemo_reinforcer.utils.logger import GPUMonitoringConfig
-from tests import unit
-import torch
-import torch.distributed as dist
-import torch.multiprocessing as mp
+import json
 import os
 import random
-from typing import Callable
-import ray
+import time
+import unittest.mock
+from datetime import datetime
+from io import StringIO
+from typing import Callable, TypedDict
 
 import pytest
+import ray
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import os
-import random
-from typing import Callable
-import ray
-import json
-from nemo_reinforcer.distributed.virtual_cluster import init_ray
-from typing import TypedDict
-from datetime import datetime
-import unittest.mock
+
+from nemo_rl.distributed.virtual_cluster import init_ray
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -57,6 +47,12 @@ class TEST_ASSETS:
     )
     TINY_QWEN2_MODEL_PATH = os.path.join(
         _TEST_ASSETS_DIR, "tiny_qwen2_with_qwen2_tokenizer"
+    )
+    TINY_QWEN3_MODEL_PATH = os.path.join(
+        _TEST_ASSETS_DIR, "tiny_qwen3_with_qwen3_tokenizer"
+    )
+    TINY_GEMMA3_MODEL_PATH = os.path.join(
+        _TEST_ASSETS_DIR, "tiny_gemma3_with_gemma3_tokenizer"
     )
 
 
@@ -103,7 +99,7 @@ def pytest_sessionstart(session):
         start_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         metrics={},
         gpu_types=[],
-        coverage="[n/a] run with --cov=nemo_reinforcer",
+        coverage="[n/a] run with --cov=nemo_rl",
     )
 
 
@@ -128,7 +124,7 @@ def session_data(request, init_ray_cluster):
     ############################################################
     # 2. Gather the ray metadata #
     ############################################################
-    from nemo_reinforcer.utils.logger import RayGpuMonitorLogger
+    from nemo_rl.utils.logger import RayGpuMonitorLogger
 
     logger = RayGpuMonitorLogger(
         collection_interval=float("inf"),
@@ -231,7 +227,7 @@ def ray_gpu_monitor(init_ray_cluster):
 
     This fixture doesn't need to be called directly.
     """
-    from nemo_reinforcer.utils.logger import RayGpuMonitorLogger
+    from nemo_rl.utils.logger import RayGpuMonitorLogger
 
     gpu_monitor = RayGpuMonitorLogger(
         collection_interval=1,
@@ -393,8 +389,9 @@ def mock_2gpu_distributed_env():
 @pytest.fixture(scope="session", autouse=True)
 def tiny_llama_model_path():
     """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
-    from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer
     import shutil
+
+    from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
 
     model_path = TEST_ASSETS.TINY_LLAMA_MODEL_PATH
     # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
@@ -420,8 +417,9 @@ def tiny_llama_model_path():
 @pytest.fixture(scope="session", autouse=True)
 def tiny_llama_tied_model_path():
     """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
-    from transformers import LlamaConfig, LlamaForCausalLM, AutoTokenizer
     import shutil
+
+    from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
 
     model_path = TEST_ASSETS.TINY_LLAMA_TIED_MODEL_PATH
     # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
@@ -447,8 +445,9 @@ def tiny_llama_tied_model_path():
 @pytest.fixture(scope="session", autouse=True)
 def tiny_qwen2_model_path():
     """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
-    from transformers import Qwen2Config, Qwen2ForCausalLM, AutoTokenizer
     import shutil
+
+    from transformers import AutoTokenizer, Qwen2Config, Qwen2ForCausalLM
 
     model_path = TEST_ASSETS.TINY_QWEN2_MODEL_PATH
     # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
@@ -464,6 +463,62 @@ def tiny_qwen2_model_path():
     )
     model = Qwen2ForCausalLM(config=config)
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-1.5B")
+    shutil.rmtree(model_path, ignore_errors=True)
+    model.save_pretrained(model_path)
+    tokenizer.save_pretrained(model_path)
+    del model, tokenizer
+    yield model_path
+
+
+@pytest.fixture(scope="session", autouse=True)
+def tiny_qwen3_model_path():
+    """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
+    import shutil
+
+    from transformers import AutoTokenizer, Qwen3Config, Qwen3ForCausalLM
+
+    model_path = TEST_ASSETS.TINY_QWEN3_MODEL_PATH
+    # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
+    # vocab_size=151936 (so we can re-use qwen2 1.5b tokenizer)
+    config = Qwen3Config(
+        num_hidden_layers=2,
+        hidden_size=64,
+        intermediate_size=32,
+        num_attention_heads=2,
+        vocab_size=151936,
+        tie_word_embeddings=False,
+        num_key_value_heads=None,
+    )
+    model = Qwen3ForCausalLM(config=config)
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
+    shutil.rmtree(model_path, ignore_errors=True)
+    model.save_pretrained(model_path)
+    tokenizer.save_pretrained(model_path)
+    del model, tokenizer
+    yield model_path
+
+
+@pytest.fixture(scope="session", autouse=True)
+def tiny_gemma3_model_path():
+    """Fixture that returns a path to a tiny llama model with a dummy tokenizer."""
+    import shutil
+
+    from transformers import AutoTokenizer, Gemma3ForCausalLM, Gemma3TextConfig
+
+    model_path = TEST_ASSETS.TINY_GEMMA3_MODEL_PATH
+    # hidden_size//num_attention_heads = 32 (smallest value to not error due to vllm paged attention)
+    # vocab_size=262144 so we can re-use gemma-3-1b tokenizer
+    config = Gemma3TextConfig(
+        num_hidden_layers=2,
+        hidden_size=64,
+        intermediate_size=32,
+        num_attention_heads=2,
+        vocab_size=262144,
+        tie_word_embeddings=True,
+        num_key_value_heads=2,
+    )
+    model = Gemma3ForCausalLM(config=config)
+    tokenizer = AutoTokenizer.from_pretrained("google/gemma-3-1b-it")
     shutil.rmtree(model_path, ignore_errors=True)
     model.save_pretrained(model_path)
     tokenizer.save_pretrained(model_path)

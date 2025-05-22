@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import pytest
-
 from transformers import AutoTokenizer
-from nemo_reinforcer.data.hf_datasets.chat_templates import COMMON_CHAT_TEMPLATES
-from nemo_reinforcer.data.hf_datasets.squad import SquadDataset
+
+from nemo_rl.data.hf_datasets.squad import SquadDataset
 
 
 @pytest.mark.skip(reason="dataset download is flaky")

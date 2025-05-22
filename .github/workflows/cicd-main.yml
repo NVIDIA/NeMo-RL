@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-name: "CICD Reinforcer"
+name: "CICD NeMo RL"
 
 on:
   pull_request:
@@ -115,6 +115,18 @@ jobs:
           pip install pre-commit
           pre-commit install
           pre-commit run --all-files --show-diff-on-failure --color=always
+  
+  mypy-check:
+    name: Mypy check
+    needs: [pre-flight]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Check mypy
+        run: |
+          pip install uv
+          uv run --group test mypy nemo_rl examples
 
   sphinx-build:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
@@ -128,20 +140,21 @@ jobs:
         run: |
           pip install uv
           cd docs/
-          uv run --group docs sphinx-build . _build/html
+          uv run --group docs sphinx-build --fail-on-warning --builder html . _build/html
 
   build-container:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     needs: [pre-flight]
-    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.22.7
+    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_build_container.yml@v0.30.0
     with:
       build-ref: ${{ github.sha }}
-      image-name: nemo_reinforcer_container
+      image-name: nemo_rl_container
       dockerfile: docker/Dockerfile
-      image-label: nemo-reinforcer
+      image-label: nemo-rl
+      target: hermetic
       build-args: |
         MAX_JOBS=32
-        REINFORCER_COMMIT=${{ github.sha }}
+        NEMO_RL_COMMIT=${{ github.sha }}
 
   tests:
     name: Tests
@@ -150,34 +163,35 @@ jobs:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
     with:
       RUNNER: self-hosted-azure
-      TIMEOUT: 60
+      TIMEOUT: 75
       UNIT_TEST_SCRIPT: |
-        cd /opt/reinforcer
+        cd /opt/nemo-rl
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
-          uv run --no-sync bash -x ./tests/run_unit.sh
+          uv run --no-sync bash -x ./tests/run_unit.sh --cov=nemo_rl --cov-report=term --cov-report=json
         else
           echo Skipping unit tests for docs-only level
         fi
       DOC_TEST_SCRIPT: |
-        cd /opt/reinforcer/docs
+        cd /opt/nemo-rl/docs
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(docs|L0|L1|L2)$ ]]; then
           uv run --no-sync sphinx-build -b doctest . _build/doctest
         else
           echo Skipping doc tests for level ${{ needs.pre-flight.outputs.test_level }}
         fi
       FUNCTIONAL_TEST_SCRIPT: |
-        cd /opt/reinforcer
+        cd /opt/nemo-rl
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L1|L2)$ ]]; then
-          uv run --no-sync bash ./tests/functional/sft.sh
-          uv run --no-sync bash ./tests/functional/grpo.sh
-          uv run --no-sync bash ./tests/functional/grpo_multiturn.sh
-          uv run --no-sync bash ./tests/functional/dpo.sh
+          time uv run --no-sync bash ./tests/functional/sft.sh
+          time uv run --no-sync bash ./tests/functional/grpo.sh
+          time uv run --no-sync bash ./tests/functional/grpo_multiturn.sh
+          time uv run --no-sync bash ./tests/functional/dpo.sh
+          time uv run --no-sync bash ./tests/functional/eval.sh
         else
           echo Skipping functional tests for level ${{ needs.pre-flight.outputs.test_level }}
         fi
       # TODO: enable once we have convergence tests in CI
       #CONVERGENCE_TEST_SCRIPT: |
-      #  cd /opt/reinforcer
+      #  cd /opt/nemo-rl
       #  if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L2)$  ]]; then
       #    echo "Running convergence tests"
       #    # Add your convergence test commands here
@@ -186,7 +200,7 @@ jobs:
       #    echo "Skipping convergence tests for level ${{ needs.pre-flight.outputs.test_level }}"
       #  fi
       AFTER_SCRIPT: |
-        cd /opt/reinforcer
+        cd /opt/nemo-rl
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Test Summary for level: ${{ needs.pre-flight.outputs.test_level }}
 
@@ -199,6 +213,29 @@ jobs:
         EOF
     secrets:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+  coverage:
+    name: Upload coverage to Codecov
+    needs: [tests]
+    if: ${{ contains('L0 L1 L2', needs.pre-flight.outputs.test_level) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-coverage-report
+          path: .
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.json
+          flags: unit-tests
+          verbose: true
 
   CI_QA_Gate:
     name: CI quality check
@@ -222,7 +259,8 @@ jobs:
                 (
                   needs.pre-flight.outputs.test_level != 'none' &&
                   needs.sphinx-build.result == 'success' &&
-                  needs.tests.result == 'success'
+                  needs.tests.result == 'success' &&
+                  (needs.mypy-check.result == 'success' || true)
                 )
               )
             }}
