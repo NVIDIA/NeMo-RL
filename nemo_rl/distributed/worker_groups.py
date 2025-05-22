@@ -395,7 +395,9 @@ class RayWorkerGroup:
 
             # Get the placement group for this node
             pg = self.cluster.get_placement_groups()[node_idx]
-            is_tp_group = len(local_bundle_indices) > 1
+
+            # Check if this group has multiple workers (for tensor or pipeline parallelism)
+            is_parallel_group = len(local_bundle_indices) > 1
 
             for local_rank, bundle_idx in enumerate(local_bundle_indices):
                 # Set up basic distributed environment variables
@@ -413,15 +415,16 @@ class RayWorkerGroup:
                     }
                 )
 
-                # For tensor parallel groups, only the first worker gets bundle_indices
-                worker_bundle_indices = (
-                    (node_idx, local_bundle_indices) if local_rank == 0 else None
-                )
+                # Only the first worker in each group gets bundle_indices for parallel groups
+                # Non-parallel groups (single worker) always get bundle_indices
+                worker_bundle_indices = None
+                if local_rank == 0 or not is_parallel_group:
+                    worker_bundle_indices = (node_idx, local_bundle_indices)
 
                 # Create a descriptive name based on group structure
                 name = (
                     f"{self.name_prefix}-grp{group_idx}-{local_rank}"
-                    if is_tp_group
+                    if is_parallel_group
                     else f"{self.name_prefix}-{node_idx}-{bundle_idx}"
                 )
 
