@@ -2,7 +2,7 @@
 
 This guide explains how to run NeMo RL with Ray on Slurm or Kubernetes.
 
-## Slurm (Batched and Interactive)
+## Use Slurm for Batched and Interactive Jobs
 
  The following code provides instructions on how to use Slurm to run batched job submissions and run jobs interactively.
 
@@ -29,11 +29,11 @@ sbatch \
 Depending on your Slurm cluster configuration, you may or may not need to include the `--gres=gpu:8` option in the `sbatch` command.
 ```
 
-Which will print the `SLURM_JOB_ID`:
+Upon successful submission, Slurm will print the `SLURM_JOB_ID`:
 ```text
 Submitted batch job 1980204
 ```
-Make note of the the job submission number. Once the job begins, you can track its process in the driver logs which you can `tail`:
+Make a note of the job submission number. Once the job begins, you can track its process in the driver logs which you can `tail`:
 ```sh
 tail -f 1980204-logs/ray-driver.log
 ```
@@ -60,12 +60,11 @@ sbatch \
     --gres=gpu:8 \
     ray.sub
 ```
-Which will print the `SLURM_JOB_ID`:
+Upon successful submission, Slurm will print the `SLURM_JOB_ID`:
 ```text
 Submitted batch job 1980204
 ```
-Once the Ray cluster is up, a script should be created to attach to the Ray head node,
-which you can use to launch experiments.
+Once the Ray cluster is up, a script will be created to attach to the Ray head node. Run this script to launch experiments:
 ```sh
 bash 1980204-attach.sh
 ```
@@ -182,7 +181,3 @@ this token will be available to your NeMo RL run. Consider adding these exports 
 For the most part, you will not need to change ports unless these
 are already taken by some other service backgrounded on your cluster.
 :::
-
-## Kubernetes
-
-TBD
