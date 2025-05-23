@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import time
 from pathlib import Path
 from typing import Any, Optional, TypedDict, cast
 
@@ -289,9 +290,14 @@ def refit_policy_generation(
     refit_buffer_size_gb: int,  # GB
 ) -> None:
     """Refit the policy generation interface with the latest policy weights."""
+    start_time = time.time()
     policy.offload_before_refit()
+    print(f"[refit] [offload_before_refit] {time.time() - start_time:.2f}s")
+    start_time = time.time()
     policy_generation.prepare_for_generation(tags=["weights"])
+    print(f"[refit] [prepare_for_generation] {time.time() - start_time:.2f}s")
     # Streaming update weights to save memory
+    start_time = time.time()
     state_dict_info: list[tuple[str, int]] = policy.prepare_weights_for_ipc()
     # group keys to save time
     available_bytes = refit_buffer_size_gb * (1024**3)
@@ -309,9 +315,17 @@ def refit_policy_generation(
 
     if len(keys) > 0:
         split_keys.append(keys)
+    print(f"[refit] [prepare_weights_for_ipc] {time.time() - start_time:.2f}s")
+    for idx, keys in enumerate(split_keys):
+        print(f"[refit] [split_keys] {idx} {len(keys)}")
     # do update
+    time_get = 0.
+    time_update = 0.
     for keys in split_keys:
+        start_time = time.time()
         ipc_handles = policy.get_weights_ipc_handles(keys)
+        time_get += time.time() - start_time
+        start_time = time.time()
         if not policy_generation.update_weights(ipc_handles):
             error_message = (
                 "❌ Error: Updating weights for the generation policy failed during refit.\n"
@@ -319,8 +333,15 @@ def refit_policy_generation(
                 "a problem within the generation backend (e.g., vLLM worker).\n"
             )
             raise RuntimeError(error_message)
+        time_update += time.time() - start_time
+    print(f"[refit] [get_weights_ipc_handles] {time_get:.2f}s")
+    print(f"[refit] [update_weights] {time_update:.2f}s")
+    start_time = time.time()
     policy.offload_after_refit()
+    print(f"[refit] [offload_after_refit] {time.time() - start_time:.2f}s")
+    start_time = time.time()
     policy_generation.prepare_for_generation(tags=["kv_cache"])
+    print(f"[refit] [prepare_for_generation] {time.time() - start_time:.2f}s")
 
 
 # ===============================================================================
