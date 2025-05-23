@@ -741,7 +741,7 @@ def validate(
 
             # Collect message logs for later display
             to_env = get_keys_from_message_log(
-                val_batch["message_log"], ["role", "content"]
+                val_batch["message_log"], ["role", "content", "content_in_oai_format"]
             )
             all_message_logs.extend(to_env)
 

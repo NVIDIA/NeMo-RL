@@ -120,7 +120,7 @@ def calculate_rewards(
     """
     # Extract message logs for environment (most recent interaction)
     to_env = [
-        get_keys_from_message_log(batch["message_log"][i], ["role", "content"])
+        get_keys_from_message_log(batch["message_log"][i], ["role", "content", "content_in_oai_format"])
         for i in range(len(batch["message_log"]))
     ]
     task_names = batch["task_name"]

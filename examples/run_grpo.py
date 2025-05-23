@@ -28,6 +28,7 @@ from nemo_rl.data import DataConfig
 from nemo_rl.data.interfaces import DatumSpec
 from nemo_rl.distributed.virtual_cluster import init_ray
 from nemo_rl.environments.math_environment import MathEnvironment
+from nemo_rl.environments.llm_judge_async_environment import LLMJudgeAsyncEnvironment
 from nemo_rl.models.generation.interfaces import configure_generation_config
 from nemo_rl.utils.config import load_config, parse_hydra_overrides
 from nemo_rl.utils.logger import get_next_experiment_dir
@@ -88,6 +89,7 @@ class JsonlinesDataset:
         user_message = {"role": "user"}
 
         for m in single_message:
+            # it's actually taking only the last user message's metadata
             if m["role"] == "user":
                 # need to be deepcopy to avoid overwriting the original metadata
                 extra_env_info = deepcopy(m["metadata"])
@@ -106,6 +108,7 @@ class JsonlinesDataset:
             return_tensors="pt",
         )[0]
         user_message["content"] = message
+        user_message["content_in_oai_format"] = single_message
         message_log.append(user_message)
 
         length = sum(len(m["token_ids"]) for m in message_log)
@@ -150,6 +153,15 @@ def setup_data(tokenizer: AutoTokenizer, data_config: DataConfig, env_configs):
 
     task_to_env = {}
     task_to_env["math"] = math_env
+
+    if "llm_judge_async" in env_configs:
+        llm_judge_async_env = LLMJudgeAsyncEnvironment.options(
+            runtime_env={
+                "py_executable": LLMJudgeAsyncEnvironment.DEFAULT_PY_EXECUTABLE,
+                "env_vars": dict(os.environ),
+            }
+        ).remote(env_configs["llm_judge_async"])
+        task_to_env["llm_judge"] = llm_judge_async_env
 
     return train_ds, val_ds, task_to_env, task_to_env
 
