@@ -73,23 +73,6 @@ Now that you are on the head node, you can launch the command as follows:
 uv run ./examples/run_grpo_math.py
 ```
 
-### Slurm UV_CACHE_DIR
-
-There several choices for `UV_CACHE_DIR` when using `ray.sub`:
-
-1. (default) `UV_CACHE_DIR` defaults to `$SLURM_SUBMIT_DIR/uv_cache` when not specified the shell environment, and is mounted to head and worker nodes to serve as a persistent cache between runs.
-2. Use the warm uv cache from our docker images:
-    ```sh
-    ...
-    UV_CACHE_DIR=/home/ray/.cache/uv \
-    sbatch ... \
-        ray.sub
-    ```
-
-(1) is more efficient in general since the cache is not ephemeral and is persisted run to run; but for users that
-don't want to persist the cache, you can use (2), which is just as performant as (1) if the `uv.lock` is 
-covered by warmed cache.
-
 ### Slurm Environment Variables
 
 All Slurm environment variables described below can be added to the `sbatch`
@@ -144,6 +127,16 @@ this token will be available to your NeMo RL run. Consider adding these exports 
 * - Environment Variable
     (and default)
   - Explanation
+* - `UV_CACHE_DIR_OVERRIDE`
+  - By default, this variable does not need to be set. If unset, `ray.sub` uses the 
+    `UV_CACHE_DIR` defined within the container (defaulting to `/root/.cache/uv`). 
+    `ray.sub` intentionally avoids using the `UV_CACHE_DIR` from the user's host 
+    environment to prevent the host's cache from interfering with the container's cache. 
+    Set `UV_CACHE_DIR_OVERRIDE` if you have a customized `uv` environment (e.g., 
+    with pre-downloaded packages or specific configurations) that you want to persist 
+    and reuse across container runs. This variable should point to a path on a shared 
+    filesystem accessible by all nodes (head and workers). This path will be mounted 
+    into the container and will override the container's default `UV_CACHE_DIR`.
 * - `CPUS_PER_WORKER=128`
   - CPUs each Ray worker node claims. Default is `16 * GPUS_PER_NODE`.
 * - `GPUS_PER_NODE=8`
