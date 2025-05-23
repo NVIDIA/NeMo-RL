@@ -114,47 +114,6 @@ sbatch ray.sub \
 :::{tip}
 When `HF_TOKEN`, `WANDB_API_KEY`, `HF_HOME`, and `HF_DATASETS_CACHE` are set in your shell environment using `export`, they are automatically passed to `ray.sub`. For instance, if you set:
 
-### Slurm Environment Variables
-
-All Slurm environment variables described below can be added to the `sbatch`
-invocation of `ray.sub`. For example, `GPUS_PER_NODE=8` can be specified as follows:
-
-```sh
-GPUS_PER_NODE=8 \
-... \
-sbatch ray.sub \
-   ...
-```
-#### Common Environment Configuration
-``````{list-table}
-:header-rows: 1
-
-* - Environment Variable
-  - Explanation
-* - `CONTAINER`
-  - (Required) Specifies the container image to be used for the Ray cluster.
-    Use either a docker image from a registry or a squashfs (if using enroot/pyxis).
-* - `MOUNTS`
-  - (Required) Defines paths to mount into the container. Examples:
-    ```md
-    * `MOUNTS="$PWD:$PWD"` (mount in current working directory (CWD))
-    * `MOUNTS="$PWD:$PWD,/nfs:/nfs:ro"` (mounts the current working directory and `/nfs`, with `/nfs` mounted as read-only)
-    ```
-* - `COMMAND`
-  - Command to execute after the Ray cluster starts. If empty, the cluster idles and enters interactive mode (see the [Slurm interactive instructions](#interactive-launching)).
-* - `HF_HOME`
-  - Sets the cache directory for huggingface-hub assets (e.g., models/tokenizers).
-* - `WANDB_API_KEY`
-  - Setting this allows you to use the wandb logger without having to run `wandb login`.
-* - `HF_TOKEN`
-  - Setting the token used by huggingface-hub. Avoids having to run the `huggingface-cli login`
-* - `HF_DATASETS_CACHE`
-  - Sets the cache dir for downloaded Huggingface datasets.
-``````
-
-:::{tip}
-When `HF_TOKEN`, `WANDB_API_KEY`, `HF_HOME`, and `HF_DATASETS_CACHE` are set in your shell environment using `export`, they are automatically passed to `ray.sub`. For instance, if you set:
-
 ```sh
 export HF_TOKEN=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
