@@ -17,6 +17,9 @@ import shlex
 import subprocess
 from functools import lru_cache
 
+import ray
+from ray.util import placement_group
+
 dir_path = os.path.dirname(os.path.abspath(__file__))
 git_root = os.path.abspath(os.path.join(dir_path, "../.."))
 DEFAULT_VENV_DIR = os.path.join(git_root, "venvs")
@@ -82,3 +85,32 @@ def create_local_venv(py_executable: str, venv_name: str) -> str:
     # Return the path to the python executable in the virtual environment
     python_path = os.path.join(venv_path, "bin", "python")
     return python_path
+
+
+# Ray-based helper to create a virtual environment on each Ray node
+@ray.remote(num_cpus=1)
+def _env_builder(py_executable: str, venv_name: str):
+    # Create the virtual environment on this node
+    return create_local_venv(py_executable, venv_name)
+
+
+def create_local_venv_on_each_node(py_executable: str, venv_name: str):
+    # Create a virtual environment on each Ray node.
+    # Determine the number of alive Ray nodes
+    nodes = [n for n in ray.nodes() if n.get("Alive", False)]
+    num_nodes = len(nodes)
+    # Reserve one CPU on each node using a STRICT_SPREAD placement group
+    bundles = [{"CPU": 1} for _ in range(num_nodes)]
+    pg = placement_group(bundles=bundles, strategy="STRICT_SPREAD")
+    ray.get(pg.ready())
+
+    # Launch one actor per node
+    actors = [
+        _env_builder.options(placement_group=pg).remote(py_executable, venv_name)
+        for _ in range(num_nodes)
+    ]
+    # ensure setup runs on each node
+    paths = ray.get([actor for actor in actors])
+    assert len(set(paths)) == 1, "All nodes should have the same venv"
+    # Return mapping from node IP to venv python path
+    return paths[0]
