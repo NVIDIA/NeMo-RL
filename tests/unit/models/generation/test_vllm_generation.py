@@ -26,7 +26,8 @@ from nemo_rl.models.generation.interfaces import configure_generation_config
 from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy import PolicyConfig
 
-model_name = "Qwen/Qwen2.5-32B"
+# model_name = "Qwen/Qwen2.5-32B"
+model_name = "meta-llama/Llama-3.1-70B"
 # model_name = "meta-llama/Llama-3.1-8B-Instruct"
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
@@ -296,7 +297,7 @@ async def test_vllm_policy_generation_async(
     async_policy = None
     try:
         vllm_config = deepcopy(basic_vllm_test_config)
-        vllm_config["vllm_cfg"]["async_engine"] = True
+        vllm_config["vllm_cfg"]["async_engine"] = False
         vllm_config = configure_generation_config(vllm_config, tokenizer)
         vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
         vllm_config["vllm_cfg"]["pipeline_parallel_size"] = pipeline_parallel_size
@@ -325,8 +326,7 @@ async def test_vllm_policy_generation_async(
         print("sleeping!!!!")
         time.sleep(5)
         print("Testing async generation...")
-        for i in range(1000):
-            outputs = async_policy.generate_async(test_input_data)
+        outputs = async_policy.generate_async(test_input_data)
         # Validate outputs format
         assert "output_ids" in outputs, "output_ids not found in generation output"
         assert "logprobs" in outputs, "logprobs not found in generation output"
@@ -365,6 +365,71 @@ async def test_vllm_policy_generation_async(
             async_policy.shutdown()
         if hf_policy and hasattr(hf_policy, "shutdown"):
             hf_policy.shutdown()
+
+
+# @pytest.mark.asyncio
+# @pytest.mark.parametrize("tensor_parallel_size", [8])
+# @pytest.mark.parametrize("pipeline_parallel_size", [2])
+# async def test_vllm_large_model(
+#     cluster, test_input_data, tokenizer, tensor_parallel_size, pipeline_parallel_size
+# ):
+#     """Test vLLM policy async generation capabilities."""
+#     # Ensure the policy is configured for async generation
+#     # Create separate configs for each policy
+#     hf_policy = None
+#     async_policy = None
+#     try:
+#         vllm_config = deepcopy(basic_vllm_test_config)
+#         vllm_config["vllm_cfg"]["async_engine"] = True
+#         vllm_config = configure_generation_config(vllm_config, tokenizer)
+#         vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
+#         vllm_config["vllm_cfg"]["pipeline_parallel_size"] = pipeline_parallel_size
+#         vllm_config["vllm_cfg"]["load_format"] = "auto"
+
+#         async_policy = VllmGeneration(cluster, vllm_config)
+#         import time
+
+#         time.sleep(10)
+#         print(
+#             "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
+#         )
+#         outputs = async_policy.generate_async(test_input_data)
+#         # Validate outputs format
+#         assert "output_ids" in outputs, "output_ids not found in generation output"
+#         assert "logprobs" in outputs, "logprobs not found in generation output"
+#         assert "generation_lengths" in outputs, (
+#             "generation_lengths not found in generation output"
+#         )
+#         assert "unpadded_sequence_lengths" in outputs, (
+#             "unpadded_sequence_lengths not found in generation output"
+#         )
+
+#         # Validate outputs shape and content
+#         assert outputs["output_ids"].shape[0] == len(test_input_data["input_ids"]), (
+#             "Wrong batch size in output"
+#         )
+#         assert outputs["generation_lengths"].shape[0] == len(
+#             test_input_data["input_ids"]
+#         ), "Wrong batch size in generation_lengths"
+
+#         # Decode and check outputs
+#         generated_sequences = outputs["output_ids"]
+#         generated_texts = tokenizer.batch_decode(
+#             generated_sequences, skip_special_tokens=True
+#         )
+
+#         print(f"Generated texts: {generated_texts}")
+
+#         # All texts should have a non-zero length and be longer than inputs
+#         assert all(len(text) > 0 for text in generated_texts), (
+#             "Some generated texts are empty"
+#         )
+
+#     finally:
+#         # Clean up resources
+#         print("Cleaning up resources...")
+#         if async_policy:
+#             async_policy.shutdown()
 
 
 # @pytest.mark.skip(

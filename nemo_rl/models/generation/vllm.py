@@ -847,157 +847,87 @@ class VllmGeneration(GenerationInterface):
         # Total parallel sizes
         tp_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
         pp_size = self.cfg["vllm_cfg"]["pipeline_parallel_size"]
-        total_parallel = tp_size * pp_size
 
-        # If pipeline parallelism is enabled we fall back to the existing logic
-        if pp_size > 1:
-            print(
-                f"[VLLM DEBUG] Using pipeline parallelism mode with pp={pp_size} (tp={tp_size})"
-            )
-
-            # ------------------------------------------------------------------
-            # Build per-node bundle lists (same as TP branch)
-            # ------------------------------------------------------------------
-            try:
-                import ray
-
-                pg_table = ray.util.placement_group_table(unified_pg)
-                bundle_to_node = pg_table["bundles_to_node_id"]
-            except Exception as e:
-                raise RuntimeError(
-                    "Failed to retrieve bundle/node mapping from Ray for placement group."
-                ) from e
-
-            from collections import defaultdict
-
-            node_id_to_bundles: dict[str, list[int]] = defaultdict(list)
-            for bundle_idx, node_id in bundle_to_node.items():
-                node_id_to_bundles[node_id].append(bundle_idx)
-
-            for lst in node_id_to_bundles.values():
-                lst.sort()
-
-            # Assign logical node indices just for debug/seed; stable order
-            node_idx_lookup: dict[str, int] = {
-                nid: idx for idx, nid in enumerate(sorted(node_id_to_bundles.keys()))
-            }
-
-            tied_groups: list[tuple[int, list[int]]] = []
-
-            def pop_stage_bundles(tp: int) -> list[int] | None:
-                # Return tp bundle indices, preferring a single node but falling back to multiple nodes if necessary.
-                # 1. try to find a single node with ≥tp bundles
-                for nid, bundles in node_id_to_bundles.items():
-                    if len(bundles) >= tp:
-                        chosen = bundles[:tp]
-                        del bundles[:tp]
-                        if not bundles:
-                            del node_id_to_bundles[nid]
-                        return chosen
-
-                # 2. fallback: aggregate across nodes
-                chosen: list[int] = []
-                for nid in list(node_id_to_bundles.keys()):
-                    take = min(tp - len(chosen), len(node_id_to_bundles[nid]))
-                    chosen.extend(node_id_to_bundles[nid][:take])
-                    del node_id_to_bundles[nid][:take]
-                    if not node_id_to_bundles[nid]:
-                        del node_id_to_bundles[nid]
-                    if len(chosen) == tp:
-                        break
-                return chosen if len(chosen) == tp else None
-
-            # Build replicas until resources exhausted
-            while True:
-                replica_bundles: list[int] = []
-                stage_success = True
-                for stage_idx in range(pp_size):
-                    stage_bundles = pop_stage_bundles(tp_size)
-                    if stage_bundles is None:
-                        stage_success = False
-                        break
-                    replica_bundles.extend(stage_bundles)
-                    print(
-                        f"[VLLM DEBUG]   PP-stage {stage_idx} bundles {stage_bundles}"
-                    )
-
-                if not stage_success:
-                    break
-
-                tied_groups.append((0, replica_bundles))
-                print(
-                    f"[VLLM DEBUG] Created PP worker group #{len(tied_groups) - 1} with bundles: {replica_bundles}"
-                )
-
-            if not tied_groups:
-                raise ValueError(
-                    "Unable to form any pipeline-parallel worker groups with the available resources."
-                )
-
-            return tied_groups
-
-        # ------------------------------------------------------------------
-        # Pure tensor-parallel case (pp_size == 1)
-        # ------------------------------------------------------------------
-
-        print(
-            f"[VLLM DEBUG] Using tensor parallelism mode with tp={tp_size} and unified placement group"
-        )
-
-        # Build mapping bundle_index -> node_id via Ray's placement_group_table
+        # ---------------------------------------------------------------
+        # Build bundle-to-node mapping once
+        # ---------------------------------------------------------------
         try:
             import ray
 
             pg_table = ray.util.placement_group_table(unified_pg)
-            bundle_to_node = pg_table["bundles_to_node_id"]
+            bundle_to_node: dict[int, str] = pg_table["bundles_to_node_id"]
         except Exception as e:
             raise RuntimeError(
                 "Failed to retrieve bundle/node mapping from Ray for placement group."
             ) from e
 
-        # Organise bundles per node (maintain sorted deterministic order)
-        node_id_to_bundles: dict[str, list[int]] = {}
-        for bundle_idx, node_id in bundle_to_node.items():
-            node_id_to_bundles.setdefault(node_id, []).append(bundle_idx)
+        from collections import defaultdict
+
+        node_id_to_bundles: dict[str, list[int]] = defaultdict(list)
+        for b_idx, n_id in bundle_to_node.items():
+            node_id_to_bundles[n_id].append(b_idx)
 
         for lst in node_id_to_bundles.values():
             lst.sort()
 
-        tied_worker_groups: list[tuple[int, list[int]]] = []
+        # Logical node indices for reproducible seeding
+        node_idx_lookup = {
+            nid: idx for idx, nid in enumerate(sorted(node_id_to_bundles))
+        }
 
-        # Assign an incremental node_idx integer for seeding/debugging purposes
-        node_idx_lookup: dict[str, int] = {}
-        for logical_node_idx, node_id in enumerate(sorted(node_id_to_bundles.keys())):
-            node_idx_lookup[node_id] = logical_node_idx
+        def pop_stage_bundles(tp: int) -> list[int] | None:
+            # Return tp bundle indices, preferring a single node but falling back to multiple nodes if necessary.
 
-        # Create worker groups ensuring each group stays inside a single node
-        for node_id, bundle_list in node_id_to_bundles.items():
-            logical_node_idx = node_idx_lookup[node_id]
+            # 1. try one node
+            for nid, bundles in node_id_to_bundles.items():
+                if len(bundles) >= tp:
+                    chosen = bundles[:tp]
+                    del bundles[:tp]
+                    if not bundles:
+                        del node_id_to_bundles[nid]
+                    return chosen
 
-            # Split the bundles of this node into chunks of size `tp_size`
-            for start in range(0, len(bundle_list), tp_size):
-                chunk = bundle_list[start : start + tp_size]
+            # 2. aggregate across nodes
+            chosen: list[int] = []
+            for nid in list(node_id_to_bundles.keys()):
+                take = min(tp - len(chosen), len(node_id_to_bundles[nid]))
+                chosen.extend(node_id_to_bundles[nid][:take])
+                del node_id_to_bundles[nid][:take]
+                if not node_id_to_bundles[nid]:
+                    del node_id_to_bundles[nid]
+                if len(chosen) == tp:
+                    break
+            return chosen if len(chosen) == tp else None
 
-                if len(chunk) < tp_size:
-                    # Not enough GPUs left on this node for a full TP group – skip / warn.
-                    print(
-                        f"[VLLM DEBUG] Skipping incomplete TP group on node {node_id}: {chunk}"
-                    )
-                    continue
+        tied_groups: list[tuple[int, list[int]]] = []
 
-                tied_worker_groups.append((logical_node_idx, chunk))
-                print(
-                    f"[VLLM DEBUG] Created tensor parallel worker group on node {logical_node_idx} "
-                    f"with bundle indices: {chunk}"
-                )
+        total_stages = pp_size  # 1 for TP-only; >1 for PP
+        while True:
+            replica_bundles: list[int] = []
+            for stage in range(total_stages):
+                stage_bundles = pop_stage_bundles(tp_size)
+                if stage_bundles is None:
+                    # cannot satisfy more replicas
+                    replica_bundles = []
+                    break
+                replica_bundles.extend(stage_bundles)
+                print(f"[VLLM DEBUG]   stage {stage} bundles {stage_bundles}")
 
-        if not tied_worker_groups:
-            raise ValueError(
-                f"Cannot create any tensor parallel tied worker groups with size {tp_size}. "
-                "Check that each node has at least the required number of GPUs."
+            if not replica_bundles:
+                break
+
+            first_node_id = bundle_to_node[replica_bundles[0]]
+            tied_groups.append((node_idx_lookup[first_node_id], replica_bundles))
+            print(
+                f"[VLLM DEBUG] Created worker group #{len(tied_groups) - 1} with bundles: {replica_bundles}"
             )
 
-        return tied_worker_groups
+        if not tied_groups:
+            raise ValueError(
+                "Unable to allocate any worker groups with the available resources."
+            )
+
+        return tied_groups
 
     def generate(
         self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
