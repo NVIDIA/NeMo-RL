@@ -285,7 +285,7 @@ def skip_tied_weight_check_for_all():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tensor_parallel_size", [4])
-@pytest.mark.parametrize("pipeline_parallel_size", [1])
+@pytest.mark.parametrize("pipeline_parallel_size", [2])
 async def test_vllm_policy_generation_async(
     cluster, test_input_data, tokenizer, tensor_parallel_size, pipeline_parallel_size
 ):
