@@ -666,27 +666,44 @@ class VllmGenerationWorker:
             print(f"Error during vLLM shutdown: {e}")
             return False
 
-    async def report_device_id(self) -> str:
+    def report_device_id(self) -> str:
+        """Report device ID from the vLLM worker."""
         assert self.llm is not None, (
             "Attempting to report device id with either an uninitialized vLLM or non-model-owner"
         )
 
-        # self.llm.collective_rpc will be a coroutine if self.llm is AsyncLLMEngine
-        # result_or_coro = self.llm.collective_rpc("report_device_id", args=tuple())
+        if self.cfg["vllm_cfg"]["async_engine"]:
+            raise RuntimeError(
+                "report_device_id cannot be used with async_engine=True. Use report_device_id_async instead."
+            )
+
+        result_or_coro = self.llm.collective_rpc("report_device_id", args=tuple())
+        list_of_worker_results = result_or_coro
+        return cast(str, list_of_worker_results[0])
+
+    async def report_device_id_async(self) -> str:
+        """Async version of report_device_id."""
+        assert self.llm is not None, (
+            "Attempting to report device id with either an uninitialized vLLM or non-model-owner"
+        )
+
+        if not self.cfg["vllm_cfg"]["async_engine"]:
+            raise RuntimeError(
+                "report_device_id_async can only be used with async_engine=True. Use report_device_id instead."
+            )
+
         result_or_coro = self.llm.engine.model_executor.collective_rpc(
             "report_device_id", args=tuple()
         )
 
         if asyncio.iscoroutine(result_or_coro):
-            # For AsyncLLMEngine, await the collective_rpc coroutine.
             list_of_worker_results = await result_or_coro
-            return cast(str, list_of_worker_results[0])
         else:
-            # For LLM, collective_rpc is synchronous.
             list_of_worker_results = result_or_coro
-            return cast(str, list_of_worker_results[0])
 
-    async def update_weights_from_ipc_handles(self, ipc_handles):
+        return cast(str, list_of_worker_results[0])
+
+    def update_weights_from_ipc_handles(self, ipc_handles):
         """Update weights from IPC handles by delegating to the vLLM Worker implementation.
 
         Args:
@@ -695,26 +712,20 @@ class VllmGenerationWorker:
         Returns:
             bool: True if weights were successfully updated, False otherwise.
         """
-        # self.llm.collective_rpc will be a coroutine if self.llm is AsyncLLMEngine
         try:
             assert self.llm is not None, (
                 "Attempting to update weights with either an uninitialized vLLM or non-model-owner"
             )
 
             if self.cfg["vllm_cfg"]["async_engine"]:
-                result_or_coro = self.llm.engine.model_executor.collective_rpc(
-                    "update_weights_from_ipc_handles", args=(ipc_handles,)
-                )
-            else:
-                result_or_coro = self.llm.collective_rpc(
-                    "update_weights_from_ipc_handles", args=(ipc_handles,)
+                raise RuntimeError(
+                    "update_weights_from_ipc_handles cannot be used with async_engine=True. Use update_weights_from_ipc_handles_async instead."
                 )
 
-            if asyncio.iscoroutine(result_or_coro):
-                worker_results = await result_or_coro
-                worker_result = worker_results[0]
-            else:
-                worker_result = result_or_coro[0]
+            result_or_coro = self.llm.collective_rpc(
+                "update_weights_from_ipc_handles", args=(ipc_handles,)
+            )
+            worker_result = result_or_coro[0]
 
             if not worker_result:
                 print(
@@ -729,36 +740,122 @@ class VllmGenerationWorker:
             traceback.print_exc()
             return False
 
-    async def sleep(self):
+    async def update_weights_from_ipc_handles_async(self, ipc_handles):
+        """Async version of update_weights_from_ipc_handles.
+
+        Args:
+            ipc_handles (dict): Dictionary mapping device UUIDs (str) to parameter IPC handles.
+
+        Returns:
+            bool: True if weights were successfully updated, False otherwise.
+        """
+        try:
+            assert self.llm is not None, (
+                "Attempting to update weights with either an uninitialized vLLM or non-model-owner"
+            )
+
+            if not self.cfg["vllm_cfg"]["async_engine"]:
+                raise RuntimeError(
+                    "update_weights_from_ipc_handles_async can only be used with async_engine=True. Use update_weights_from_ipc_handles instead."
+                )
+
+            result_or_coro = self.llm.engine.model_executor.collective_rpc(
+                "update_weights_from_ipc_handles", args=(ipc_handles,)
+            )
+
+            if asyncio.iscoroutine(result_or_coro):
+                worker_results = await result_or_coro
+            else:
+                worker_results = result_or_coro
+
+            worker_result = worker_results[0]
+
+            if not worker_result:
+                print(
+                    f"Error: Worker failed to update weights. Result: {worker_result}"
+                )
+                return False
+            return True
+        except Exception as e:
+            print(f"Exception during collective_rpc for weight update: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return False
+
+    def sleep(self):
+        """Put the vLLM engine to sleep."""
         assert self.llm is not None, (
             "Attempting to sleep with either an uninitialized vLLM or non-model-owner"
         )
 
+        if self.cfg["vllm_cfg"]["async_engine"]:
+            raise RuntimeError(
+                "sleep cannot be used with async_engine=True. Use sleep_async instead."
+            )
+
         # Reset the prefix cache to ensure that prefix cache is not reused after weights are updated
         self.llm.llm_engine.reset_prefix_cache()
-
-        if self.cfg["vllm_cfg"]["async_engine"]:
-            await self.llm.sleep(level=1)
-        else:
-            self.llm.sleep(level=1)
+        self.llm.sleep(level=1)
 
         gc.collect()
         torch.cuda.empty_cache()
 
-    async def wake_up(self, **kwargs):
+    async def sleep_async(self):
+        """Async version of sleep."""
+        assert self.llm is not None, (
+            "Attempting to sleep with either an uninitialized vLLM or non-model-owner"
+        )
+
+        if not self.cfg["vllm_cfg"]["async_engine"]:
+            raise RuntimeError(
+                "sleep_async can only be used with async_engine=True. Use sleep instead."
+            )
+
+        # Reset the prefix cache to ensure that prefix cache is not reused after weights are updated
+        self.llm.engine.reset_prefix_cache()
+        await self.llm.sleep(level=1)
+
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    def wake_up(self, **kwargs):
+        """Wake up the vLLM engine."""
         assert self.llm is not None, (
             "Attempting to wake up with either an uninitialized vLLM or non-model-owner"
         )
+
+        if self.cfg["vllm_cfg"]["async_engine"]:
+            raise RuntimeError(
+                "wake_up cannot be used with async_engine=True. Use wake_up_async instead."
+            )
+
         tags = kwargs.get("tags")
 
         wake_up_args = {}
         if tags is not None:
             wake_up_args["tags"] = tags
 
-        if self.cfg["vllm_cfg"]["async_engine"]:
-            await self.llm.wake_up(**wake_up_args)
-        else:
-            self.llm.wake_up(**wake_up_args)
+        self.llm.wake_up(**wake_up_args)
+
+    async def wake_up_async(self, **kwargs):
+        """Async version of wake_up."""
+        assert self.llm is not None, (
+            "Attempting to wake up with either an uninitialized vLLM or non-model-owner"
+        )
+
+        if not self.cfg["vllm_cfg"]["async_engine"]:
+            raise RuntimeError(
+                "wake_up_async can only be used with async_engine=True. Use wake_up instead."
+            )
+
+        tags = kwargs.get("tags")
+
+        wake_up_args = {}
+        if tags is not None:
+            wake_up_args["tags"] = tags
+
+        await self.llm.wake_up(**wake_up_args)
 
 
 class VllmGeneration(GenerationInterface):
@@ -982,9 +1079,13 @@ class VllmGeneration(GenerationInterface):
     def prepare_for_generation(self, *args: Any, **kwargs: Any) -> bool:
         """Wake workers up."""
         try:
+            # Choose the appropriate method based on async_engine setting
+            method_name = (
+                "wake_up_async" if self.cfg["vllm_cfg"]["async_engine"] else "wake_up"
+            )
             # Use run_all_workers_single_data for methods that don't need data
             futures = self.worker_group.run_all_workers_single_data(
-                "wake_up", run_rank_0_only_axes=["tensor_parallel"], **kwargs
+                method_name, run_rank_0_only_axes=["tensor_parallel"], **kwargs
             )
             # Wait for all futures to complete
             results = ray.get(futures)
@@ -996,9 +1097,13 @@ class VllmGeneration(GenerationInterface):
     def finish_generation(self, *args: Any, **kwargs: Any) -> bool:
         """Sleep workers."""
         try:
+            # Choose the appropriate method based on async_engine setting
+            method_name = (
+                "sleep_async" if self.cfg["vllm_cfg"]["async_engine"] else "sleep"
+            )
             # Use run_all_workers_single_data for methods that don't need data
             futures = self.worker_group.run_all_workers_single_data(
-                "sleep",
+                method_name,
                 run_rank_0_only_axes=["tensor_parallel"],
             )
             # Wait for all futures to complete
@@ -1032,9 +1137,15 @@ class VllmGeneration(GenerationInterface):
             return False
 
         try:
+            # Choose the appropriate method based on async_engine setting
+            method_name = (
+                "update_weights_from_ipc_handles_async"
+                if self.cfg["vllm_cfg"]["async_engine"]
+                else "update_weights_from_ipc_handles"
+            )
             # Directly pass ipc_handles to the method
             futures = self.worker_group.run_all_workers_single_data(
-                "update_weights_from_ipc_handles",
+                method_name,
                 ipc_handles=ipc_handles,
                 run_rank_0_only_axes=["tensor_parallel"],
             )
