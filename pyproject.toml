@@ -41,16 +41,16 @@ dependencies = [
 vllm = [
     "vllm==0.8.5",
 ]
-#mcore = [
+mcore = [
     # also need cudnn (https://developer.nvidia.com/cudnn-downloads?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=20.04&target_type=deb_network)
     # wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb
     # sudo dpkg -i cuda-keyring_1.1-1_all.deb
     # sudo apt-get update
     # sudo apt-get install cudnn-cuda-12
-#    "transformer-engine[pytorch]==1.13.0",
-#    "megatron-core",
-#    "nemo-tron",
-#]
+    "transformer-engine[pytorch]==1.13.0",
+    "megatron-core",
+    "nemo-tron",
+]
 
 [dependency-groups]
 
