@@ -43,6 +43,7 @@ policy:
     sequence_parallel: true
     activation_checkpointing: false
     tensor_parallel_size: 4
+    custom_parallel_plan: null
   dynamic_batching:
     enabled: True
     train_mb_tokens: ${mul:${policy.max_total_sequence_length}, ${policy.train_micro_batch_size}}

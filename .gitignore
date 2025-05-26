@@ -29,7 +29,9 @@ hf_home/
 hf_datasets_cache/
 *logs/
 datasets/
-docker/
+docker/*
+!docker/Dockerfile
+!docker/README.md
 wandb/
 checkpoints/
 results/

@@ -15,8 +15,8 @@
 import gc
 import os
 from collections import defaultdict
-from contextlib import contextmanager, nullcontext
-from typing import Any, Dict, Iterable, Optional, Tuple, Union
+from contextlib import AbstractContextManager, contextmanager, nullcontext
+from typing import Any, Generator, Iterable, Optional, Union, cast
 
 import ray
 import torch
@@ -28,8 +28,7 @@ from torch.distributed.tensor import DTensor
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.integrations.accelerate import find_tied_parameters
 
-from nemo_rl.algorithms.interfaces import LossFunction
-from nemo_rl.algorithms.loss_functions import LossType
+from nemo_rl.algorithms.interfaces import LossFunction, LossType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.models.dtensor.parallelize import (
     _parallelize_model,
@@ -40,6 +39,10 @@ from nemo_rl.models.dtensor.parallelize import (
 )
 from nemo_rl.models.huggingface.common import ModelFlag
 from nemo_rl.models.policy import PolicyConfig
+from nemo_rl.models.policy.interfaces import (
+    LogprobOutputSpec,
+    ReferenceLogprobOutputSpec,
+)
 from nemo_rl.models.policy.utils import (
     get_gpu_info,
     import_class_from_path,
@@ -52,7 +55,7 @@ from nemo_rl.utils.native_checkpoint import (
 
 
 @contextmanager
-def unshard_fsdp2_model(model: nn.Module):
+def unshard_fsdp2_model(model: nn.Module) -> Generator[None, None, None]:
     """Explicitly unshard and then reshard the FSDP2 modules. Useful for logprob inference."""
     try:
         for module in model.modules():
@@ -67,20 +70,20 @@ def unshard_fsdp2_model(model: nn.Module):
 
 @torch.no_grad()
 def get_cpu_state_dict(
-    state_generator: Iterable[Tuple[str, Union[torch.Tensor, DTensor]]],
+    state_generator: Iterable[tuple[str, Union[torch.Tensor, DTensor]]],
     pin_memory: bool = False,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Copy the state dict generator to CPU memory.
 
     Args:
-        state_generator (Iterable[Tuple[str, Union[torch.Tensor, DTensor]]]):
+        state_generator (Iterable[tuple[str, Union[torch.Tensor, DTensor]]]):
             An iterable that yields (key, tensor) pairs from a model state.
         pin_memory (bool, optional):
             Whether to allocate the CPU tensors in pinned memory for faster GPU transfer.
             Defaults to False.
 
     Returns:
-        Dict[str, torch.Tensor]: A dictionary mapping parameter names to CPU tensors.
+        dict[str, torch.Tensor]: A dictionary mapping parameter names to CPU tensors.
     """
     new_state_dict = {}
     for k, v in state_generator:
@@ -103,7 +106,7 @@ def get_cpu_state_dict(
     runtime_env={"env_vars": {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}}
 )
 class DTensorPolicyWorker:
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Customizes the actor's prefix in the Ray logs.
 
         This makes it easier to identify which worker is producing specific log messages.
@@ -149,6 +152,7 @@ class DTensorPolicyWorker:
             # Keeping the master weights in lower precision has shown to cause issues with convergence.
             # https://github.com/NVIDIA/NeMo-RL/issues/279 will fix the issue of CPU OOM for larger models.
             torch_dtype=torch.float32,
+            trust_remote_code=True,
             **sliding_window_overwrite(
                 model_name
             ),  # due to https://github.com/huggingface/transformers/issues/38002
@@ -188,14 +192,17 @@ class DTensorPolicyWorker:
             activation_checkpointing=self.cfg["dtensor_cfg"][
                 "activation_checkpointing"
             ],
+            custom_parallel_plan=self.cfg["dtensor_cfg"]["custom_parallel_plan"],
         )
 
         if self.cpu_offload:
             self.model = self.move_buffer_to_device(self.model, "cpu")
 
         # used for streaming update inference engine weights
-        self._held_sharded_state_dict_reference = None
-        self._held_streamed_param_reference = None
+        self._held_sharded_state_dict_reference: Optional[dict[str, torch.Tensor]] = (
+            None
+        )
+        self._held_streamed_param_reference: Optional[dict[str, torch.Tensor]] = None
 
         if init_reference_model:
             self.reference_model_state_dict = get_cpu_state_dict(
@@ -215,7 +222,9 @@ class DTensorPolicyWorker:
 
         if "scheduler" in self.cfg and self.optimizer is not None:
             if isinstance(self.cfg["scheduler"], dict):
-                scheduler_cls = import_class_from_path(self.cfg["scheduler"]["name"])
+                scheduler_cls = import_class_from_path(
+                    cast(str, self.cfg["scheduler"]["name"])
+                )
                 self.scheduler = scheduler_cls(
                     self.optimizer, **self.cfg["scheduler"]["kwargs"]
                 )
@@ -233,7 +242,7 @@ class DTensorPolicyWorker:
                             "unknown scheduler config: ",
                             scheduler_cfg,
                         )
-                        milestones = scheduler_cfg["milestones"]
+                        milestones: list[int] = scheduler_cfg["milestones"]
 
                 self.scheduler = torch.optim.lr_scheduler.SequentialLR(
                     self.optimizer, schedulers, milestones
@@ -253,24 +262,24 @@ class DTensorPolicyWorker:
                 "No weights path provided. Starting from scratch (default policy init)"
             )
 
-    def is_alive(self):
+    def is_alive(self) -> bool:
         return True
 
-    def reset_peak_memory_stats(self):
+    def reset_peak_memory_stats(self) -> None:
         torch.cuda.reset_peak_memory_stats()
 
-    def get_gpu_info(self):
+    def get_gpu_info(self) -> dict[str, Any]:
         """Return information about the GPU being used by this worker."""
         return get_gpu_info(self.model)
 
     def train(
         self,
-        data: BatchedDataDict,
+        data: BatchedDataDict[Any],
         loss_fn: LossFunction,
         eval_mode: bool = False,
         gbs: Optional[int] = None,
         mbs: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
         # Check if the model has tied weights
         if (
@@ -286,7 +295,7 @@ class DTensorPolicyWorker:
         if mbs is None:
             mbs = self.cfg["train_micro_batch_size"]
         local_gbs = gbs // self.dp_size
-        dataset_size = data.get("input_ids").shape[0]
+        dataset_size = data["input_ids"].shape[0]
         num_global_batches = dataset_size // local_gbs
 
         # dim 1 is always assumed to be the sequence dim, sanity check this here
@@ -299,7 +308,7 @@ class DTensorPolicyWorker:
                 )
 
         if eval_mode:
-            ctx = torch.no_grad()
+            ctx: AbstractContextManager[Any] = torch.no_grad()
             self.model.eval()
         else:
             ctx = nullcontext()
@@ -313,7 +322,7 @@ class DTensorPolicyWorker:
             losses = []
             all_mb_metrics = []
             for gb_idx, gb_start in enumerate(range(0, dataset_size, local_gbs)):
-                global_batch: BatchedDataDict = data.slice(
+                global_batch: BatchedDataDict[Any] = data.slice(
                     gb_start, gb_start + local_gbs
                 )
 
@@ -421,7 +430,7 @@ class DTensorPolicyWorker:
                         mb_losses.append(loss.item())
                         all_mb_metrics.append(loss_metrics)
 
-                grad_norm = None
+                grad_norm: Optional[float | torch.Tensor] = None
                 if not eval_mode:
                     with torch.no_grad():
                         grad_norm = get_grad_norm(
@@ -472,10 +481,8 @@ class DTensorPolicyWorker:
             return metrics
 
     def get_logprobs(
-        self,
-        data: BatchedDataDict,
-        micro_batch_size: int = None,
-    ) -> BatchedDataDict:
+        self, data: BatchedDataDict[Any], micro_batch_size: Optional[int] = None
+    ) -> BatchedDataDict[LogprobOutputSpec]:
         """Get the logprobs of the model for a batch of data.
 
         Uses the configured logprob_batch_size to do microbatching.
@@ -579,7 +586,7 @@ class DTensorPolicyWorker:
                 all_log_probs.append(token_logprobs)
 
         # Concatenate all batches
-        return_data = BatchedDataDict()
+        return_data = BatchedDataDict[LogprobOutputSpec]()
 
         all_log_probs_padded = []
         for lp in all_log_probs:
@@ -594,7 +601,7 @@ class DTensorPolicyWorker:
         return return_data
 
     @contextmanager
-    def use_reference_model(self):
+    def use_reference_model(self) -> Generator[None, None, None]:
         """Context manager that temporarily swaps the reference model and active model.
 
         On entry: Moves model to CPU, moves reference_model to CUDA. Swaps the references
@@ -629,8 +636,8 @@ class DTensorPolicyWorker:
                     val.copy_(curr_buffers[k])
 
     def get_reference_policy_logprobs(
-        self, data: BatchedDataDict, micro_batch_size: int = None
-    ) -> BatchedDataDict:
+        self, data: BatchedDataDict[Any], micro_batch_size: Optional[int] = None
+    ) -> BatchedDataDict[ReferenceLogprobOutputSpec]:
         """Get the logprobs from the reference policy for a batch of data.
 
         Returns:
@@ -641,11 +648,11 @@ class DTensorPolicyWorker:
         with self.use_reference_model():
             reference_logprobs = self.get_logprobs(data, micro_batch_size)
 
-        return_data = BatchedDataDict()
+        return_data = BatchedDataDict[ReferenceLogprobOutputSpec]()
         return_data["reference_logprobs"] = reference_logprobs["logprobs"].cpu()
         return return_data
 
-    def _add_noise_to_weights(self):
+    def _add_noise_to_weights(self) -> None:
         """Add small Gaussian noise to the weights of the model. Note that this is used for testing purposes only."""
         noise_std = 0.01  # Standard deviation for the noise
         for p in self.model.parameters():
@@ -653,6 +660,9 @@ class DTensorPolicyWorker:
                 noise = torch.randn_like(p.data) * noise_std
                 p.data.add_(noise)  # Add noise in-place
         torch.cuda.synchronize()
+
+    def return_state_dict(self):
+        return self.model.state_dict()
 
     def report_device_id(self) -> str:
         """Report the UUID of the current CUDA device using NVML.
@@ -668,9 +678,11 @@ class DTensorPolicyWorker:
         return get_device_uuid(device_idx)
 
     @torch.no_grad()
-    def prepare_weights_for_ipc(self):
+    def prepare_weights_for_ipc(self) -> list[tuple[str, int]]:
         self.model = self.move_to_cuda(self.model)
-        self._held_sharded_state_dict_reference = self.model.state_dict()
+        self._held_sharded_state_dict_reference: dict[str, torch.Tensor] = (
+            self.model.state_dict()
+        )
         # Collect info for streaming multiple tensors
         state_dict_info = []
         for name, tensor in self._held_sharded_state_dict_reference.items():
@@ -680,8 +692,12 @@ class DTensorPolicyWorker:
         return state_dict_info
 
     @torch.no_grad()
-    def get_weights_ipc_handles(self, keys):
+    def get_weights_ipc_handles(self, keys: Iterable[str]) -> dict[str, Any]:
         from torch.multiprocessing.reductions import reduce_tensor
+
+        assert self._held_sharded_state_dict_reference is not None, (
+            "prepare_weights_for_ipc must be called before get_weights_ipc_handles"
+        )
 
         converted_params = {}
         for key in keys:
@@ -708,7 +724,7 @@ class DTensorPolicyWorker:
 
         return {device_uuid: all_handles}
 
-    def prepare_for_lp_inference(self):
+    def prepare_for_lp_inference(self) -> None:
         if not self.cpu_offload:
             self.move_to_cuda(self.model)
         else:
@@ -717,7 +733,7 @@ class DTensorPolicyWorker:
         self.model.eval()
         self.offload_before_refit()
 
-    def prepare_for_training(self, *args, **kwargs):
+    def prepare_for_training(self, *args, **kwargs) -> None:
         # onload models and optimizer state to cuda
         if not self.cpu_offload:
             self.move_to_cuda(self.model)
@@ -744,7 +760,7 @@ class DTensorPolicyWorker:
         torch.cuda.empty_cache()
 
     @torch.no_grad()
-    def offload_before_refit(self):
+    def offload_before_refit(self) -> None:
         """Offload the optimizer to the CPU."""
         torch.randn(1).cuda()  # wake up torch allocator
         if hasattr(self, "optimizer") and self.optimizer is not None:
@@ -757,7 +773,7 @@ class DTensorPolicyWorker:
         torch.cuda.empty_cache()
 
     @torch.no_grad()
-    def offload_after_refit(self):
+    def offload_after_refit(self) -> None:
         # Offload as much as possible on the CPU
         self.model = self.move_to_cpu(self.model)
         self.model.eval()
@@ -782,24 +798,26 @@ class DTensorPolicyWorker:
             f"GPU Memory after optimizer offload: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved"
         )
 
-    def move_to_device(self, model, device):
+    def move_to_device(self, model: nn.Module, device: str | torch.device) -> nn.Module:
         model = self.move_buffer_to_device(model, device)
         return model.to(device)
 
-    def move_buffer_to_device(self, model, device):
+    def move_buffer_to_device(
+        self, model: nn.Module, device: str | torch.device
+    ) -> nn.Module:
         # FSDP modules do not move buffers to the device automatically
         for v in model.buffers():
             v.data = v.data.to(device)
 
         return model
 
-    def move_to_cuda(self, model):
+    def move_to_cuda(self, model: torch.nn.Module) -> torch.nn.Module:
         model = self.move_to_device(model, "cuda")
         gc.collect()
         torch.cuda.empty_cache()
         return model
 
-    def move_to_cpu(self, model):
+    def move_to_cpu(self, model: torch.nn.Module) -> torch.nn.Module:
         model = self.move_to_device(model, "cpu")
         gc.collect()
         torch.cuda.empty_cache()
@@ -810,7 +828,7 @@ class DTensorPolicyWorker:
         weights_path: str,
         optimizer_path: Optional[str] = None,
         tokenizer_path: Optional[str] = None,
-    ):
+    ) -> None:
         """Save a checkpoint of the model.
 
         the optimizer states are saved only if `optimizer` and `optimizer_path` are provided.
@@ -825,7 +843,9 @@ class DTensorPolicyWorker:
             tokenizer_path=tokenizer_path,
         )
 
-    def load_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):
+    def load_checkpoint(
+        self, weights_path: str, optimizer_path: Optional[str] = None
+    ) -> None:
         """Load a checkpoint into the model."""
         load_checkpoint(
             model=self.model,
@@ -835,5 +855,5 @@ class DTensorPolicyWorker:
             optimizer_path=optimizer_path,
         )
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """Shutdown the policy."""

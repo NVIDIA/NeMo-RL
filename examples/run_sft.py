@@ -16,7 +16,7 @@ import argparse
 import os
 import pprint
 from functools import partial
-from typing import Any, Dict
+from typing import Any
 
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
@@ -49,7 +49,7 @@ def parse_args():
 # Data Processing
 # =======================================================
 def sft_preprocessor(
-    datum_dict: Dict[str, Any],
+    datum_dict: dict[str, Any],
     task_data_spec: TaskDataSpec,
     tokenizer,
     max_seq_length: int,

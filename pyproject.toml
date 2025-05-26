@@ -2,13 +2,21 @@
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
+
+[tool.setuptools]
+packages = ["nemo_rl"]
+
+[tool.setuptools.dynamic]
+version = {attr = "nemo_rl.__version__"}  # any module attribute compatible with ast.literal_eval
+readme = {file = "README.md", content-type = "text/markdown"}
+
 [project]
 name = "nemo-rl"
 dynamic = [
     "version",
     "readme",
 ]
-description = "Nemo-RL: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
+description = "NeMo RL: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
 requires-python = ">=3.10"
 license = {text = "Apache 2.0"}
 dependencies = [
@@ -29,24 +37,35 @@ dependencies = [
     "hydra-core",
 ]
 
-[tool.setuptools]
-packages = ["nemo_rl"]
-
-[tool.setuptools.dynamic]
-version = {attr = "nemo_rl.__version__"}  # any module attribute compatible with ast.literal_eval
-readme = {file = "README.md", content-type = "text/markdown"}
-
 [project.optional-dependencies]
 vllm = [
     "vllm==0.8.5",
 ]
+#mcore = [
+    # also need cudnn (https://developer.nvidia.com/cudnn-downloads?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=20.04&target_type=deb_network)
+    # wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb
+    # sudo dpkg -i cuda-keyring_1.1-1_all.deb
+    # sudo apt-get update
+    # sudo apt-get install cudnn-cuda-12
+#    "transformer-engine[pytorch]==1.13.0",
+#    "megatron-core",
+#    "nemo-tron",
+#]
 
 [dependency-groups]
+
+# This is a default group so that we install these even with bare `uv sync`
 build = [
+    # Build requirement for TE
     "torch==2.6.0",
+    # Build requirement for TE
     "setuptools",
     "packaging",
-    "einops"
+    "einops",
+    # Build requirement for nemo_run
+    "hatchling",
+    # Build requirement for mcore
+    "pybind11",
 ]
 docs = [
     "sphinx",
@@ -59,6 +78,9 @@ docs = [
 dev = [
     "pre-commit==3.6.0",
     "ruff==0.9.9",
+    "mypy",
+    "types-PyYAML",
+    "types-requests",
 ]
 test = [
     "pytest>=7.0.0",
@@ -67,6 +89,30 @@ test = [
     "pytest-asyncio",
 ]
 
+[tool.uv.sources]
+megatron-core = { workspace = true }
+nemo-tron = { workspace = true }
+# The NeMo Run source to be used by nemo-tron
+nemo_run = { git = "https://github.com/NVIDIA/NeMo-Run", rev = "414f0077c648fde2c71bb1186e97ccbf96d6844c" }
+
+[tool.uv.workspace]
+members = [
+    "3rdparty/Megatron-LM-workspace",
+    "3rdparty/NeMo-workspace",
+]
+
+[tool.uv]
+# Currently, TE must be built with no build-isolation b/c it requires torch
+no-build-isolation-package = ["transformer-engine"]
+# Always apply the build group since dependencies like TE/mcore/nemo-run require build dependencies
+# and this lets us assume they are implicitly installed with a simply `uv sync`. Ideally, we'd
+# avoid including these in the default dependency set, but for now it's required.
+default-groups = ["dev", "build"]
+# Users may use different link-modes depending on their scenario:
+#  --link-mode=hardlink (default on linux; may get warnings about switching to --link-mode copy if uv cache and venv on different file-systems)
+#  --link-mode=copy (slower but more reliable; supresses warning)
+#  --link-mode=symlink (fastest option when uv cache and venv on different file-system; caveat: venv is brittle since it depends on the environment/container)
+link-mode = "copy"
 
 [tool.black]
 line-length = 120
@@ -113,11 +159,3 @@ convention = "google"
 "*_test.py" = ["D"]
 # Ignore F401 (import but unused) in __init__.py
 "__init__.py" = ["F401"]
-
-[tool.uv]
-# Users may use different link-modes depending on their scenario:
-#  --link-mode=hardlink (default on linux; may get warnings about switching to --link-mode copy if uv cache and venv on different file-systems)
-#  --link-mode=copy (slower but more reliable; supresses warning)
-#  --link-mode=symlink (fastest option when uv cache and venv on different file-system; caveat: venv is brittle since it depends on the environment/container)
-#
-#link-mode = "symlink"

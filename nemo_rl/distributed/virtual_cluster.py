@@ -15,10 +15,14 @@ import logging
 import os
 import sys
 import time
-from typing import List, Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 import ray
-from ray.util.placement_group import placement_group, remove_placement_group
+from ray.util.placement_group import (
+    PlacementGroup,
+    placement_group,
+    remove_placement_group,
+)
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
 logging.basicConfig(level=logging.INFO)
@@ -38,16 +42,21 @@ git_root = os.path.abspath(os.path.join(dir_path, "../.."))
 class PY_EXECUTABLES:
     SYSTEM = sys.executable
 
-    # TODO: Debug why run-to-run variance is so high with these options
     # Use NeMo-RL direct dependencies.
     BASE = "uv run --locked"
 
     # Use NeMo-RL direct dependencies and vllm.
     VLLM = "uv run --locked --extra vllm"
 
+    # Megatron-core (and nemo dependencies)
+    # We always run with --reinstall to avoid issues where someone runs "uv run ... --extra mcore ..."
+    # but the submodules are not downloaded yet. This results in errors where it appears Megatron/Nemo
+    # aren't installed. Simple workaround is to always run the mcore py_executable with --reinstall.
+    MCORE = "uv run --reinstall --extra mcore --no-build-isolation"
+
 
 @ray.remote
-def _get_node_ip_and_free_port():
+def _get_node_ip_and_free_port() -> tuple[str, int]:
     import socket
 
     # Get the IP address of the current node
@@ -60,7 +69,7 @@ def _get_node_ip_and_free_port():
     return node_ip, port
 
 
-def init_ray(log_dir: Optional[str] = None):
+def init_ray(log_dir: Optional[str] = None) -> None:
     """Initialise Ray.
 
     Try to attach to an existing local cluster.
@@ -168,7 +177,7 @@ class RayVirtualCluster:
 
     def __init__(
         self,
-        bundle_ct_per_node_list: List[int],
+        bundle_ct_per_node_list: list[int],
         use_gpus: bool = True,
         max_colocated_worker_groups: int = 1,
         num_gpus_per_node: int = 8,
@@ -188,7 +197,7 @@ class RayVirtualCluster:
         """
         self._bundle_ct_per_node_list = bundle_ct_per_node_list
         self._world_size = sum(self._bundle_ct_per_node_list)
-        self._node_placement_groups = None
+        self._node_placement_groups: Optional[list[PlacementGroup]] = None
 
         self.num_gpus_per_node = num_gpus_per_node
         self.use_gpus = use_gpus
@@ -219,7 +228,7 @@ class RayVirtualCluster:
                 f"Maximum number of retries reached ({max_retries}). Cluster resources may be insufficient or cluster itself is highly unstable. Please check your cluster configuration and your cluster logs."
             )
 
-    def _init_placement_groups(self, strategy: str):
+    def _init_placement_groups(self, strategy: str) -> list[PlacementGroup]:
         """Creates placement groups for each node in the cluster. Has empty groups for nodes that don't have any bundles.
 
         Args:
@@ -294,7 +303,7 @@ class RayVirtualCluster:
 
         return self._node_placement_groups
 
-    def get_placement_groups(self):
+    def get_placement_groups(self) -> list[PlacementGroup]:
         """Returns a list of placement groups that have at least one bundle, filtering out empty nodes.
 
         This represents the "virtual cluster" - only nodes that are actually being used.
@@ -302,15 +311,18 @@ class RayVirtualCluster:
         Returns:
             List of placement groups that have at least one bundle
         """
+        assert self._node_placement_groups is not None, (
+            "Placement groups must be initialized before calling get_placement_groups"
+        )
         return [pg for pg in self._node_placement_groups if pg.bundle_specs]
 
-    def world_size(self):
+    def world_size(self) -> int:
         return self._world_size
 
-    def node_count(self):
+    def node_count(self) -> int:
         return len(self.get_placement_groups())
 
-    def get_master_address_and_port(self):
+    def get_master_address_and_port(self) -> tuple[str, int]:
         """Gets the master address and port for the distributed training setup.
 
         Returns:
@@ -337,7 +349,7 @@ class RayVirtualCluster:
 
         raise RuntimeError("No valid placement groups found to get master address")
 
-    def shutdown(self):
+    def shutdown(self) -> bool:
         """Cleans up and releases all resources associated with this virtual cluster.
 
         This includes removing all placement groups and resetting the internal state.
@@ -358,7 +370,9 @@ class RayVirtualCluster:
 
         return True
 
-    def _create_visualization_grid(self, worker_groups=None, is_global_view=False):
+    def _create_visualization_grid(
+        self, worker_groups: Optional[Any] = None, is_global_view: bool = False
+    ) -> dict[str, Any]:
         """Create a visualization grid for the cluster with optional worker groups.
 
         Args:
@@ -417,7 +431,7 @@ class RayVirtualCluster:
 
             # Initialize worker cells arrays (one per worker group)
             for i in range(len(worker_groups)):
-                node_row["worker_cells"].append([])
+                node_row["worker_cells"].append([])  # type: ignore
 
             # Process each GPU position in the row
             for gpu_idx in range(max_gpus_per_node):
@@ -435,10 +449,10 @@ class RayVirtualCluster:
                     worker_cells = [" " * cell_width] * len(worker_groups)
 
                 # Add cells to the row
-                node_row["gpu_cells"].append(gpu_cell)
+                node_row["gpu_cells"].append(gpu_cell)  # type: ignore
                 for i, cell in enumerate(worker_cells):
-                    if i < len(node_row["worker_cells"]):
-                        node_row["worker_cells"][i].append(cell)
+                    if i < len(node_row["worker_cells"]):  # type: ignore
+                        node_row["worker_cells"][i].append(cell)  # type: ignore
 
             # Add the completed row to the grid
             grid_data["rows"].append(node_row)
@@ -446,8 +460,13 @@ class RayVirtualCluster:
         return grid_data
 
     def _get_worker_cells(
-        self, node_idx, gpu_idx, worker_groups, cell_width, is_global_view
-    ):
+        self,
+        node_idx: int,
+        gpu_idx: int,
+        worker_groups: list[Any],
+        cell_width: int,
+        is_global_view: bool,
+    ) -> list[str]:
         """Get the worker cell content for each worker group at a specific GPU location.
 
         Args:
@@ -484,7 +503,7 @@ class RayVirtualCluster:
 
         return worker_cells
 
-    def _print_visualization(self, grid_data):
+    def _print_visualization(self, grid_data: dict[str, Any]) -> None:
         """Print the visualization based on the grid data.
 
         Args:
@@ -544,7 +563,7 @@ class RayVirtualCluster:
         # Print legend
         self._print_legend(grid_data)
 
-    def _print_legend(self, grid_data):
+    def _print_legend(self, grid_data: dict[str, Any]) -> None:
         """Print the legend for the visualization."""
         if grid_data["is_global_view"]:
             # Legend for global view
@@ -565,7 +584,7 @@ class RayVirtualCluster:
 
         print("#.#: Node.GPU identifier")
 
-    def print_cluster_grid(self, worker_group=None):
+    def print_cluster_grid(self, worker_group: Optional[Any] = None) -> None:
         """Prints a compact grid visualization of the virtual cluster, similar to JAX's visualize_array_sharding.
 
         If a worker_group is provided, it will also show worker assignments on each device.
@@ -576,7 +595,9 @@ class RayVirtualCluster:
         grid_data = self._create_visualization_grid(worker_group, is_global_view=False)
         self._print_visualization(grid_data)
 
-    def print_all_worker_groups(self, worker_groups=None):
+    def print_all_worker_groups(
+        self, worker_groups: Optional[list[Any]] = None
+    ) -> None:
         """Prints a visualization showing all worker groups in the cluster.
 
         This provides a global view of all workers across all worker groups.
@@ -588,7 +609,7 @@ class RayVirtualCluster:
         grid_data = self._create_visualization_grid(worker_groups, is_global_view=True)
         self._print_visualization(grid_data)
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Shutsdown the virtual cluster when the object is deleted or is garbage collected.
 
         This is an extra safety net in case the user forgets to call shutdown and the pointer to

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional, Tuple, TypedDict
+from typing import Optional, TypedDict
 
 import ray
 import torch
@@ -36,7 +36,7 @@ class _MultiStepCalculatorLogic:
     def __init__(self):
         pass
 
-    def _parse_tool_call(self, text: str) -> Optional[Tuple[float, float, str]]:
+    def _parse_tool_call(self, text: str) -> Optional[tuple[float, float, str]]:
         """Parses '[opA, opB, operation]<call: calculator>'."""
         # Use a more distinct tool call suffix
         tool_call_suffix = "<call: calculator>"
@@ -94,11 +94,11 @@ class _MultiStepCalculatorLogic:
         self,
         message_log: LLMMessageLogType,
         metadata: MultiStepCalcMetadata,
-    ) -> Tuple[
-        Dict[str, str],
+    ) -> tuple[
+        dict[str, str],
         float,
         bool,
-        Optional[List[str]],
+        Optional[list[str]],
         Optional[MultiStepCalcMetadata],
     ]:
         """Processes a single turn for the multi-step calculator task."""
@@ -180,13 +180,13 @@ class _MultiStepCalculatorLogic:
 class MultiStepCalculatorEnv(EnvironmentInterface):
     """Multi-step calculator environment (Ray Actor)."""
 
-    def __init__(self, cfg: Optional[Dict] = None):
+    def __init__(self, cfg: Optional[dict] = None):
         self.logic = _MultiStepCalculatorLogic()
 
     def step(
         self,
-        message_log_batch: List[LLMMessageLogType],
-        metadata_batch: List[MultiStepCalcMetadata],
+        message_log_batch: list[LLMMessageLogType],
+        metadata_batch: list[MultiStepCalcMetadata],
     ) -> EnvironmentReturn:
         """Processes a batch of interactions using the calculator logic."""
         futures = [
@@ -203,7 +203,7 @@ class MultiStepCalculatorEnv(EnvironmentInterface):
         all_next_metadata = []
 
         for obs, rew, term, stops, meta in results:
-            observations.append(obs)  # obs is already Dict[str, str]
+            observations.append(obs)  # obs is already dict[str, str]
             rewards.append(rew)
             terminateds.append(term)
             all_stop_strings.append(stops)
@@ -228,7 +228,7 @@ class MultiStepCalculatorEnv(EnvironmentInterface):
 
     def global_post_process_and_metrics(
         self, batch: BatchedDataDict
-    ) -> Tuple[BatchedDataDict, dict]:
+    ) -> tuple[BatchedDataDict, dict]:
         # Example: could calculate success rate based on final reward
         final_rewards = batch.get(
             "total_reward", torch.tensor([0.0] * len(batch["idx"]))

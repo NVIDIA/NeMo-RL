@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List
 
 import pytest
 import torch
@@ -61,7 +60,7 @@ def multiple_messages_log() -> LLMMessageLogType:
 
 
 @pytest.fixture
-def uneven_message_logs() -> List[LLMMessageLogType]:
+def uneven_message_logs() -> list[LLMMessageLogType]:
     """Fixture for message logs of different lengths."""
     return [
         [  # First sequence (shorter)
@@ -80,7 +79,7 @@ def uneven_message_logs() -> List[LLMMessageLogType]:
 
 
 @pytest.fixture
-def raw_chat_message_log() -> List[LLMMessageLogType]:
+def raw_chat_message_log() -> list[LLMMessageLogType]:
     """Fixture for chat message logs."""
     return [
         {"role": "system", "content": "You are a helpful assistant."},
@@ -90,7 +89,7 @@ def raw_chat_message_log() -> List[LLMMessageLogType]:
 
 
 @pytest.fixture
-def tokenized_non_chat_message_log() -> List[LLMMessageLogType]:
+def tokenized_non_chat_message_log() -> list[LLMMessageLogType]:
     return [
         [
             {
@@ -104,7 +103,7 @@ def tokenized_non_chat_message_log() -> List[LLMMessageLogType]:
 
 
 @pytest.fixture
-def tokenized_chat_message_log() -> List[LLMMessageLogType]:
+def tokenized_chat_message_log() -> list[LLMMessageLogType]:
     return [
         [
             {
@@ -278,7 +277,7 @@ def test_get_keys_from_messages() -> None:
 
 @pytest.mark.parametrize("make_sequence_length_divisible_by", [1, 8])
 def test_batch_pad_message_log_divisible_by(
-    uneven_message_logs: List[LLMMessageLogType], make_sequence_length_divisible_by: int
+    uneven_message_logs: list[LLMMessageLogType], make_sequence_length_divisible_by: int
 ) -> None:
     """Test batch_pad_message_log padding to a multiple."""
     result, input_lengths = batched_message_log_to_flat_message(
@@ -293,7 +292,7 @@ def test_batch_pad_message_log_divisible_by(
 
 
 def test_batch_pad_message_log_basic(
-    uneven_message_logs: List[LLMMessageLogType],
+    uneven_message_logs: list[LLMMessageLogType],
 ) -> None:
     """Test batch_pad_message_log with right padding."""
     result, input_lengths = batched_message_log_to_flat_message(uneven_message_logs)
@@ -311,10 +310,10 @@ def test_batch_pad_message_log_basic(
 
 
 def test_batch_pad_message_log_custom_pad_value(
-    uneven_message_logs: List[LLMMessageLogType],
+    uneven_message_logs: list[LLMMessageLogType],
 ) -> None:
     """Test batch_pad_message_log with custom padding values."""
-    pad_value_dict: Dict[str, int] = {"input_ids": -100}
+    pad_value_dict: dict[str, int] = {"input_ids": -100}
     result, input_lengths = batched_message_log_to_flat_message(
         uneven_message_logs, pad_value_dict=pad_value_dict
     )
@@ -534,7 +533,7 @@ def test_formatted_message_log_empty_message():
 
 
 def test_add_loss_mask_to_chat_message_log(
-    tokenized_chat_message_log: LLMMessageLogType,
+    tokenized_chat_message_log: list[LLMMessageLogType],
 ):
     add_loss_mask_to_message_log(
         tokenized_chat_message_log, roles_to_train_on=["assistant"]

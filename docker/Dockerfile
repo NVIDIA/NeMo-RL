@@ -28,21 +28,29 @@ WORKDIR /opt/nemo-rl
 
 # First copy only the dependency files
 COPY pyproject.toml uv.lock ./
+COPY --link 3rdparty/ ./3rdparty/
+
+# Variables to control the build of TE. If there are issues with parallelization, consider
+# setting these to 1.
+ARG MAX_JOBS
+ARG NVTE_BUILD_THREADS_PER_JOB
 
 ENV UV_PROJECT_ENVIRONMENT=/opt/nemo_rl_venv
-ENV VIRTUAL_ENV=/opt/nemo_rl_venv
+ENV UV_LINK_MODE=copy
 
 # Create and activate virtual environment
-RUN <<"EOF"
-uv venv /opt/nemo_rl_venv
+RUN <<"EOF" bash -exu
+uv venv ${UV_PROJECT_ENVIRONMENT}
 # uv sync has a more reliable resolver than simple uv pip install which can fail
 
 # Sync each training + inference backend one at a time (since they may conflict)
 # to warm the uv cache, then at the end just sync the default dependencies.
 # Do everything in one layer to prevent large layers.
 
-uv sync --locked --extra vllm --no-install-project
-uv sync --locked --all-groups --no-install-project
+# The venv is symlinked to avoid bloating the layer size
+uv sync --link-mode symlink --locked --extra vllm --no-install-project
+uv sync --link-mode symlink --locked --extra mcore --no-install-project --no-build-isolation
+uv sync --link-mode symlink --locked --all-groups --no-install-project
 EOF
 
 ENV PATH="/opt/nemo_rl_venv/bin:$PATH"
@@ -59,3 +67,6 @@ LABEL com.nvidia.build.id="${NVIDIA_BUILD_ID}"
 LABEL com.nvidia.build.ref="${NVIDIA_BUILD_REF}"
 
 COPY . /opt/nemo-rl
+
+# Make hermetic the default target instead of release since that's the recommended container
+FROM hermetic

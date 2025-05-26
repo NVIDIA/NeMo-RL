@@ -13,12 +13,16 @@
 # limitations under the License.
 
 
-from datasets import load_dataset
+from typing import Any, Optional
+
+from datasets import Dataset, load_dataset
 
 from nemo_rl.data.interfaces import TaskDataSpec
 
 
-def format_math(data, output_key: str = "expected_answer"):
+def format_math(
+    data: dict[str, str | float | int], output_key: str = "expected_answer"
+) -> dict[str, list[Any] | str]:
     return {
         "messages": [
             {
@@ -37,10 +41,10 @@ def format_math(data, output_key: str = "expected_answer"):
 
 def prepare_openinstructmath2_dataset(
     split: str = "train_1M",
-    seed=42,
-    test_size=0.05,
+    seed: int = 42,
+    test_size: float = 0.05,
     output_key: str = "expected_answer",
-):
+) -> dict[str, Dataset | None]:
     """Load and split the OpenMathInstruct-2 dataset into train and validation sets using HF's train_test_split."""
     print(
         "WARNING: For reproducible experiments, preprocess the dataset once and define your own HfDataset subclass that directly uses the preprocessed datasets."
@@ -77,7 +81,7 @@ class OpenMathInstruct2Dataset:
         seed: int = 42,
         test_size: float = 0.05,
         output_key: str = "expected_answer",
-        prompt_file: str = None,
+        prompt_file: Optional[str] = None,
     ):
         """Initialize the OpenMathInstruct2 dataset with train/validation split.
 
