@@ -61,8 +61,6 @@ class MultiWorkerFuture:
         # Flatten futures into a list of ObjectRefs
         object_refs: list[ObjectRef] = []
 
-        # Map each ObjectRef back to the originating worker
-        ref_owner_indices: list[int] = []
         has_generator = False
 
         for idx, fut in enumerate(self.futures):
@@ -70,11 +68,9 @@ class MultiWorkerFuture:
                 # ray.get cannot be called directly on the generator object – it must be iterated to obtain the individual ObjectRef instances first.
                 for generated_ref in fut:
                     object_refs.append(generated_ref)
-                    ref_owner_indices.append(self.called_workers[idx])
                     has_generator = True
             else:
                 object_refs.append(fut)
-                ref_owner_indices.append(self.called_workers[idx])
 
         # Retrieve the concrete results.
         all_results = ray.get(object_refs)
