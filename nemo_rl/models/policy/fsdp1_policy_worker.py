@@ -392,7 +392,8 @@ class FSDP1PolicyWorker:
                 losses.append(torch.tensor(mb_losses).sum().item())
 
             # increment scheduler after all batches in rollout are processed
-            self.scheduler.step()
+            if not eval_mode:
+                self.scheduler.step()
 
             # Compute global loss across all ranks
             with torch.no_grad():
