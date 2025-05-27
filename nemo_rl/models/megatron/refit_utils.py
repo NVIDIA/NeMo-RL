@@ -61,8 +61,9 @@ def get_global_param_key_to_local_key_map(
     # The global key is computed by replacing the local layer number (after "layers.")
     # with its corresponding global layer number (if applicable).
     local_map = {}
+    state_dict = model.state_dict()
     for local_key, _ in keys:
-        if local_key not in model.state_dict():
+        if local_key not in state_dict:
             continue
         local_layer = model_converters.get_local_layer_num(local_key)
         if local_layer is not None:
@@ -108,12 +109,13 @@ def gather_and_convert_params(
     st = time.time()
     # Process each parameter (by its unique global key) one at a time.
     gathered_params = {}
+    state_dict = model.state_dict()
     for gk in sorted(param_name_to_rank_and_key.keys()):
         owner_pp_global_rank, owner_raw_key = param_name_to_rank_and_key[gk]
 
         # Only the owner PP rank has the parameter locally.
         if torch.distributed.get_rank() == owner_pp_global_rank:
-            param = model.state_dict()[owner_raw_key]
+            param = state_dict[owner_raw_key]
 
             # Use the conversion dict to get the appropriate recipe for this parameter.
             recipe_dict, format_dict = get_param_conversion_recipe_dict(
