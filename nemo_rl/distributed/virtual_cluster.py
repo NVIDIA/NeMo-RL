@@ -265,14 +265,7 @@ class RayVirtualCluster:
         # num_gpus_per_bundle == 1 indicates that there is 1 GPU per process
         num_gpus_per_bundle = 1 if self.use_gpus else 0
 
-        # resources = [
-        #     [
-        #         {"CPU": num_cpus_per_bundle, "GPU": num_gpus_per_bundle}
-        #         for _ in range(bundle_count)
-        #     ]
-        #     for bundle_count in self._bundle_ct_per_node_list
-        # ]
-        # Create a single unified bundle list instead of separate lists per node
+        # Create a single unified bundle list
         all_bundles = []
         for bundle_count in self._bundle_ct_per_node_list:
             for _ in range(bundle_count):
@@ -281,10 +274,9 @@ class RayVirtualCluster:
                 )
 
         # Create a single placement group with all bundles
-        # This better supports vLLM and other frameworks that prefer a single placement group
         self._node_placement_groups = [
             placement_group(
-                bundles=all_bundles, strategy="SPREAD", name=f"{self.name}-unified"
+                bundles=all_bundles, strategy=strategy, name=f"{self.name}-unified"
             )
         ]
 
@@ -309,14 +301,7 @@ class RayVirtualCluster:
         return self._node_placement_groups
 
     def get_placement_groups(self) -> list[PlacementGroup]:
-        """Returns a list of placement groups that have at least one bundle, filtering out empty nodes.
-
-        In the unified placement group approach, this will typically return a single
-        placement group containing all bundles.
-
-        Returns:
-            List of placement groups that have at least one bundle
-        """
+        # Returns a single placement group containing all bundles.
         assert self._node_placement_groups is not None, (
             "Placement groups must be initialized before calling get_placement_groups"
         )
@@ -326,11 +311,6 @@ class RayVirtualCluster:
         return self._world_size
 
     def node_count(self) -> int:
-        """Returns an estimate of the number of nodes represented by bundles.
-
-        Since we're using a unified placement group, we approximate this by returning
-        the length of the bundle_ct_per_node_list that has non-zero bundles.
-        """
         return sum(1 for count in self._bundle_ct_per_node_list if count > 0)
 
     def get_master_address_and_port(self) -> tuple[str, int]:

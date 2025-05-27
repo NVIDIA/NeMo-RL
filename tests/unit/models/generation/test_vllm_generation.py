@@ -26,7 +26,8 @@ from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
 from nemo_rl.models.generation import configure_generation_config
 from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
-from nemo_rl.models.policy import HfPolicy, PolicyConfig
+from nemo_rl.models.policy import PolicyConfig
+from nemo_rl.models.policy.hf_policy import HfPolicy
 
 model_name = "Qwen/Qwen3-0.6B"
 # Define basic vLLM test config
@@ -304,30 +305,18 @@ async def test_vllm_policy_generation_async(
         vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
         vllm_config["vllm_cfg"]["pipeline_parallel_size"] = pipeline_parallel_size
         hf_config = get_basic_hf_test_config(enable_dtensor=True)
-        hf_config["dtensor_cfg"]["tensor_parallel_size"] = 8
-        hf_config["dtensor_cfg"]["sequence_parallel"] = True
-        hf_config["dtensor_cfg"]["activation_checkpointing"] = True
         from nemo_rl.models.policy.hf_policy import HfPolicy
 
         async_policy = VllmGeneration(cluster, vllm_config)
         async_policy.finish_generation()
         print("creating hf policy...")
-        import time
 
-        time.sleep(10)
-        print(
-            "------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
-        )
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         refit_policy_generation(
             hf_policy, async_policy, hf_config["refit_buffer_size_gb"]
         )
-        import time
 
-        print("sleeping!!!!")
-        time.sleep(5)
-        print("Testing async generation...")
         outputs = async_policy.generate_async(test_input_data)
         # Validate outputs format
         assert "output_ids" in outputs, "output_ids not found in generation output"

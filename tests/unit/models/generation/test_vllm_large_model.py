@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import time
 from copy import deepcopy
 
 import pytest
@@ -150,9 +149,6 @@ async def test_vllm_large_model(
         print(f"Total GPUs required: {tensor_parallel_size * pipeline_parallel_size}")
 
         async_policy = VllmGeneration(two_node_cluster, vllm_config)
-
-        # Give the model some time to initialize
-        time.sleep(10)
 
         print("Running async generation...")
         outputs = async_policy.generate_async(test_input_data)
