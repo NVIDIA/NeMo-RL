@@ -54,10 +54,17 @@ MIN_WORKER_PORT=${MIN_WORKER_PORT:-54001}
 MAX_WORKER_PORT=${MAX_WORKER_PORT:-54257}
 ########################################################
 
-# Defaults to placing uv cache inside the SLURM_SUBMIT_DIR
-# This directory is mounted into the container at /home/ray/.cache/uv so it is shared between the head and worker nodes
-UV_CACHE_DIR="${UV_CACHE_DIR:-$SLURM_SUBMIT_DIR/uv_cache}"
-mkdir -p $UV_CACHE_DIR
+# Unset UV_CACHE_DIR to avoid local cache directory interferring with the container cache
+unset UV_CACHE_DIR
+
+if [[ -n "${UV_CACHE_DIR_OVERRIDE:-}" ]]; then
+  mkdir -p "$UV_CACHE_DIR_OVERRIDE"
+  if [[ -n $MOUNTS ]]; then
+    MOUNTS+=",$UV_CACHE_DIR_OVERRIDE:/root/.cache/uv"
+  else
+    MOUNTS="$UV_CACHE_DIR_OVERRIDE:/root/.cache/uv"
+  fi
+fi
 
 # Create logs directory
 BASE_LOG_DIR=${BASE_LOG_DIR:-$SLURM_SUBMIT_DIR}
@@ -67,7 +74,7 @@ mkdir -p $LOG_DIR
 COMMON_SRUN_ARGS=""
 COMMON_SRUN_ARGS+=" --no-container-mount-home"
 COMMON_SRUN_ARGS+=" --mpi=pmix"
-COMMON_SRUN_ARGS+=" --container-mounts=$MOUNTS,$UV_CACHE_DIR:/home/ray/.cache/uv"
+COMMON_SRUN_ARGS+=" --container-mounts=$MOUNTS"
 COMMON_SRUN_ARGS+=" --container-image=$CONTAINER"
 COMMON_SRUN_ARGS+=" --container-workdir=$SLURM_SUBMIT_DIR"
 # TODO: delete these (just for debugging)
