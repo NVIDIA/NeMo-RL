@@ -8,3 +8,7 @@ loss_fn:
 
 policy:
   max_total_sequence_length: 16384
+
+
+  dynamic_batching:
+    enabled: False

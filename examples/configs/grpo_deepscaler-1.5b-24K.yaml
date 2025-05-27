@@ -17,6 +17,9 @@ policy:
     tensor_parallel_size: 4
     custom_parallel_plan: null
 
+  dynamic_batching:
+    enabled: False
+
   optimizer:
     name: "torch.optim.AdamW"
     kwargs:
