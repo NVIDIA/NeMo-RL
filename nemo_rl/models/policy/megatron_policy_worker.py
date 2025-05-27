@@ -1078,11 +1078,12 @@ class MegatronPolicyWorker:
 
     def move_model(self, model, device):
         # return model
-        state_dict = model.state_dict()
-        for name, item in state_dict.items():
+        new_state_dict = {}
+        for name, item in model.state_dict().items():
             if isinstance(item, torch.Tensor):
                 item = item.detach().to(device=device, non_blocking=True, copy=True)
-            state_dict[name] = item
+            new_state_dict[name] = item
+        model.load_state_dict(new_state_dict)
         return model
 
     def save_checkpoint(
