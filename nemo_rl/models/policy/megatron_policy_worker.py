@@ -291,8 +291,6 @@ class MegatronPolicyWorker:
         model_cfg.context_parallel_size = self.cfg["megatron_cfg"]["context_parallel_size"] # not supported right now
         model_cfg.bf16 = self.dtype == torch.bfloat16
         model_cfg.fp16 = self.dtype == torch.float16
-        # model_cfg.params_dtype = torch.float32  # amp
-        # model_cfg.pipeline_dtype = torch.float32  # dtype_map[self.cfg["pipeline_dtype"]]
         model_cfg.params_dtype = self.dtype  # amp
         model_cfg.pipeline_dtype = self.dtype  # dtype_map[self.cfg["pipeline_dtype"]]
         model_cfg.parallel_output = True
