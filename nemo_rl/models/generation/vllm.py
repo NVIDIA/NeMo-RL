@@ -942,6 +942,7 @@ class VllmGeneration(GenerationInterface):
                 worker_builder,
                 name_prefix=name_prefix,
                 bundle_indices_list=node_bundle_indices,
+                sharding_annotations=self.sharding_annotations,
             )
         else:
             # Use standard worker group creation for non-parallel case
@@ -950,6 +951,7 @@ class VllmGeneration(GenerationInterface):
                 worker_builder,
                 name_prefix=name_prefix,
                 workers_per_node=workers_per_node,
+                sharding_annotations=self.sharding_annotations,
             )
 
         # Number of data parallel groups is the number of tied worker groups
