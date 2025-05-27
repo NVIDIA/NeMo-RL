@@ -14,7 +14,7 @@
 import contextlib
 import io
 import logging
-from typing import Dict, List, Optional, Tuple, TypedDict
+from typing import Any, Optional, TypedDict
 
 import ray
 import torch
@@ -35,7 +35,7 @@ from nemo_rl.environments.utils import chunk_list_to_workers
 
 class MathEnvConfig(TypedDict):
     num_workers: int
-    stop_strings: Optional[List[str]] = None  # Default stop strings for this env
+    stop_strings: Optional[list[str]] = None  # Default stop strings for this env
 
 
 @contextlib.contextmanager
@@ -50,7 +50,7 @@ def _mute_output():
 
 @ray.remote
 class HFVerifyWorker:
-    def __init__(self):
+    def __init__(self) -> None:
         logging.getLogger("math_verify").setLevel(logging.CRITICAL)
 
         # Use Latex and plain math extraction from predictions
@@ -64,16 +64,16 @@ class HFVerifyWorker:
         )
 
     def verify(
-        self, pred_responses: List[str], ground_truths: List[str]
-    ) -> List[float]:
+        self, pred_responses: list[str], ground_truths: list[str]
+    ) -> list[float]:
         """Verify the correctness of the predicted responses against the ground truth.
 
         Args:
-            pred_responses: List[str]. The predicted responses from the LLM.
-            ground_truths: List[str]. The ground truth responses.
+            pred_responses: list[str]. The predicted responses from the LLM.
+            ground_truths: list[str]. The ground truth responses.
 
         Returns:
-            List[float]. The rewards for each predicted response.
+            list[float]. The rewards for each predicted response.
         """
         results = []
         for response, ground_truth in zip(pred_responses, ground_truths):
@@ -103,33 +103,33 @@ class MathEnvironment(EnvironmentInterface):
         self.cfg = cfg
         self.num_workers = cfg["num_workers"]
         self.workers = [
-            HFVerifyWorker.options(
+            HFVerifyWorker.options(  # type: ignore # (decorated with @ray.remote)
                 runtime_env={"py_executable": PY_EXECUTABLES.SYSTEM}
             ).remote()
             for _ in range(self.num_workers)
         ]
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         # shutdown all workers
         for worker in self.workers:
             ray.kill(worker)
 
-    def step(
+    def step(  # type: ignore[override]
         self,
-        message_log_batch: List[List[Dict[str, str]]],
-        metadata: List[MathEnvironmentMetadata],
+        message_log_batch: list[list[dict[str, str]]],
+        metadata: list[MathEnvironmentMetadata],
     ) -> EnvironmentReturn:
         """Runs a step in the math environment.
 
         Args:
-            message_log: List[List[Dict[str, str]]]. A batch of OpenAI-API-like message logs that represent interactions with the LLM.
-            metadata: List[MathEnvironmentMetadata]. The grader will use the 'ground_truth' key to evaluate correctness.
+            message_log: list[list[dict[str, str]]]. A batch of OpenAI-API-like message logs that represent interactions with the LLM.
+            metadata: list[MathEnvironmentMetadata]. The grader will use the 'ground_truth' key to evaluate correctness.
 
         Returns:
             EnvironmentReturn: A tuple containing:
-                - List[Dict[str, str]]: Observations/responses batch
-                - List[Dict]: Updated metadata
-                - List[str]: Next stop strings for the next turn
+                - list[dict[str, str]]: Observations/responses batch
+                - list[dict]: Updated metadata
+                - list[str]: Next stop strings for the next turn
                 - Tensor: Rewards tensor
                 - Tensor: Done flags tensor
         """
@@ -188,8 +188,8 @@ class MathEnvironment(EnvironmentInterface):
         )
 
     def global_post_process_and_metrics(
-        self, batch: BatchedDataDict
-    ) -> Tuple[BatchedDataDict, dict]:
+        self, batch: BatchedDataDict[Any]
+    ) -> tuple[BatchedDataDict[Any], dict[str, float | int]]:
         """Computes metrics for this environment given a global rollout batch.
 
         Every rank will run this function, so you're free to use distributed

@@ -14,11 +14,13 @@
 
 import importlib
 import os
+from typing import Any
 
+import torch
 from transformers import AutoConfig
 
 
-def import_class_from_path(name):
+def import_class_from_path(name: str) -> Any:
     """Import a class from a string path (e.g. 'torch.optim.AdamW').
 
     Args:
@@ -32,7 +34,7 @@ def import_class_from_path(name):
     return cls_instance
 
 
-def get_gpu_info(model):
+def get_gpu_info(model: torch.nn.Module) -> dict[str, Any]:
     """Return information about the GPU being used by this worker."""
     import torch
 
@@ -98,7 +100,7 @@ def get_gpu_info(model):
     }
 
 
-def sliding_window_overwrite(model_name: str) -> dict:
+def sliding_window_overwrite(model_name: str) -> dict[str, Any]:
     """Returns configuration overrides to handle sliding window settings based on model rules.
 
     Args:
@@ -107,7 +109,7 @@ def sliding_window_overwrite(model_name: str) -> dict:
     Returns:
         dict: Dictionary with overwrite values, or empty dict if no overwrites needed
     """
-    hf_config = AutoConfig.from_pretrained(model_name)
+    hf_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
     overwrite_dict = {}
 
     # Override sliding_window setting to address a HF mismatch relevant to use_sliding_window

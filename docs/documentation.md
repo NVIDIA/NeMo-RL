@@ -5,6 +5,7 @@
   - [Live Building](#live-building)
   - [Run Tests in Python Docstrings](#run-tests-in-python-docstrings)
   - [Write Tests in Python Docstrings](#write-tests-in-python-docstrings)
+  - [Documentation Version](#documentation-version)
 
 
 ## Build the Documentation
@@ -71,4 +72,11 @@ def add(x: int, y: int) -> int:
     return x + y
 ```
 
+## Documentation Version
+
+The three files below control the version switcher. Before you attempt to publish a new version of the documentation, update these files to match the latest version numbers.
+
+* docs/versions1.json
+* docs/project.json
+* docs/conf.py
 

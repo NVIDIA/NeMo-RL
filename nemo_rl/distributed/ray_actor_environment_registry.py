@@ -14,7 +14,7 @@
 
 from nemo_rl.distributed.virtual_cluster import PY_EXECUTABLES
 
-ACTOR_ENVIRONMENT_REGISTRY = {
+ACTOR_ENVIRONMENT_REGISTRY: dict[str, str] = {
     "nemo_rl.models.generation.vllm.VllmGenerationWorker": PY_EXECUTABLES.VLLM,
     "nemo_rl.models.policy.dtensor_policy_worker.DTensorPolicyWorker": PY_EXECUTABLES.BASE,
     "nemo_rl.models.policy.fsdp1_policy_worker.FSDP1PolicyWorker": PY_EXECUTABLES.BASE,
@@ -23,7 +23,7 @@ ACTOR_ENVIRONMENT_REGISTRY = {
 }
 
 
-def get_actor_python_env(actor_class_fqn: str) -> PY_EXECUTABLES:
+def get_actor_python_env(actor_class_fqn: str) -> str:
     if actor_class_fqn in ACTOR_ENVIRONMENT_REGISTRY:
         return ACTOR_ENVIRONMENT_REGISTRY[actor_class_fqn]
     else:

@@ -25,7 +25,7 @@ from nemo_rl.algorithms.loss_functions import ClippedPGLossFn, NLLLoss
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
-from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.models.generation import configure_generation_config
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.hf_policy import HfPolicy
 from tests.unit.test_utils import SimpleLoss, SimpleNLLLoss
@@ -58,6 +58,7 @@ basic_llama_test_config: PolicyConfig = {
         "sequence_parallel": False,
         "activation_checkpointing": False,
         "tensor_parallel_size": 1,
+        "custom_parallel_plan": None,
     },
     "dynamic_batching": {
         "enabled": False,

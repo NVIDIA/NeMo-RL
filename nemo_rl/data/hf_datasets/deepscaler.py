@@ -13,12 +13,14 @@
 # limitations under the License.
 
 
-from datasets import load_dataset
+from typing import Any
+
+from datasets import Dataset, load_dataset
 
 from nemo_rl.data.interfaces import TaskDataSpec
 
 
-def format_math(data):
+def format_math(data: dict[str, str | float | int]) -> dict[str, list[Any] | str]:
     return {
         "messages": [
             {
@@ -35,7 +37,7 @@ def format_math(data):
     }
 
 
-def prepare_deepscaler_dataset(seed=42):
+def prepare_deepscaler_dataset(seed: int = 42) -> dict[str, Dataset | None]:
     """Load and split the DeepScaler dataset into train and test sets."""
     # Load the original dataset for training
     train_ds = load_dataset("agentica-org/DeepScaleR-Preview-Dataset", split="train")
@@ -63,7 +65,7 @@ def prepare_deepscaler_dataset(seed=42):
 
 
 class DeepScalerDataset:
-    def __init__(self, seed: int = 42):
+    def __init__(self, seed: int = 42) -> None:
         """Initialize the DeepScaler dataset with train/test split.
 
         Args:

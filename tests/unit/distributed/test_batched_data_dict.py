@@ -14,7 +14,7 @@
 import pytest
 import torch
 
-from nemo_rl.distributed.batched_data_dict import BatchedDataDict, DynamicBatchingCfg
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict, DynamicBatchingArgs
 
 
 def test_shard_by_batch_size_basic():
@@ -214,7 +214,7 @@ def test_shard_by_batch_size_dynamic():
             ),
         }
     )
-    dynamic_batching_cfg: DynamicBatchingCfg = {
+    dynamic_batching_args: DynamicBatchingArgs = {
         "input_key": "data",
         "input_lengths_key": "sequence_lengths",
         "sequence_length_round": 4,
@@ -222,7 +222,7 @@ def test_shard_by_batch_size_dynamic():
     }
 
     shards, _ = batch.shard_by_batch_size(
-        shards=2, dynamic_batching_cfg=dynamic_batching_cfg
+        shards=2, dynamic_batching_args=dynamic_batching_args
     )
     # Expected Output: 3 microbatches per shard, of sizes 2, 1, 1
     for shard in shards:

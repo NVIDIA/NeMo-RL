@@ -133,3 +133,19 @@ in Docker with this script:
 ```sh
 CONTAINER=... bash run_functional_in_docker.sh functional/sft.sh
 ```
+
+
+## Static Type Checking with [MyPy](https://mypy-lang.org/)
+Static type checking can be run with no GPU resources:
+
+```sh
+uv run --group test mypy {program}.py
+```
+
+For example,
+```sh
+uv run --group test mypy examples/run_grpo_math.py
+uv run --group test mypy examples/run_sft.py
+```
+
+mypy.ini controls the configuration of mypy.

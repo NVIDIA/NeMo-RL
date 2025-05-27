@@ -16,8 +16,8 @@ import gc
 import os
 import warnings
 from collections import defaultdict
-from contextlib import contextmanager, nullcontext
-from typing import Any, Dict, Optional
+from contextlib import AbstractContextManager, contextmanager, nullcontext
+from typing import Any, Generator, Optional, cast
 
 import ray
 import torch
@@ -28,11 +28,10 @@ from torch.distributed.fsdp import (
     MixedPrecision,
 )
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, PreTrainedTokenizerBase
 from transformers.integrations.accelerate import find_tied_parameters
 
-from nemo_rl.algorithms.interfaces import LossFunction
-from nemo_rl.algorithms.loss_functions import LossType
+from nemo_rl.algorithms.interfaces import LossFunction, LossType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.models.generation.interfaces import (
     GenerationDatumSpec,
@@ -40,6 +39,10 @@ from nemo_rl.models.generation.interfaces import (
     verify_right_padding,
 )
 from nemo_rl.models.policy import PolicyConfig
+from nemo_rl.models.policy.interfaces import (
+    LogprobOutputSpec,
+    ReferenceLogprobOutputSpec,
+)
 from nemo_rl.models.policy.utils import (
     get_gpu_info,
     import_class_from_path,
@@ -53,7 +56,7 @@ from nemo_rl.utils.native_checkpoint import (
 
 @ray.remote
 class FSDP1PolicyWorker:
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Customizes the actor's prefix in the Ray logs.
 
         This makes it easier to identify which worker is producing specific log messages.
@@ -66,7 +69,7 @@ class FSDP1PolicyWorker:
     def __init__(
         self,
         config: PolicyConfig,
-        tokenizer: AutoTokenizer,
+        tokenizer: PreTrainedTokenizerBase,
         weights_path: Optional[str] = None,
         optimizer_path: Optional[str] = None,
         init_optimizer: bool = True,
@@ -93,6 +96,7 @@ class FSDP1PolicyWorker:
             # Keeping the master weights in lower precision has shown to cause issues with convergence.
             # https://github.com/NVIDIA/NeMo-RL/issues/279 will fix the issue of CPU OOM for larger models.
             torch_dtype=torch.float32,
+            trust_remote_code=True,
             **sliding_window_overwrite(
                 model_name
             ),  # due to https://github.com/huggingface/transformers/issues/38002
@@ -105,6 +109,7 @@ class FSDP1PolicyWorker:
                 model_name,
                 device_map="cpu",  # load weights onto CPU initially
                 torch_dtype=torch.float32,  # use full precision in sft until https://github.com/NVIDIA/nemo-rl/issues/13 is fixed
+                trust_remote_code=True,
                 **sliding_window_overwrite(
                     model_name
                 ),  # due to https://github.com/huggingface/transformers/issues/38002
@@ -119,7 +124,7 @@ class FSDP1PolicyWorker:
         #    (Initialize device mesh, shard submodules, then shard entire model)
         # ------------------------------------------------
 
-        def do_fsdp(model):
+        def do_fsdp(model: torch.nn.Module) -> torch.nn.Module:
             if world_size == 1:
                 print(
                     "[INFO] Using a single GPU - skipping FSDP wrapper to avoid GPU memory offloading issues"
@@ -162,8 +167,8 @@ class FSDP1PolicyWorker:
         self.model = self.manual_load_to_gpu(self.model)
 
         # used for streaming update inference engine weights
-        self._held_sharded_state_dict_reference = None
-        self._held_streamed_param_reference = None
+        self._held_sharded_state_dict_reference: Optional[dict[str, Any]] = None
+        self._held_streamed_param_reference: Optional[dict[str, Any]] = None
 
         # register_fsdp_forward_method(self.model, "generate")
         if init_optimizer:
@@ -176,7 +181,9 @@ class FSDP1PolicyWorker:
 
         if "scheduler" in self.cfg and self.optimizer is not None:
             if isinstance(self.cfg["scheduler"], dict):
-                scheduler_cls = import_class_from_path(self.cfg["scheduler"]["name"])
+                scheduler_cls = import_class_from_path(
+                    cast(str, self.cfg["scheduler"]["name"])
+                )
                 self.scheduler = scheduler_cls(
                     self.optimizer, **self.cfg["scheduler"]["kwargs"]
                 )
@@ -194,7 +201,7 @@ class FSDP1PolicyWorker:
                             "unknown scheduler config: ",
                             scheduler_cfg,
                         )
-                        milestones = scheduler_cfg["milestones"]
+                        milestones: list[int] = scheduler_cfg["milestones"]
 
                 self.scheduler = torch.optim.lr_scheduler.SequentialLR(
                     self.optimizer, schedulers, milestones
@@ -217,24 +224,24 @@ class FSDP1PolicyWorker:
                 "No weights path provided. Starting from scratch (default policy init)"
             )
 
-    def is_alive(self):
+    def is_alive(self) -> bool:
         return True
 
-    def reset_peak_memory_stats(self):
+    def reset_peak_memory_stats(self) -> None:
         torch.cuda.reset_peak_memory_stats()
 
-    def get_gpu_info(self):
+    def get_gpu_info(self) -> dict[str, Any]:
         """Return information about the GPU being used by this worker."""
         return get_gpu_info(self.model)
 
     def train(
         self,
-        data: BatchedDataDict,
+        data: BatchedDataDict[Any],
         loss_fn: LossFunction,
         eval_mode: bool = False,
         gbs: Optional[int] = None,
         mbs: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Train the policy on a batch of data with a given loss function."""
         # Check if the model has tied weights
         skip_tie_check = os.environ.get("NRL_SKIP_TIED_WEIGHT_CHECK")
@@ -248,11 +255,11 @@ class FSDP1PolicyWorker:
         if mbs is None:
             mbs = self.cfg["train_micro_batch_size"]
         local_gbs = gbs // torch.distributed.get_world_size()
-        dataset_size = data.get("input_ids").shape[0]
+        dataset_size = data["input_ids"].shape[0]
         num_global_batches = dataset_size // local_gbs
 
         if eval_mode:
-            ctx = torch.no_grad()
+            ctx: AbstractContextManager = torch.no_grad()
             self.model.eval()
         else:
             ctx = nullcontext()
@@ -266,7 +273,7 @@ class FSDP1PolicyWorker:
             losses = []
             all_mb_metrics = []
             for gb_start in range(0, dataset_size, local_gbs):
-                global_batch: BatchedDataDict = data.slice(
+                global_batch: BatchedDataDict[Any] = data.slice(
                     gb_start, gb_start + local_gbs
                 )
 
@@ -307,9 +314,9 @@ class FSDP1PolicyWorker:
                 num_microbatches = min(local_gbs, dataset_size - gb_start) // mbs
 
                 for mb in global_batch.make_microbatch_iterator(mbs):
-                    input_ids = mb.get("input_ids")
+                    input_ids = mb["input_ids"]
 
-                    input_lengths = mb.get("input_lengths")
+                    input_lengths = mb["input_lengths"]
                     batch_size, seq_len = input_ids.shape
                     attention_mask = torch.ones(
                         (batch_size, seq_len), dtype=torch.long, device=input_ids.device
@@ -361,23 +368,27 @@ class FSDP1PolicyWorker:
                         all_mb_metrics.append(loss_metrics)
 
                 # Clip gradients
-                grad_norm = None
                 if not eval_mode:
+                    if self.cfg["max_grad_norm"] is None:
+                        max_grad_norm = 9999999999.0
+                    else:
+                        max_grad_norm = self.cfg["max_grad_norm"]
+
                     if isinstance(self.model, FullyShardedDataParallel):
                         # when using FSDP1, use FSDP's clip_grad_norm_
                         # to ensure grad norm is being computed over all parameters
                         # see https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.FullyShardedDataParallel.clip_grad_norm_
-                        grad_norm = self.model.clip_grad_norm_(
-                            max_norm=self.cfg["max_grad_norm"]
-                        )
+                        grad_norm = self.model.clip_grad_norm_(max_norm=max_grad_norm)
                     else:
                         grad_norm = torch.nn.utils.clip_grad_norm_(
-                            self.model.parameters(), max_norm=self.cfg["max_grad_norm"]
+                            self.model.parameters(), max_norm=max_grad_norm
                         )
                     grad_norm = grad_norm.cpu()
 
                     # Update parameters
                     self.optimizer.step()
+                else:
+                    grad_norm = None
                 losses.append(torch.tensor(mb_losses).sum().item())
 
             # increment scheduler after all batches in rollout are processed
@@ -404,8 +415,8 @@ class FSDP1PolicyWorker:
             return metrics
 
     def get_logprobs(
-        self, data: BatchedDataDict, micro_batch_size: int = None
-    ) -> BatchedDataDict:
+        self, data: BatchedDataDict[Any], micro_batch_size: Optional[int] = None
+    ) -> BatchedDataDict[LogprobOutputSpec]:
         """Get the logprobs of the model for a batch of data.
 
         If no micro-batch size is provided, uses the configured logprob_batch_size to do microbatching.
@@ -430,11 +441,11 @@ class FSDP1PolicyWorker:
         with torch.no_grad():
             data.to("cuda")
             for lp_batch in data.make_microbatch_iterator(logprob_batch_size):
-                input_ids = lp_batch.get("input_ids")
+                input_ids = lp_batch["input_ids"]
                 batch_size, seq_len = input_ids.shape
 
                 # Create attention mask
-                input_lengths = lp_batch.get("input_lengths")
+                input_lengths = lp_batch["input_lengths"]
 
                 # Create attention mask for right-padded data
                 attention_mask = torch.zeros(
@@ -479,13 +490,13 @@ class FSDP1PolicyWorker:
                 all_log_probs.append(token_logprobs)
 
         # Concatenate all batches
-        return_data = BatchedDataDict()
+        return_data = BatchedDataDict[LogprobOutputSpec]()
         return_data["logprobs"] = torch.cat(all_log_probs, dim=0).cpu()
 
         return return_data
 
     @contextmanager
-    def use_reference_model(self):
+    def use_reference_model(self) -> Generator[None, None, None]:
         """Context manager that temporarily swaps the reference model and active model.
 
         On entry: Moves model to CPU, moves reference_model to CUDA. Swaps the references
@@ -517,8 +528,8 @@ class FSDP1PolicyWorker:
             torch.cuda.empty_cache()
 
     def get_reference_policy_logprobs(
-        self, data: BatchedDataDict, micro_batch_size: int = None
-    ) -> BatchedDataDict:
+        self, data: BatchedDataDict[Any], micro_batch_size: Optional[int] = None
+    ) -> BatchedDataDict[ReferenceLogprobOutputSpec]:
         """Get the logprobs from the reference policy for a batch of data.
 
         Returns:
@@ -529,7 +540,7 @@ class FSDP1PolicyWorker:
         with self.use_reference_model():
             reference_logprobs = self.get_logprobs(data, micro_batch_size)
 
-        return_data = BatchedDataDict()
+        return_data = BatchedDataDict[ReferenceLogprobOutputSpec]()
         return_data["reference_logprobs"] = reference_logprobs["logprobs"].cpu()
         return return_data
 
@@ -570,6 +581,9 @@ class FSDP1PolicyWorker:
         ):
             # Get generation config from self.cfg
             generation_batch_size = self.cfg["generation_batch_size"]
+            assert self.cfg["generation"] is not None, (
+                "Generation config is not set while trying to generate"
+            )
             gen_cfg = self.cfg["generation"]
 
             micro_batches = []
@@ -578,8 +592,8 @@ class FSDP1PolicyWorker:
             max_length = 0
             for gen_batch in data.make_microbatch_iterator(generation_batch_size):
                 # Create attention mask from input_lengths if needed for the model
-                input_ids = gen_batch.get("input_ids").cuda()
-                input_lengths = gen_batch.get("input_lengths").cuda()
+                input_ids = gen_batch["input_ids"].cuda()
+                input_lengths = gen_batch["input_lengths"].cuda()
                 batch_size, seq_len = input_ids.shape
 
                 # Convert right padding to left padding
@@ -597,7 +611,7 @@ class FSDP1PolicyWorker:
                     left_padded_attention_mask[i, seq_len - length :] = 1
 
                 # this function requires all generations have the same stop strings, so we collect all here
-                batch_stop_strings = gen_batch.get("stop_strings", [])
+                batch_stop_strings: list[list[str]] = gen_batch.get("stop_strings", [])
                 stop_strings = set()
                 for sample_stop_strings in batch_stop_strings:
                     if sample_stop_strings:
@@ -607,7 +621,9 @@ class FSDP1PolicyWorker:
                 if gen_cfg.get("stop_strings", None):
                     stop_strings.update(gen_cfg["stop_strings"])
 
-                stop_strings = list(stop_strings) if len(stop_strings) > 0 else None
+                stop_strings: list[str] | None = (
+                    list(stop_strings) if len(stop_strings) > 0 else None
+                )
 
                 if isinstance(
                     self.model, torch.distributed.fsdp.FullyShardedDataParallel
@@ -615,7 +631,7 @@ class FSDP1PolicyWorker:
                     generation_module = self.model.module
                 else:
                     generation_module = self.model
-                outputs = generation_module.generate(
+                outputs = generation_module.generate(  # type: ignore # we know it's a nn.Module
                     input_ids=left_padded_input_ids,
                     attention_mask=left_padded_attention_mask,
                     max_new_tokens=gen_cfg["max_new_tokens"],
@@ -656,17 +672,19 @@ class FSDP1PolicyWorker:
                 micro_batches.append(mb)
 
             # Get lengths, pad, and concatenate all batches
-            return_data = BatchedDataDict.from_batches(
-                micro_batches,
-                pad_value_dict={
-                    "left_padded_output_ids": self.cfg["generation"]["pad_token_id"]
-                },
+            return_data: BatchedDataDict[GenerationOutputSpec] = (
+                BatchedDataDict.from_batches(
+                    micro_batches,
+                    pad_value_dict={
+                        "left_padded_output_ids": self.cfg["generation"]["pad_token_id"]
+                    },
+                )
             )
 
             # Calculate the lengths of generations for each sequence by finding stop tokens
             generation_lengths = []
             unpadded_sequence_lengths = []
-            input_length = data.get("input_ids").size(1)
+            input_length = data["input_ids"].size(1)
 
             # Convert left-padded outputs back to right-padded format
             batch_size = len(return_data["left_padded_output_ids"])
@@ -772,7 +790,7 @@ class FSDP1PolicyWorker:
 
             return return_data
 
-    def _add_noise_to_weights(self):
+    def _add_noise_to_weights(self) -> None:
         """Add small Gaussian noise to the weights of the model. Note that this is used for testing purposes only."""
         # TODO @sahilj: do this without a summon (maybe FSDP2)
         noise_std = 0.01  # Standard deviation for the noise
@@ -799,7 +817,7 @@ class FSDP1PolicyWorker:
         return get_device_uuid(device_idx)
 
     @torch.no_grad()
-    def prepare_weights_for_ipc(self):
+    def prepare_weights_for_ipc(self) -> list[tuple[str, int]]:
         from torch.distributed.fsdp.api import ShardedStateDictConfig, StateDictType
 
         # If the model is not FSDP, then we need to manually move it to the GPU
@@ -818,7 +836,7 @@ class FSDP1PolicyWorker:
 
         # Collect info for streaming multiple tensors
         state_dict_info = []
-        for name, tensor in self._held_sharded_state_dict_reference.items():
+        for name, tensor in self._held_sharded_state_dict_reference.items():  # type: ignore
             # dtensor's numel will return complete tensor instead of only local tensor
             size_in_bytes = tensor.element_size() * tensor.numel()
             state_dict_info.append((name, size_in_bytes))
@@ -826,9 +844,13 @@ class FSDP1PolicyWorker:
         return state_dict_info
 
     @torch.no_grad()
-    def get_weights_ipc_handles(self, keys):
+    def get_weights_ipc_handles(self, keys: list[str]) -> dict[str, Any]:
         from torch.distributed.tensor import DTensor
         from torch.multiprocessing.reductions import reduce_tensor
+
+        assert self._held_sharded_state_dict_reference is not None, (
+            "prepare_weights_for_ipc must be called before get_weights_ipc_handles"
+        )
 
         converted_params = {}
         for key in keys:
@@ -855,12 +877,12 @@ class FSDP1PolicyWorker:
 
         return {device_uuid: all_handles}
 
-    def prepare_for_lp_inference(self):
+    def prepare_for_lp_inference(self) -> None:
         self.model = self.manual_load_to_gpu(self.model)
         self.model.eval()
         self.offload_before_refit()
 
-    def prepare_for_training(self, *args, **kwargs):
+    def prepare_for_training(self, *args: Any, **kwargs: Any) -> None:
         # onload models and optimizer state to cuda
         self.model = self.manual_load_to_gpu(self.model)
         self.model.train()
@@ -876,7 +898,7 @@ class FSDP1PolicyWorker:
         torch.cuda.empty_cache()
 
     @torch.no_grad()
-    def offload_before_refit(self):
+    def offload_before_refit(self) -> None:
         """Offload the optimizer and buffers to the CPU."""
         torch.randn(1).cuda()  # wake up torch allocator
         if not self.cfg["fsdp_offload_enabled"]:
@@ -897,7 +919,7 @@ class FSDP1PolicyWorker:
         )
 
     @torch.no_grad()
-    def offload_after_refit(self):
+    def offload_after_refit(self) -> None:
         # Offload as much as possible on the CPU
         self.model = self.manual_offload_to_cpu(self.model)
         self.model.eval()
@@ -921,7 +943,7 @@ class FSDP1PolicyWorker:
             f"GPU Memory after refit complete: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved"
         )
 
-    def manual_offload_to_cpu(self, model):
+    def manual_offload_to_cpu(self, model: torch.nn.Module) -> torch.nn.Module:
         if self.cfg["fsdp_offload_enabled"]:
             return model
 
@@ -935,11 +957,15 @@ class FSDP1PolicyWorker:
             buffer.data = buffer.data.to("cpu", non_blocking=True)
 
         if hasattr(model, "_fsdp_wrapped_module"):
-            self.manual_offload_to_cpu(model._fsdp_wrapped_module)
+            wrapped_module = model._fsdp_wrapped_module
+            assert isinstance(wrapped_module, torch.nn.Module), (
+                f"wrapped_module is not a torch.nn.Module: instead, {type(wrapped_module)}"
+            )
+            self.manual_offload_to_cpu(wrapped_module)
 
         return model
 
-    def manual_load_to_gpu(self, model):
+    def manual_load_to_gpu(self, model: torch.nn.Module) -> torch.nn.Module:
         if self.cfg["fsdp_offload_enabled"]:
             return model
 
@@ -953,7 +979,11 @@ class FSDP1PolicyWorker:
             buffer.data = buffer.data.to("cuda", non_blocking=True)
 
         if hasattr(model, "_fsdp_wrapped_module"):
-            self.manual_load_to_gpu(model._fsdp_wrapped_module)
+            wrapped_module = model._fsdp_wrapped_module
+            assert isinstance(wrapped_module, torch.nn.Module), (
+                f"wrapped_module is not a torch.nn.Module: instead, {type(wrapped_module)}"
+            )
+            self.manual_load_to_gpu(wrapped_module)
 
         return model
 
@@ -962,7 +992,7 @@ class FSDP1PolicyWorker:
         weights_path: str,
         optimizer_path: Optional[str] = None,
         tokenizer_path: Optional[str] = None,
-    ):
+    ) -> None:
         """Save a checkpoint of the model.
 
         The checkpoint is saved in the following format:
@@ -988,7 +1018,9 @@ class FSDP1PolicyWorker:
             tokenizer_path=tokenizer_path,
         )
 
-    def load_checkpoint(self, weights_path: str, optimizer_path: Optional[str] = None):
+    def load_checkpoint(
+        self, weights_path: str, optimizer_path: Optional[str] = None
+    ) -> None:
         """Load a checkpoint into the model."""
         load_checkpoint(
             model=self.model,
@@ -998,6 +1030,6 @@ class FSDP1PolicyWorker:
             optimizer_path=optimizer_path,
         )
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """Shutdown the policy."""
         #

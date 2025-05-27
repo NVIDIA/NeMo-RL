@@ -16,13 +16,14 @@ import os
 import warnings
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Iterable, Optional, Union
 
 import ray
 from ray.util.placement_group import PlacementGroup
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
 from nemo_rl.distributed.batched_data_dict import SlicedDataDict
+from nemo_rl.distributed.named_sharding import NamedSharding
 from nemo_rl.distributed.ray_actor_environment_registry import (
     get_actor_python_env,
 )
@@ -34,11 +35,11 @@ from nemo_rl.utils.venvs import create_local_venv
 class MultiWorkerFuture:
     """Container for Ray futures with associated worker information."""
 
-    futures: List[ray.ObjectRef]
-    used_workers: List[int]
-    respect_tied_workers: bool = True
+    futures: list[ray.ObjectRef]
+    return_from_workers: Optional[list[int]] = None
+    called_workers: Optional[list[int]] = None
 
-    def get_results(self, worker_group):
+    def get_results(self, worker_group: "RayWorkerGroup") -> list[Any]:
         """Get results from the futures, optionally respecting tied workers.
 
         When respect_tied_workers is True, this method deduplicates results by returning
@@ -69,11 +70,11 @@ class MultiWorkerFuture:
                 # ray.get cannot be called directly on the generator object – it must be iterated to obtain the individual ObjectRef instances first.
                 for generated_ref in fut:
                     object_refs.append(generated_ref)
-                    ref_owner_indices.append(self.used_workers[idx])
+                    ref_owner_indices.append(self.called_workers[idx])
                     has_generator = True
             else:
                 object_refs.append(fut)
-                ref_owner_indices.append(self.used_workers[idx])
+                ref_owner_indices.append(self.called_workers[idx])
 
         # Retrieve the concrete results.
         all_results = ray.get(object_refs)
@@ -83,31 +84,26 @@ class MultiWorkerFuture:
         if has_generator:
             return all_results
 
-        if not self.respect_tied_workers:
-            return all_results
+        if self.return_from_workers is not None:
+            if self.called_workers is not None:
+                # Create a mapping from global worker indices to local indices in all_results
+                worker_to_result_idx = {
+                    worker: idx for idx, worker in enumerate(self.called_workers)
+                }
 
-        if not ref_owner_indices:
-            return all_results
+                # Filter return_from_workers to only include workers that were actually called
+                valid_return_workers = [
+                    w for w in self.return_from_workers if w in worker_to_result_idx
+                ]
 
-        # Create tied worker sets based on originating workers of each result
-        active_tied_workers = {}
-        for i, worker_idx in enumerate(ref_owner_indices):
-            tied_worker_idx = worker_group.worker_to_tied_group_index.get(worker_idx)
-            if tied_worker_idx is None:
-                continue
-
-            if tied_worker_idx not in active_tied_workers:
-                active_tied_workers[tied_worker_idx] = []
-            active_tied_workers[tied_worker_idx].append(i)
-
-        # Take the first result from each tied worker group
-        tied_worker_results = []
-        for tied_worker_idx in sorted(active_tied_workers.keys()):
-            if active_tied_workers[tied_worker_idx]:
-                result_idx = active_tied_workers[tied_worker_idx][0]
-                tied_worker_results.append(all_results[result_idx])
-
-        return tied_worker_results
+                # Map global worker indices to local result indices and get results
+                return [
+                    all_results[worker_to_result_idx[worker]]
+                    for worker in valid_return_workers
+                ]
+            else:
+                return [all_results[worker] for worker in self.return_from_workers]
+        return all_results
 
 
 class RayWorkerBuilder:
@@ -124,7 +120,7 @@ class RayWorkerBuilder:
             placement_group_bundle_index: int,
             num_gpus: int,
             bundle_indices: Optional[tuple] = None,
-            **extra_options: Optional[Dict[str, Any]],
+            **extra_options: Optional[dict[str, Any]],
         ):
             """Create a Ray worker with the specified configuration.
 
@@ -151,7 +147,7 @@ class RayWorkerBuilder:
             module = importlib.import_module(module_name)
             worker_class = getattr(module, class_name)
             worker_kwargs = dict(self.init_kwargs)
-            options = deepcopy(extra_options)
+            options: dict[str, Any] = deepcopy(extra_options)
 
             # Use the worker's configuration interface if available
             if hasattr(worker_class, "configure_worker"):
@@ -169,10 +165,10 @@ class RayWorkerBuilder:
                 if env_vars:
                     if "runtime_env" not in options:
                         options["runtime_env"] = {"env_vars": {}}
-                    if "env_vars" not in options["runtime_env"]:
-                        options["runtime_env"]["env_vars"] = {}
+                    if "env_vars" not in options["runtime_env"]:  # type: ignore
+                        options["runtime_env"]["env_vars"] = {}  # type: ignore
                     for k, v in env_vars.items():
-                        options["runtime_env"]["env_vars"][k] = v
+                        options["runtime_env"]["env_vars"][k] = v  # type: ignore
 
                 # Apply initialization parameters
                 if init_kwargs:
@@ -221,10 +217,10 @@ class RayWorkerBuilder:
         self,
         placement_group: PlacementGroup,
         placement_group_bundle_index: int,
-        num_gpus: int,
-        bundle_indices: Optional[tuple] = None,
-        **extra_options: Dict[str, Any],
-    ):
+        num_gpus: float | int,
+        bundle_indices: Optional[tuple[int, list[int]]] = None,
+        **extra_options: Any,
+    ) -> ray.actor.ActorHandle:
         """Create a Ray worker with the specified configuration.
 
         Order of precedence for worker options configuration (from lowest to highest):
@@ -238,7 +234,7 @@ class RayWorkerBuilder:
         Args:
             placement_group: Ray placement group for resource allocation
             placement_group_bundle_index: Index of the bundle in the placement group
-            num_gpus: Number of GPUs to allocate to this worker
+            num_gpus: Number of GPUs to allocate to this worker (can be fractional)
             bundle_indices: Tuple of (node_idx, local_bundle_indices) for tensor parallelism (if applicable)
             extra_options: Additional options to pass to the Ray actor (may be overridden by actor's configure_worker(...) method)
 
@@ -269,7 +265,7 @@ class RayWorkerBuilder:
             options["runtime_env"]["py_executable"] = venv_python
 
         initializer_options = {"runtime_env": options["runtime_env"]}
-        isolated_initializer = self.IsolatedWorkerInitializer.options(
+        isolated_initializer = self.IsolatedWorkerInitializer.options(  # type: ignore # @ray.remote call
             **initializer_options
         ).remote(self.ray_actor_class_fqn, *self.args, **self.kwargs)
         worker = ray.get(
@@ -302,9 +298,10 @@ class RayWorkerGroup:
         self,
         cluster: RayVirtualCluster,
         remote_worker_builder: RayWorkerBuilder,
-        workers_per_node: Optional[Union[int, List[int]]] = None,
+        workers_per_node: Optional[Union[int, list[int]]] = None,
         name_prefix: str = "",
-        bundle_indices_list: Optional[List[tuple]] = None,
+        bundle_indices_list: Optional[list[tuple[int, list[int]]]] = None,
+        sharding_annotations: Optional[NamedSharding] = None,
     ):
         """Initialize a group of distributed Ray workers.
 
@@ -317,16 +314,18 @@ class RayWorkerGroup:
             bundle_indices_list: Explicit list of (node_idx, [local_bundle_indices]) tuples.
                                Each tuple defines a tied group of workers placed on the same node.
                                If provided, workers_per_node is ignored.
+            sharding_annotations: NamedSharding object representing mapping of named axes to ranks (i.e. for TP, PP, etc.)
         """
-        self._workers = []
-        self._worker_metadata = []
+        self._workers: list[ray.actor.ActorHandle] = []
+        self._worker_metadata: list[dict[str, Any]] = []
         self.cluster = cluster
         self.name_prefix = name_prefix
-        self.tied_workers_groups = []
+        self.tied_workers_groups: list[list[int]] = []
         # Maps worker indices to their corresponding tied group index
         # For example, if worker with index 3 belongs to tied worker group 1,
         # then worker_to_tied_group_index[3] = 1
-        self.worker_to_tied_group_index = {}
+        self.worker_to_tied_group_index: dict[int, int] = {}
+        self.sharding_annotations = sharding_annotations
 
         # If explicit bundle indices are provided, use those
         if bundle_indices_list is None:
@@ -383,8 +382,10 @@ class RayWorkerGroup:
         )
 
     def _create_workers_from_bundle_indices(
-        self, remote_worker_builder, bundle_indices_list
-    ):
+        self,
+        remote_worker_builder: RayWorkerBuilder,
+        bundle_indices_list: list[tuple[int, list[int]]],
+    ) -> None:
         """Create workers based on explicit bundle indices for tied worker groups.
 
         Args:
@@ -493,35 +494,30 @@ class RayWorkerGroup:
             self.tied_workers_groups.append(current_group)
 
     @property
-    def workers(self):
+    def workers(self) -> list[ray.actor.ActorHandle]:
         return self._workers
 
     @property
-    def worker_metadata(self):
+    def worker_metadata(self) -> list[dict[str, Any]]:
         return self._worker_metadata
 
     @property
-    def group_count(self):
+    def group_count(self) -> int:
         """Number of tied worker groups."""
         return len(self.tied_workers_groups)
 
     def run_all_workers_multiple_data(
         self,
         method_name: str,
-        data: List[SlicedDataDict],
-        common_kwargs: Optional[Dict[str, Any]] = None,
-        only_on: Literal["all", "tied_leader", "all_tied_workers"] = "all",
-    ):
+        data: list[SlicedDataDict],
+        common_kwargs: Optional[dict[str, Any]] = None,
+    ) -> MultiWorkerFuture:
         """Run a method on all workers in parallel with different data.
 
         Args:
             method_name: Name of the method to call on each worker
             data: List of data slices to pass to workers/groups
             common_kwargs: Additional keyword arguments to pass to all workers
-            only_on: Determines which workers receive data and execute the method:
-                    - "all": Each worker gets its own data slice
-                    - "tied_leader": Only the first worker in each tied group receives data
-                    - "all_tied_workers": All workers in each tied group receive the same data slice
 
         Returns:
             MultiWorkerFuture: Object containing futures and their associated worker information
@@ -539,110 +535,176 @@ class RayWorkerGroup:
             common_kwargs = {}
 
         futures = []
-        used_workers = []
-
-        respect_tied_workers = only_on in {"tied_leader", "all_tied_workers"}
-
-        if only_on == "all":
-            # Regular case - each worker gets its own data slice
-            for worker_id, worker in enumerate(self.workers):
-                if worker_id >= len(data):
-                    break
-                method = getattr(worker, method_name)
-                futures.append(method.remote(data[worker_id], **common_kwargs))
-                used_workers.append(worker_id)
-
-        elif respect_tied_workers:
-            # If there are fewer data slices than tied worker groups, use only the first N tied worker groups
-            active_tied_worker_count = min(len(data), len(self.tied_workers_groups))
-            if active_tied_worker_count < len(self.tied_workers_groups):
-                print(
-                    f"Warning: Using only {active_tied_worker_count} of {len(self.tied_workers_groups)} tied worker groups due to limited data slices"
-                )
-
-            # For each tied worker group, all workers in the group get the same data slice
-            for tied_worker_idx in range(active_tied_worker_count):
-                tied_worker_group = self.tied_workers_groups[tied_worker_idx]
-                tied_worker_data = data[tied_worker_idx]
-
-                if only_on == "all_tied_workers":
-                    # Running on all workers in the non-vllm case
-                    for worker_idx in tied_worker_group:
-                        futures.append(
-                            getattr(self._workers[worker_idx], method_name).remote(
-                                tied_worker_data, **common_kwargs
-                            )
-                        )
-
-                        used_workers.append(worker_idx)
-                else:
-                    # Running only on the leader of the tied worker group for vllm case
-                    futures.append(
-                        getattr(
-                            self._workers[tied_worker_group[0]], method_name
-                        ).remote(tied_worker_data, **common_kwargs)
-                    )
-                    used_workers.append(tied_worker_group[0])
-        else:
-            raise ValueError(f"Invalid value for only_on: {only_on}")
+        for worker_id, worker in enumerate(self.workers):
+            if worker_id >= len(data):
+                break
+            method = getattr(worker, method_name)
+            futures.append(method.remote(data[worker_id], **common_kwargs))
 
         # Return a MultiWorkerFuture containing both futures and worker information
         return MultiWorkerFuture(
             futures=futures,
-            used_workers=used_workers,
-            respect_tied_workers=respect_tied_workers,
+            return_from_workers=list(range(len(futures))),
         )
 
     def run_all_workers_single_data(
         self,
         method_name: str,
         *args,
-        only_on: Literal["all", "tied_leader", "all_tied_workers"] = "all",
+        run_rank_0_only_axes: list[str] | None = None,
         **kwargs,
-    ):
+    ) -> list[ray.ObjectRef]:
         """Run a method on all workers in parallel with the same data.
 
         Args:
             method_name: Name of the method to call on each worker
-            only_on: Determines which workers to run the method on:
-                    - "all": Run on all workers
-                    - "tied_leader": Run only on the first worker of each tied worker group
-                    - "all_tied_workers": Run on all workers in each tied worker group
             *args, **kwargs: Arguments to pass to the method
+            run_rank_0_only_axes: List of named axes for which only rank 0 should run the method.
 
         Returns:
-            List[ray.ObjectRef]: A list of ray futures
+            list[ray.ObjectRef]: A list of ray futures
         """
         futures = []
 
-        respect_tied_workers = only_on in {"tied_leader", "all_tied_workers"}
+        if run_rank_0_only_axes is None:
+            run_rank_0_only_axes = []
 
-        if only_on == "all":
-            for worker in self.workers:
+        for worker_idx, worker in enumerate(self.workers):
+            worker_coords = self.sharding_annotations.get_worker_coords(worker_idx)
+
+            # Determine if this worker should receive data
+            should_run = True
+            for axis in self.sharding_annotations.names:
+                if axis not in worker_coords:
+                    continue
+                if axis in run_rank_0_only_axes and worker_coords[axis] != 0:
+                    should_run = False
+                    break
+
+            if should_run:
                 method = getattr(worker, method_name)
                 futures.append(method.remote(*args, **kwargs))
-        elif respect_tied_workers:
-            for tied_worker_group in self.tied_workers_groups:
-                if only_on == "all_tied_workers":
-                    # Running on all workers in the non-vllm case
-                    for worker_idx in tied_worker_group:
-                        futures.append(
-                            getattr(self._workers[worker_idx], method_name).remote(
-                                *args, **kwargs
-                            )
-                        )
-                else:
-                    futures.append(
-                        getattr(
-                            self._workers[tied_worker_group[0]], method_name
-                        ).remote(*args, **kwargs)
-                    )
-        else:
-            raise ValueError(f"Invalid value for only_on: {only_on}")
 
         return futures
 
-    def get_all_worker_results(self, future_bundle):
+    def run_all_workers_sharded_data(
+        self,
+        method_name: str,
+        data: Iterable[SlicedDataDict],  # arbitrary nested iterables of SlicedDataDicts
+        in_sharded_axes: list[str] | None = None,
+        replicate_on_axes: list[str] | None = None,
+        output_is_replicated: list[str] | None = None,
+        make_dummy_calls_to_free_axes: bool = False,
+        common_kwargs: Optional[dict[str, Any]] = None,
+    ) -> MultiWorkerFuture:
+        """Run a method on all workers in parallel with sharded data.
+
+        Axes in in_sharded_axes: Data is already split across these axes, so we just send the appropriate slice to each worker (along this axis)
+        Axes in replicate_on_axes: Data is replicated to all workers along these dimensions
+        Free axes (axes not in either list): Data is only sent to workers at index 0 of these axes
+
+        Args:
+            method_name: Name of the method to call on each worker
+            data: Iterable of SlicedDataDicts to pass to workers/groups
+            in_sharded_axes: List of axes that are sharded
+            replicate_on_axes: List of axes that are to be replicated
+            output_is_replicated: List of axes along which the output is replicated (and we should just return the first result).
+                                  We also just return from rank 0 of free axes.
+            make_dummy_calls_to_free_axes: Whether to make dummy calls (with None) to workers that
+                                           aren't rank 0 on 'free axes' (axes not in in_sharded_axes or replicate_on_axes).
+            common_kwargs: Additional keyword arguments to pass to all workers
+        Returns:
+            MultiWorkerFuture: Object containing futures and their associated worker information
+        """
+        if self.sharding_annotations is None:
+            raise ValueError(
+                "Sharding annotations must be provided to use sharded data distribution"
+            )
+
+        if common_kwargs is None:
+            common_kwargs = {}
+        if in_sharded_axes is None:
+            in_sharded_axes = []
+        if replicate_on_axes is None:
+            replicate_on_axes = []
+        if output_is_replicated is None:
+            output_is_replicated = []
+
+        futures = []
+
+        # Validate axes
+        for axis in in_sharded_axes + replicate_on_axes:
+            if axis not in self.sharding_annotations.names:
+                raise ValueError(
+                    f"Axis '{axis}' not found in sharding annotations. Valid axes: {self.sharding_annotations.names}"
+                )
+
+        # Check for overlapping axes
+        overlap = set(in_sharded_axes).intersection(set(replicate_on_axes))
+        if overlap:
+            raise ValueError(f"Axes cannot be both sharded and replicated: {overlap}")
+
+        called_workers = []
+        return_from_workers = []
+        # For each worker, determine what data it should receive
+        for worker_idx, worker in enumerate(self._workers):
+            # Get the worker's coordinates in the sharding space
+            worker_coords = self.sharding_annotations.get_worker_coords(worker_idx)
+
+            # Determine if this worker should receive data
+            should_receive_data = True
+            return_from_this_worker = True
+            for axis in self.sharding_annotations.names:
+                if axis not in worker_coords:
+                    continue
+                # We call axes not in in_sharded_axes or replicate_on_axes free axes.
+                if (
+                    axis not in in_sharded_axes
+                    and axis not in replicate_on_axes
+                    and worker_coords[axis] != 0
+                ):
+                    # For free axes, only workers at index 0 receive data
+                    should_receive_data = False
+                    return_from_this_worker = False
+                    break
+                if axis in output_is_replicated:
+                    if worker_coords[axis] != 0:
+                        return_from_this_worker = False
+            if return_from_this_worker:
+                return_from_workers.append(worker_idx)
+
+            if should_receive_data:
+                # Find the appropriate data slice for this worker
+                worker_data = data
+                for axis in in_sharded_axes:
+                    if axis in worker_coords:
+                        # Select the appropriate slice for this axis
+                        worker_data = worker_data[worker_coords[axis]]
+
+                # Call the method on the worker with its data slice
+                future = getattr(worker, method_name).remote(
+                    worker_data, **common_kwargs
+                )
+                futures.append(future)
+                called_workers.append(worker_idx)
+            else:
+                # If this worker doesn't need data:
+                if make_dummy_calls_to_free_axes:
+                    # If make_dummy_calls_to_free_axes is True, just call the method with None
+                    future = getattr(worker, method_name).remote(None, **common_kwargs)
+                    futures.append(future)
+                    called_workers.append(worker_idx)
+                else:
+                    # Else, don't call the method at all
+                    pass
+
+        return MultiWorkerFuture(
+            futures=futures,
+            called_workers=called_workers,
+            return_from_workers=return_from_workers,
+        )
+
+    def get_all_worker_results(self, future_bundle: MultiWorkerFuture) -> list[Any]:
         """Get results from all workers, optionally filtering to get just one result per tied worker group.
 
         Args:
@@ -660,7 +722,7 @@ class RayWorkerGroup:
         cleanup_method: Optional[str] = None,
         timeout: Optional[float] = 30.0,
         force: bool = False,
-    ):
+    ) -> bool:
         """Shutdown all workers in the worker group.
 
         Args:
@@ -728,12 +790,10 @@ class RayWorkerGroup:
         # Clear worker lists
         self._workers = []
         self._worker_metadata = []
-        self.tied_workers_groups = []
-        self.worker_to_tied_group_index = {}
 
         return success
 
-    def print_worker_layout(self):
+    def print_worker_layout(self) -> None:
         """Prints a visual representation of the worker layout across the virtual cluster.
 
         This shows which workers are assigned to which nodes and GPUs.

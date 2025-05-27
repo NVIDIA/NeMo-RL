@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional, Tuple, TypedDict, Union
+from typing import Any, NotRequired, Optional, TypedDict, Union
 
 import torch
-from transformers import AutoTokenizer
 
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 
@@ -26,7 +25,7 @@ def verify_right_padding(
     ],
     pad_value: int = 0,
     raise_error: bool = True,
-) -> Tuple[bool, Union[str, None]]:
+) -> tuple[bool, Union[str, None]]:
     """Verify that a tensor is right-padded according to the provided lengths.
 
     Arguments:
@@ -108,31 +107,9 @@ class GenerationConfig(TypedDict):
     top_p: float
     top_k: int
     model_name: str
-    stop_token_ids: List[int]
-    pad_token_id: int
-
-
-def configure_generation_config(
-    config: GenerationConfig, tokenizer: AutoTokenizer, is_eval=False
-):
-    """Apply specific configurations to generation config."""
-    # tokenizer setting
-    config["pad_token_id"] = tokenizer.pad_token_id
-    if config["stop_token_ids"] is None:
-        config["stop_token_ids"] = [tokenizer.eos_token_id]
-
-    # vllm setting
-    if config["backend"] == "vllm":
-        # set load_format
-        config["vllm_cfg"]["load_format"] = "auto" if is_eval else "dummy"
-
-        # set skip_tokenizer_init
-        if is_eval or config["stop_strings"] is not None:
-            config["vllm_cfg"]["skip_tokenizer_init"] = False
-        else:
-            config["vllm_cfg"]["skip_tokenizer_init"] = True
-
-    return config
+    stop_token_ids: list[int]
+    stop_strings: NotRequired[list[str]]
+    pad_token_id: NotRequired[int]
 
 
 class GenerationDatumSpec(TypedDict):
@@ -165,7 +142,7 @@ class GenerationDatumSpec(TypedDict):
 
     input_ids: torch.Tensor
     input_lengths: torch.Tensor
-    stop_strings: Optional[List[str]] = None
+    stop_strings: Optional[list[str]] = None
     __extra__: Any
 
 
@@ -226,9 +203,13 @@ class GenerationInterface(ABC):
         pass
 
     @abstractmethod
-    def prepare_for_generation(self, *args, **kwargs):
+    def prepare_for_generation(self, *args: Any, **kwargs: Any) -> bool:
         pass
 
     @abstractmethod
-    def finish_generation(self, *args, **kwargs):
+    def finish_generation(self, *args: Any, **kwargs: Any) -> bool:
         pass
+
+    def update_weights(self, ipc_handles: dict[str, Any]) -> bool:
+        """Update the model weights from the given IPC handles."""
+        raise NotImplementedError

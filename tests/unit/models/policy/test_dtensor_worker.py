@@ -28,9 +28,8 @@ from nemo_rl.algorithms.loss_functions import ClippedPGLossFn, NLLLoss
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
-from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.models.generation import configure_generation_config
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.dtensor_policy_worker import DTensorPolicyWorker
 from nemo_rl.models.policy.hf_policy import HfPolicy
 from tests.unit.conftest import TEST_ASSETS
 from tests.unit.test_utils import SimpleLoss
@@ -42,6 +41,7 @@ def create_test_config(
     sequence_parallel: bool = False,
     cpu_offload: bool = False,
     activation_checkpointing: bool = False,
+    custom_parallel_plan: str = None,
 ) -> PolicyConfig:
     return {
         "model_name": model_name,
@@ -67,6 +67,7 @@ def create_test_config(
             "sequence_parallel": sequence_parallel,
             "activation_checkpointing": activation_checkpointing,
             "tensor_parallel_size": tp,
+            "custom_parallel_plan": custom_parallel_plan,
         },
         "dynamic_batching": {
             "enabled": True,
@@ -461,25 +462,43 @@ def test_dtensor_worker_logprob_tp2_matches_no_tp(logprob_setup):
     )
 
 
-def test_dtensor_fails_with_tp_and_tied_model(mock_2gpu_distributed_env):
-    """Test that DTensor fails with a tp > 1 and a tied model."""
+def test_dtensor_tp_and_tied_model_with_custom_parallel_plan(two_gpu_virtual_cluster):
+    """Test that DTensor with a tp > 1 and a tied model with a custom parallel plan works."""
+    from torch.distributed.tensor.parallel import ColwiseParallel
+    from torch.distributed.tensor.placement_types import Replicate
+
+    custom_parallel_plan = {"lm_head": ColwiseParallel(output_layouts=Replicate())}
     config = create_test_config(
         model_name=TEST_ASSETS.TINY_LLAMA_TIED_MODEL_PATH,
         tp=2,
         cpu_offload=False,
         sequence_parallel=False,
         activation_checkpointing=False,
+        custom_parallel_plan=custom_parallel_plan,
     )
     tokenizer = get_tokenizer(config["tokenizer"])
-    with pytest.raises(
-        AssertionError, match="Tie word embeddings not supported when TP is enabled"
-    ):
-        DTensorPolicyWorker.__ray_actor_class__(
-            config=config,
-            tokenizer=tokenizer,
-            init_optimizer=False,
-            init_reference_model=False,
-        )
+
+    policy = HfPolicy(
+        tokenizer=tokenizer,
+        config=config,
+        init_optimizer=False,
+        init_reference_model=False,
+        cluster=two_gpu_virtual_cluster,
+    )
+
+    # Verify that the model is parallelized as expected
+    state_dict = ray.get(policy.worker_group.workers[0].return_state_dict.remote())
+    total_shape = state_dict["lm_head.weight"].shape
+    sharded_shape = state_dict["lm_head.weight"].to_local().shape
+    assert total_shape[0] == sharded_shape[0] * 2, (
+        "lm_head.weight should be sharded across 2 GPUs"
+    )
+    assert total_shape[1] == sharded_shape[1], (
+        "lm_head.weight should have the same number of columns"
+    )
+
+    # Clean up
+    policy.shutdown()
 
 
 @pytest.mark.timeout(180)

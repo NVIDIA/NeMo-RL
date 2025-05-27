@@ -22,7 +22,7 @@ from nemo_rl.algorithms.grpo import refit_policy_generation
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
-from nemo_rl.models.generation.interfaces import configure_generation_config
+from nemo_rl.models.generation import configure_generation_config
 from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy import PolicyConfig
 
@@ -90,6 +90,7 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
             "sequence_parallel": False,
             "activation_checkpointing": False,
             "tensor_parallel_size": 1,
+            "custom_parallel_plan": None,
         },
         "dynamic_batching": {
             "enabled": enable_dtensor,  # Dynamic batching is only supported with DTensor

@@ -43,6 +43,7 @@ policy:
     sequence_parallel: false
     activation_checkpointing: false
     tensor_parallel_size: 1
+    custom_parallel_plan: null
   dynamic_batching:
     enabled: True
     train_mb_tokens: ${mul:${policy.max_total_sequence_length}, ${policy.train_micro_batch_size}}
@@ -83,6 +84,7 @@ policy:
       - 128009
     stop_strings: null
     vllm_cfg:
+      async_engine: false
       precision: ${policy.precision}
       tensor_parallel_size: 1
       gpu_memory_utilization: 0.6
