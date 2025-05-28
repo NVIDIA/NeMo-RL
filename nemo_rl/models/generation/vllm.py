@@ -738,7 +738,7 @@ class VllmGenerationWorker:
 
         return cast(str, list_of_worker_results[0])
 
-    def update_weights_from_ipc_handles(self, ipc_handles):
+    def update_weights_from_ipc_handles(self, ipc_handles: dict[str, Any]) -> bool:
         """Update weights from IPC handles by delegating to the vLLM Worker implementation.
 
         Args:
@@ -775,7 +775,9 @@ class VllmGenerationWorker:
             traceback.print_exc()
             return False
 
-    async def update_weights_from_ipc_handles_async(self, ipc_handles):
+    async def update_weights_from_ipc_handles_async(
+        self, ipc_handles: dict[str, Any]
+    ) -> bool:
         """Async version of update_weights_from_ipc_handles.
 
         Args:
