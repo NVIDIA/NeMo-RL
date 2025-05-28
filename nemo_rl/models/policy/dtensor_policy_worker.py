@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import gc
 import os
 from collections import defaultdict
 from contextlib import AbstractContextManager, contextmanager, nullcontext
-from typing import Any, Generator, Iterable, Optional, Union, cast
+from typing import Any, Generator, Iterable, List, Optional, Set, Union, cast
 
 import ray
 import torch
@@ -24,7 +25,7 @@ from torch import nn
 from torch.distributed.fsdp import (
     FSDPModule,
 )
-from torch.distributed.tensor import DTensor
+from torch.distributed.tensor import DTensor, Shard
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.integrations.accelerate import find_tied_parameters
 
@@ -170,17 +171,28 @@ class DTensorPolicyWorker:
         # ------------------------------------------------
 
         tp_size = self.cfg["dtensor_cfg"]["tensor_parallel_size"]
-        dp_size = world_size // tp_size
-        assert world_size % tp_size == 0, (
-            f"World size({world_size}) must be divisible by TP size({tp_size}) to use DTensor"
+        cp_size = self.cfg["dtensor_cfg"]["context_parallel_size"]
+        dp_size = world_size // tp_size // cp_size
+        assert world_size == dp_size * tp_size * cp_size, (
+            f"World size({world_size}) must equal to dp_size({dp_size}) * tp_size({tp_size}) * cp_size({cp_size}) to use DTensor"
         )
 
-        mesh_2d = torch.distributed.device_mesh.init_device_mesh(
-            "cuda", (dp_size, tp_size), mesh_dim_names=("dp", "tp")
+        device_mesh = torch.distributed.device_mesh.init_device_mesh(
+            "cuda", (dp_size, cp_size, tp_size), mesh_dim_names=("dp", "cp", "tp")
         )
-        self.dp_mesh, self.tp_mesh = mesh_2d["dp"], mesh_2d["tp"]
+
+        if cp_size > 1:
+            device_mesh[("dp", "cp")]._flatten(mesh_dim_name="dp_cp")
+
+        self.dp_mesh, self.tp_mesh, self.cp_mesh = (
+            device_mesh["dp"],
+            device_mesh["tp"],
+            device_mesh["cp"],
+        )
         self.dp_size = dp_size
         self.tp_size = tp_size
+        self.cp_size = cp_size
+        self.device_mesh = device_mesh
 
         self.model = _parallelize_model(
             self.model,
@@ -261,6 +273,67 @@ class DTensorPolicyWorker:
             print(
                 "No weights path provided. Starting from scratch (default policy init)"
             )
+
+    # Refer to nemo impl. Below is original comment.
+    # based on https://github.com/pytorch/torchtitan/blob/main/torchtitan/distributed/utils.py#L113
+    @staticmethod
+    def create_context_parallel_ctx(
+        cp_mesh: torch.distributed.device_mesh.DeviceMesh,
+        cp_buffers: List[torch.Tensor],
+        cp_seq_dims: List[int],
+        cp_no_restore_buffers: Set[torch.Tensor],
+        cp_rotate_method: str,
+    ):
+        """Create a context parallel context.
+
+        Args:
+            cp_mesh (DeviceMesh): The device mesh for context parallel.
+            cp_buffers (List[torch.Tensor]): The buffers for context parallel.
+            cp_seq_dims (List[int]): The sequence dimensions for context parallel.
+            cp_no_restore_buffers (Set[torch.Tensor]): The no restore buffers for context parallel.
+            cp_rotate_method (str): The rotation method for context parallel, such as "allgather" or "addtoall".
+        """
+        from torch.distributed.tensor.experimental import context_parallel
+
+        # TODO: uncomment this when torch.distributed.tensor.experimental._attention.set_rotate_method is available
+        # from torch.distributed.tensor.experimental._attention import set_rotate_method
+        # set_rotate_method(cp_rotate_method)
+        return context_parallel(
+            cp_mesh,
+            buffers=cp_buffers,
+            buffer_seq_dims=cp_seq_dims,
+            no_restore_buffers=cp_no_restore_buffers,
+        )
+
+    # Refer to nemo impl. Below is original comment.
+    # based on https://github.com/pytorch/torchtitan/blob/main/torchtitan/distributed/utils.py#L138
+    @staticmethod
+    def get_train_context():
+        """Create a train context.
+
+        Args:
+            enable_loss_parallel (bool): Whether to enable loss parallelism.
+            enable_compiled_autograd (bool): Whether to enable compiled autograd.
+        """
+
+        @contextlib.contextmanager
+        def context(cp_context: Optional[Generator[None, None, None]] = None):
+            with contextlib.ExitStack() as stack:
+                if cp_context is not None:
+                    from torch.nn.attention import SDPBackend, sdpa_kernel
+
+                    # currently we only support these two SDP backends.
+                    # TODO (xilunwu): support cuDNN backend
+                    stack.enter_context(
+                        sdpa_kernel(
+                            [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]
+                        )
+                    )
+                    stack.enter_context(cp_context)
+
+                yield
+
+        return context
 
     def is_alive(self) -> bool:
         return True
@@ -387,45 +460,95 @@ class DTensorPolicyWorker:
                             seq_len, device=input_ids.device
                         ).repeat(batch_size, 1)
 
-                        outputs = self.model(
-                            input_ids=input_ids,
-                            attention_mask=attention_mask_input_all_ones,
-                            position_ids=position_ids,
-                            use_cache=False,
+                    cp_buffers = (
+                        [input_ids, attention_mask_input_all_ones, position_ids]
+                        if self.cp_size > 1
+                        else []
+                    )
+                    # Create context parallel context
+                    context_parallel_ctx = (
+                        self.create_context_parallel_ctx(
+                            cp_mesh=self.cp_mesh,
+                            cp_buffers=cp_buffers,
+                            cp_seq_dims=[sequence_dim] * len(cp_buffers),
+                            cp_no_restore_buffers=set(cp_buffers),
+                            cp_rotate_method="allgather",
+                        )
+                        if self.cp_size > 1
+                        else None
+                    )
+
+                    with self.get_train_context()(context_parallel_ctx):
+                        with torch.autocast(device_type="cuda", dtype=self.dtype):
+                            outputs = self.model(
+                                input_ids=input_ids,
+                                attention_mask=attention_mask_input_all_ones,
+                                position_ids=position_ids,
+                                use_cache=False,
+                            )
+
+                        # Get logprobs
+                        if not hasattr(outputs, "logits"):
+                            logits = self.model.lm_head(outputs.last_hidden_state)
+                        else:
+                            logits = outputs.logits
+
+                        # Divide logits by temperature
+                        if (
+                            "generation" in self.cfg
+                            and self.cfg["generation"] is not None
+                        ):
+                            logits.div_(self.cfg["generation"]["temperature"])
+
+                        if self.cp_size > 1:
+                            # When cp enabled, create DTensor for each mb data tensor to see full sequence during loss calculation.
+                            for tensor_name in mb:
+                                tensor = mb[tensor_name]
+                                for buffer in cp_buffers:
+                                    if tensor is buffer:
+                                        mb[tensor_name] = DTensor.from_local(
+                                            tensor,
+                                            device_mesh=self.cp_mesh,
+                                            placements=[Shard(sequence_dim)],
+                                        )
+                                        break
+
+                            # TP-parallel logits
+                            logits = DTensor.from_local(
+                                logits.to_local()
+                                if isinstance(logits, DTensor)
+                                else logits,
+                                device_mesh=self.device_mesh["cp", "tp"],
+                                placements=[
+                                    Shard(sequence_dim),
+                                    Shard(len(logits.shape) - 1),
+                                ],
+                            )
+
+                        loss, loss_metrics = loss_fn(
+                            logits, mb, global_valid_seqs, global_valid_toks
                         )
 
-                    # Get logprobs
-                    if not hasattr(outputs, "logits"):
-                        logits = self.model.lm_head(outputs.last_hidden_state)
-                    else:
-                        logits = outputs.logits
+                        ## scale by the number of global batches so we get the correct
+                        ## value when summing metrics across all microbatches
+                        for k in loss_metrics.keys():
+                            loss_metrics[k] /= num_global_batches
+                        num_valid_samples = loss_metrics["num_valid_samples"]
+                        loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
+                        loss_metrics["global_valid_seqs"] = global_valid_seqs.item()
+                        loss_metrics["global_valid_toks"] = global_valid_toks.item()
 
-                    # Divide logits by temperature
-                    if "generation" in self.cfg and self.cfg["generation"] is not None:
-                        logits.div_(self.cfg["generation"]["temperature"])
+                        # Backward pass
+                        if not eval_mode:
+                            ## NOTE: invalid samples should be multiplied
+                            ## by zero in the loss function to prevent them
+                            ## from affecting the gradient calculation
 
-                    loss, loss_metrics = loss_fn(
-                        logits, mb, global_valid_seqs, global_valid_toks
-                    )
-                    ## scale by the number of global batches so we get the correct
-                    ## value when summing metrics across all microbatches
-                    for k in loss_metrics.keys():
-                        loss_metrics[k] /= num_global_batches
-                    num_valid_samples = loss_metrics["num_valid_samples"]
-                    loss_metrics["lr"] = self.optimizer.param_groups[0]["lr"]
-                    loss_metrics["global_valid_seqs"] = global_valid_seqs.item()
-                    loss_metrics["global_valid_toks"] = global_valid_toks.item()
+                            # when FSDP reduces the gradients over the DP dim, they're automatically averaged
+                            # but we want to sum them so we cancel out the average here
+                            loss *= self.dp_size
+                            loss.backward()
 
-                    # Backward pass
-                    if not eval_mode:
-                        ## NOTE: invalid samples should be multiplied
-                        ## by zero in the loss function to prevent them
-                        ## from affecting the gradient calculation
-
-                        # when FSDP reduces the gradients over the DP dim, they're automatically averaged
-                        # but we want to sum them so we cancel out the average here
-                        loss *= self.dp_size
-                        loss.backward()
                     if num_valid_samples > 0:
                         mb_losses.append(loss.item())
                         all_mb_metrics.append(loss_metrics)
