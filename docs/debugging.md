@@ -78,3 +78,117 @@ By default, setting breakpoints in the driver script (outside of  `@ray.remote`)
 ```sh
 RAY_DEBUG=legacy uv run ....
 ```
+
+## Nsight Profiling (nsys)
+
+NeMo RL supports nsight profiling for Ray workers through environment variable pattern matching. This allows you to selectively profile specific worker types without modifying code or affecting performance of workers that don't need profiling.
+
+**Note**: To prevent profile files from becoming too large, consider running for a small number of steps (e.g., 10 steps) when profiling.
+
+### Prerequisites
+
+* Install NVIDIA Nsight Systems (`nsys`) on the compute nodes where workers will run. For Ubuntu installation instructions, see the [NVIDIA Nsight Systems Installation Guide](https://docs.nvidia.com/nsight-systems/InstallationGuide/index.html#:~:text=Ubuntu%20(minimal%20setup%20for%20containers)). **Note: If you're using NeMo RL containers, `nsys` is already installed.**
+* Ensure the workers you want to profile have GPU access
+
+### Environment Variable Configuration
+
+Set the `NRL_NSYS_WORKER_PATTERNS` environment variable with a comma-separated list of patterns to match worker names:
+
+```bash
+export NRL_NSYS_WORKER_PATTERNS="*policy*,*vllm*"
+```
+
+#### Pattern Format
+
+- Use shell-style wildcards (`*`, `?`, `[seq]`, `[!seq]`)
+- Patterns are matched against worker names using `fnmatch`
+- Multiple patterns are separated by commas
+- Whitespace around patterns is automatically stripped
+- Empty patterns are ignored
+
+#### Supported Workers
+
+Currently supported worker types:
+- **DTensorPolicyWorker**: Pattern matched against `"dtensor_policy_worker"`
+- **VllmGenerationWorker**: Pattern matched against `"vllm_generation_worker"`
+
+### Example Usage
+
+#### Profile Only Policy Workers
+```bash
+NRL_NSYS_WORKER_PATTERNS="*policy*" uv run examples/run_grpo_math.py grpo.max_num_steps=10
+```
+
+#### Profile Multiple Worker Types
+```bash
+NRL_NSYS_WORKER_PATTERNS="*policy*,*vllm*" uv run examples/run_grpo_math.py grpo.max_num_steps=10
+```
+
+#### Profile Workers with Exact Names
+```bash
+NRL_NSYS_WORKER_PATTERNS="dtensor_policy_worker,vllm_generation_worker" uv run examples/run_grpo_math.py grpo.max_num_steps=10
+```
+
+### Profile Output
+
+When profiling is enabled:
+
+1. **Logging**: You'll see log messages indicating which workers have profiling enabled:
+   ```
+   Nsight profiling enabled for worker 'dtensor_policy_worker' (matched pattern '*policy*')
+   ```
+
+2. **Profile Files**: Each profiled worker generates a `.nsys-rep` file with naming pattern:
+   ```
+   dtensor_policy_worker_<PID>.nsys-rep
+   vllm_generation_worker_<PID>.nsys-rep
+   ```
+
+3. **File Location**: Profile files are saved in `/tmp/ray/session*/logs/nsight/` directory on each worker node.
+
+**Note for SLURM users with `ray.sub`**: When using `ray.sub` on SLURM, set `RAY_LOG_SYNC_FREQUENCY=$NUM_SEC` (e.g., `RAY_LOG_SYNC_FREQUENCY=30`) to ensure that the nsight profile files get copied from the container's ephemeral filesystem (`/tmp/ray`) to the persistent `$SLURM_JOB_ID-logs/ray` directory.
+
+### Analyzing Profiles
+
+To analyze the generated profile files, load the `.nsys-rep` files into the NVIDIA Nsight Systems desktop application, which you can download from the [NVIDIA Nsight Systems Get Started page](https://developer.nvidia.com/nsight-systems/get-started).
+
+### How we patched nsight support in ray
+
+Ray's nsight profiling support had a bug where it hardcoded the Python executable path instead of using the actual Python executable from the runtime environment. This caused issues when using virtual environments or custom Python installations (`py_executables`).
+
+#### The Problem
+
+In Ray's `nsight.py` file, the original code was:
+
+```python
+context.py_executable = " ".join(self.nsight_cmd) + " python"
+```
+
+This hardcoded `" python"` instead of preserving the actual Python executable path that should be used.
+
+#### The Fix
+
+We patch this line to preserve the original `context.py_executable`:
+
+```python
+context.py_executable = " ".join(self.nsight_cmd) + f" {context.py_executable}"
+```
+
+#### Where We Apply the Patch
+
+We apply this patch in two locations to cover different deployment scenarios:
+
+1. **In `ray.sub` (SLURM clusters)**: The patch is applied before Ray's control plane starts up on both head and worker nodes:
+   ```bash
+   sed -i 's/context\.py_executable = " "\.join(self\.nsight_cmd) + " python"/context.py_executable = " ".join(self.nsight_cmd) + f" {context.py_executable}"/g' /opt/nemo_rl_venv/lib64/python*/site-packages/ray/_private/runtime_env/nsight.py
+   ```
+
+2. **In `nemo_rl/__init__.py` (Local clusters)**: The patch is applied automatically when NeMo RL is imported, making it work seamlessly for local development and testing environments.
+
+#### Why Both Locations?
+
+- **`ray.sub`**: Required for SLURM-managed clusters where Ray processes start in containers before Python imports happen. The patch must be applied at the filesystem level before Ray's control plane initializes.
+
+- **`__init__.py`**: Required for local clusters and development environments where users start Ray clusters directly. The patch is applied when `nemo_rl` is imported, ensuring the fix is in place before any Ray processes are spawned.
+
+This dual approach ensures that nsight profiling works correctly regardless of how the Ray cluster is deployed.
