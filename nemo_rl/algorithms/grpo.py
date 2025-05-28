@@ -286,7 +286,7 @@ def setup(
 def refit_policy_generation(
     policy: ColocatablePolicyInterface,
     policy_generation: GenerationInterface,
-    refit_buffer_size_gb: int = None,
+    refit_buffer_size_gb: Optional[int] = None,
 ) -> None:
     """Refit the policy generation interface with the latest policy weights.
 
