@@ -338,7 +338,9 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
         # Placeholder implementation
         pass
 
-    def prepare_weights_for_ipc(self, refit_buffer_size_gb: int = None) -> list[list[str]]:
+    def prepare_weights_for_ipc(
+        self, refit_buffer_size_gb: Optional[int] = None
+    ) -> list[list[str]]:
         """Prepare the weights for IPC.
 
         Returns:

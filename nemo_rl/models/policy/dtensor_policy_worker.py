@@ -679,7 +679,9 @@ class DTensorPolicyWorker:
         return get_device_uuid(device_idx)
 
     @torch.no_grad()
-    def prepare_weights_for_ipc(self, refit_buffer_size_gb: int = None) -> list[list[str]]:
+    def prepare_weights_for_ipc(
+        self, refit_buffer_size_gb: Optional[int] = None
+    ) -> list[list[str]]:
         """Prepare the weights for IPC.
 
         Returns:
@@ -693,7 +695,7 @@ class DTensorPolicyWorker:
 
         # Calculate available memory
         if refit_buffer_size_gb is not None:
-            total_available_bytes = refit_buffer_size_gb * (1024**3)
+            total_available_bytes: float = refit_buffer_size_gb * (1024**3)
         else:
             from nemo_rl.utils.nvml import get_free_memory_bytes
 
@@ -706,9 +708,10 @@ class DTensorPolicyWorker:
 
         # Group tensors by size
         cur_available_bytes = total_available_bytes
-        grouped_param_keys, keys = [], []
+        grouped_param_keys: list[list[str]] = []
+        keys: list[str] = []
 
-        for key, tensor in self._held_sharded_state_dict_reference.items():
+        for key, tensor in self._held_sharded_state_dict_reference.items():  # type: ignore
             # dtensor's numel will return complete tensor instead of only local tensor
             size_in_bytes = tensor.element_size() * tensor.numel()
 
