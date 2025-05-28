@@ -178,7 +178,6 @@ class VllmGenerationWorker:
 
         try:
             import vllm
-            from vllm.engine.async_llm_engine import AsyncLLMEngine
 
             self.SamplingParams = vllm.SamplingParams
         except ImportError:
@@ -197,7 +196,6 @@ class VllmGenerationWorker:
             # Configure vLLM for tensor/pipeline parallelism within Ray
             # Reset CUDA_VISIBLE_DEVICES to allow vLLM to manage GPU assignment
             os.environ.pop("CUDA_VISIBLE_DEVICES", None)
-
             os.environ["VLLM_RAY_PER_WORKER_GPUS"] = str(
                 self.fraction_of_gpus / total_parallel_size
             )
@@ -221,6 +219,8 @@ class VllmGenerationWorker:
         else:
             # For non-parallel mode, explicitly set executor to None to avoid Ray issues
             vllm_kwargs["distributed_executor_backend"] = None
+
+        os.environ["VLLM_USE_V1"] = "1"
 
         load_format = self.cfg["vllm_cfg"]["load_format"]
         if ModelFlag.VLLM_LOAD_FORMAT_AUTO.matches(self.model_name):
@@ -248,6 +248,7 @@ class VllmGenerationWorker:
 
         if self.cfg["vllm_cfg"]["async_engine"]:
             from vllm.engine.arg_utils import AsyncEngineArgs
+            from vllm.engine.async_llm_engine import AsyncLLMEngine
 
             self.llm = AsyncLLMEngine.from_engine_args(AsyncEngineArgs(**llm_kwargs))
         else:
