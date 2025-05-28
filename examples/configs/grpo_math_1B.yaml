@@ -34,7 +34,7 @@ policy:
   model_name: "Qwen/Qwen2.5-1.5B"
   tokenizer:
     name: ${policy.model_name} ## specify if you'd like to use a tokenizer different from the model's default
-  train_global_batch_size: 512
+  train_global_batch_size: 128
   train_micro_batch_size: 4
   generation_batch_size: 32 # Only used when generating using HF backend
   logprob_batch_size: 4
@@ -47,10 +47,11 @@ policy:
   dtensor_cfg:
     enabled: true
     cpu_offload: False
-    sequence_parallel: false
+    sequence_parallel: true
     activation_checkpointing: false
     tensor_parallel_size: 1
     custom_parallel_plan: null
+    context_parallel_size: 2
 
   # dynamic_batching improves performance by ensuring logprob and training microbatches
   # have a sufficent number of tokens to maximize GPU utilization. Specifically, variable length
