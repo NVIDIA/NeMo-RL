@@ -304,9 +304,7 @@ async def test_vllm_policy_generation_async(
         from nemo_rl.models.policy.hf_policy import HfPolicy
 
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
-        refit_policy_generation(
-            hf_policy, async_policy, hf_config["refit_buffer_size_gb"]
-        )
+        refit_policy_generation(hf_policy, async_policy)
 
         print("Testing async generation...")
         outputs = async_policy.generate_async(test_input_data)
