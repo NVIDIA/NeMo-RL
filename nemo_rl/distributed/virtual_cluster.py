@@ -179,7 +179,7 @@ class RayVirtualCluster:
         max_colocated_worker_groups: int = 1,
         num_gpus_per_node: int = 8,
         name: str = "",
-        placement_group_strategy: str = "STRICT_PACK",
+        placement_group_strategy: str = "SPREAD",
     ):
         """Initialize a virtual cluster using Ray placement groups.
 
