@@ -944,10 +944,17 @@ class VllmGeneration(GenerationInterface):
 
     def _report_device_id(self) -> list[list[str]]:
         """Report the device ID of vllm workers."""
-        futures = self.worker_group.run_all_workers_single_data(
-            "report_device_id",
-            run_rank_0_only_axes=["tensor_parallel"],
+        # Choose the appropriate method based on async_engine setting
+        method_name = (
+            "report_device_id_async"
+            if self.cfg["vllm_cfg"]["async_engine"]
+            else "report_device_id"
         )
+        # Use run_all_workers_single_data for methods that don't need data
+        futures = self.worker_group.run_all_workers_single_data(
+            method_name, run_rank_0_only_axes=["tensor_parallel"]
+        )
+        # Wait for all futures to complete
         results = ray.get(futures)
         return results
 
