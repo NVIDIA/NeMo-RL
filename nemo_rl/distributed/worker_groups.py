@@ -453,6 +453,11 @@ class RayWorkerGroup:
                 )
 
                 # Set this to 0 to manually control placement group allotment
+                # We manually manage GPU allocation instead of relying on Ray's automatic GPU assignment
+                # because on some clusters (particularly KubeRay), Ray fails to correctly set
+                # CUDA_VISIBLE_DEVICES, leading to multiple workers using the same GPU and causing conflicts.
+                # By setting num_gpus=0 and explicitly setting CUDA_VISIBLE_DEVICES in the environment variables
+                # above, we ensure each worker gets exclusive access to its assigned GPU.
                 num_gpus = 0
 
                 # Pass these options to the remote_worker_builder
