@@ -331,18 +331,20 @@ class RayWorkerGroup:
 
             # Get placement groups
             placement_groups = self.cluster.get_placement_groups()
+            assert len(placement_groups) == 1, (
+                "Nemo-RL uses a unified placement group for all workers"
+            )
+
+            pg = placement_groups[0]
+            workers_per_group = [pg.bundle_count]
 
             # Determine how many workers per node/placement group
             if workers_per_node is None:
-                # Default: use one worker per bundle in each placement group
                 workers_per_group = [pg.bundle_count for pg in placement_groups]
             elif isinstance(workers_per_node, int):
-                # Single value for all placement groups
                 workers_per_group = [workers_per_node] * len(placement_groups)
             elif isinstance(workers_per_node, list):
-                # List of values - validate length
                 if len(workers_per_node) == 1 and len(placement_groups) == 1:
-                    # Special case for unified placement group
                     workers_per_group = workers_per_node
                 elif len(workers_per_node) != len(placement_groups):
                     raise ValueError(
@@ -400,8 +402,9 @@ class RayWorkerGroup:
         # Get all placement groups
         placement_groups = self.cluster.get_placement_groups()
 
-        # With a unified placement group approach, we should only have one placement group
-        is_unified_approach = len(placement_groups) == 1
+        assert len(placement_groups) == 1, (
+            "Nemo-RL uses a unified placement group for all workers"
+        )
 
         for group_idx, (node_idx, local_bundle_indices) in enumerate(
             bundle_indices_list
@@ -409,12 +412,7 @@ class RayWorkerGroup:
             current_group = []
 
             # Get the appropriate placement group
-            if is_unified_approach:
-                # In the unified approach, always use the single placement group
-                pg = placement_groups[0]
-            else:
-                # In the multi-group approach, use the node-specific placement group
-                pg = placement_groups[node_idx]
+            pg = placement_groups[0]
 
             # Check if this group has multiple workers (for tensor or pipeline parallelism)
             is_parallel_group = len(local_bundle_indices) > 1

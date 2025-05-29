@@ -113,7 +113,6 @@ class VllmGenerationWorker:
             init_kwargs["seed"] = seed
 
         # Check if this worker is part of a parallel group (either TP or TP+PP)
-        # Include the "or local_bundle_indices is None" condition to restore original behavior
         is_part_of_parallel_workers = (
             local_bundle_indices is not None and len(local_bundle_indices) > 1
         ) or local_bundle_indices is None
@@ -155,14 +154,6 @@ class VllmGenerationWorker:
         self.fraction_of_gpus = fraction_of_gpus
         self.is_model_owner = bundle_indices is not None
 
-        # Add debug information about bundle_indices and model ownership
-        if self.is_model_owner:
-            print(
-                f"[VLLM DEBUG] Worker is a model owner with bundle_indices: {bundle_indices}"
-            )
-        else:
-            print("[VLLM DEBUG] Worker is NOT a model owner (bundle_indices is None)")
-
         # Skip model loading if we're not the model owner
         if not self.is_model_owner:
             self.llm = None
@@ -201,13 +192,6 @@ class VllmGenerationWorker:
             )
 
             # Set bundle indices for parallel workers
-            # For pipeline parallelism, we need to provide all bundle indices to vLLM
-            print(
-                f"[VLLM DEBUG] Model owner with pipeline_parallel_size={self.pipeline_parallel_size}, tensor_parallel_size={self.tensor_parallel_size}"
-            )
-            print(f"[VLLM DEBUG] Setting VLLM_RAY_BUNDLE_INDICES to {bundle_indices}")
-
-            # Convert the indices to strings and join them
             bundle_indices_str = ",".join(map(str, bundle_indices))
             os.environ["VLLM_RAY_BUNDLE_INDICES"] = bundle_indices_str
             print(
@@ -1046,7 +1030,6 @@ class VllmGeneration(GenerationInterface):
                     replica_bundles = []
                     break
                 replica_bundles.extend(stage_bundles)
-                print(f"[VLLM DEBUG]   stage {stage} bundles {stage_bundles}")
 
             if not replica_bundles:
                 break
