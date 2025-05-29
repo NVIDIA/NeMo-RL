@@ -220,7 +220,8 @@ class VllmGenerationWorker:
             # For non-parallel mode, explicitly set executor to None to avoid Ray issues
             vllm_kwargs["distributed_executor_backend"] = None
 
-        os.environ["VLLM_USE_V1"] = "1"
+        if not self.cfg["vllm_cfg"]["async_engine"]:
+            os.environ["VLLM_USE_V1"] = "1"
 
         load_format = self.cfg["vllm_cfg"]["load_format"]
         if ModelFlag.VLLM_LOAD_FORMAT_AUTO.matches(self.model_name):
@@ -730,10 +731,9 @@ class VllmGenerationWorker:
         result_or_coro = self.llm.engine.model_executor.collective_rpc(
             "report_device_id", args=tuple()
         )
-        print("report_device_id called")
+
         if asyncio.iscoroutine(result_or_coro):
             list_of_worker_results = await result_or_coro
-            return list_of_worker_results[0]
         else:
             list_of_worker_results = result_or_coro
 
