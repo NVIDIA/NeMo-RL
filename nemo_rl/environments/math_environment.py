@@ -48,7 +48,7 @@ def _mute_output():
         yield
 
 
-@ray.remote
+@ray.remote(max_restarts=-1, max_task_retries=-1)
 class HFVerifyWorker:
     def __init__(self) -> None:
         logging.getLogger("math_verify").setLevel(logging.CRITICAL)
@@ -97,7 +97,7 @@ class MathEnvironmentMetadata(TypedDict):
     ground_truth: str
 
 
-@ray.remote
+@ray.remote(max_restarts=-1, max_task_retries=-1)
 class MathEnvironment(EnvironmentInterface):
     def __init__(self, cfg: MathEnvConfig):
         self.cfg = cfg
