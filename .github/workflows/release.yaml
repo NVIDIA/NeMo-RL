@@ -14,37 +14,38 @@
 name: "Release NeMo-RL"
 
 on:
-  workflow_dispatch:
-    inputs:
-      release-ref:
-        description: Ref (SHA or branch name) to release
-        required: true
-        type: string
-      dry-run:
-        description: Do not publish a wheel and GitHub release.
-        required: true
-        default: true
-        type: boolean
-      create-gh-release:
-        description: Create a GitHub release
-        required: true
-        default: true
-        type: boolean
-      version-bump-branch:
-        description: Branch for version bump
-        required: true
-        type: string
+  push:
+  # workflow_dispatch:
+  #   inputs:
+  #     release-ref:
+  #       description: Ref (SHA or branch name) to release
+  #       required: true
+  #       type: string
+  #     dry-run:
+  #       description: Do not publish a wheel and GitHub release.
+  #       required: true
+  #       default: true
+  #       type: boolean
+  #     create-gh-release:
+  #       description: Create a GitHub release
+  #       required: true
+  #       default: true
+  #       type: boolean
+  #     version-bump-branch:
+  #       description: Branch for version bump
+  #       required: true
+  #       type: string
 
 jobs:
   release:
     uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_release_library.yml@416183f500df51ab5ef4b9c7cb06275721bdfc92
     with:
-      release-ref: ${{ inputs.release-ref }}
+      release-ref: ${{ github.sha }}
       python-package: nemo_rl
       library-name: NeMo-RL
-      dry-run: ${{ inputs.dry-run }}
-      version-bump-branch: ${{ inputs.version-bump-branch }}
-      create-gh-release: ${{ inputs.create-gh-release }}
+      dry-run: true
+      version-bump-branch: chtruong/release-pypi-only
+      create-gh-release: false
       packaging: uv
     secrets:
       TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
