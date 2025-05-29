@@ -110,5 +110,8 @@ def create_local_venv_on_each_node(py_executable: str, venv_name: str):
     # ensure setup runs on each node
     paths = ray.get([actor for actor in actors])
     assert len(set(paths)) == 1, "All nodes should have the same venv"
+
+    # Clean up the placement group
+    ray.util.remove_placement_group(pg)
     # Return mapping from node IP to venv python path
     return paths[0]
