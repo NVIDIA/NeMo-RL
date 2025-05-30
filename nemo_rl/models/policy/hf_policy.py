@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 from collections import defaultdict
-from typing import Any, Optional, Union, cast
+from typing import Any, Optional, Union
 
 import numpy as np
 import ray
@@ -338,17 +338,48 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
         # Placeholder implementation
         pass
 
-    def prepare_weights_for_ipc(self) -> list[tuple[str, int]]:
+    def prepare_weights_for_ipc(
+        self, _refit_buffer_size_gb: Optional[int] = None
+    ) -> list[list[str]]:
         """Prepare the weights for IPC.
 
         Returns:
-            dict: A dictionary containing the state_dict_info of the model.
+            list: A list containing the keys of the parameters, which is grouped by size.
         """
+        # Get the state_dict_info and available memory from all workers
         futures = self.worker_group.run_all_workers_single_data(
             "prepare_weights_for_ipc"
         )
-        # only get the first worker's result is enough since all workers will have the same result
-        return cast(list[tuple[str, int]], ray.get(futures)[0])
+        results = ray.get(futures)
+
+        # Only get the first worker's state_dict_info since all workers will have the same result
+        state_dict_info = results[0][0]
+
+        if _refit_buffer_size_gb is not None:
+            total_available_bytes = _refit_buffer_size_gb * (1024**3)
+        else:
+            # Get the minimum available memory from all workers
+            total_available_bytes = min(result[1] for result in results)
+
+        # Group tensors by size
+        cur_available_bytes = total_available_bytes
+        grouped_param_keys: list[list[str]] = []
+        keys: list[str] = []
+
+        for key, size_in_bytes in state_dict_info:
+            if size_in_bytes > cur_available_bytes:
+                if keys:
+                    grouped_param_keys.append(keys)
+                    keys = []
+                cur_available_bytes = total_available_bytes
+
+            keys.append(key)
+            cur_available_bytes -= size_in_bytes
+
+        if keys:
+            grouped_param_keys.append(keys)
+
+        return grouped_param_keys
 
     def get_weights_ipc_handles(self, keys: list[str]) -> dict[str, Any]:
         """Fetch weight IPC handles from all workers.
