@@ -37,7 +37,7 @@ on:
 
 jobs:
   release:
-    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_release_library.yml@416183f500df51ab5ef4b9c7cb06275721bdfc92
+    uses: NVIDIA/NeMo-FW-CI-templates/.github/workflows/_release_library.yml@v0.34.0
     with:
       release-ref: ${{ inputs.release-ref }}
       python-package: nemo_rl
