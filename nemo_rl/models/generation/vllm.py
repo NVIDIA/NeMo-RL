@@ -983,7 +983,9 @@ class VllmGeneration(GenerationInterface):
         tp_size = self.sharding_annotations.get_axis_size("tensor_parallel")
         pp_size = self.sharding_annotations.get_axis_size("pipeline_parallel")
 
-        def get_node_bundles(pg: ray.PlacementGroup) -> Dict[str, List[int]]:
+        def get_node_bundles(
+            pg: ray.util.placement_group.PlacementGroup,
+        ) -> Dict[str, List[int]]:
             # Retrieve mapping from node ID to bundle indices from a placement group.
             try:
                 pg_table = ray.util.placement_group_table(pg)
@@ -1001,7 +1003,7 @@ class VllmGeneration(GenerationInterface):
             return dict(node_bundles)
 
         def allocate_worker_groups(
-            pg: ray.PlacementGroup, tp_size: int, pp_size: int
+            pg: ray.util.placement_group.PlacementGroup, tp_size: int, pp_size: int
         ) -> List[Tuple[int, List[int]]]:
             # Allocate worker groups for TP and PP training, assuming all nodes have identical bundle counts.
 
