@@ -124,7 +124,9 @@ class VllmGenerationWorker:
 
             init_kwargs["seed"] = seed
 
-        # Check if this worker is part of a parallel group (either TP or TP+PP)
+        # Check if this worker is part of a parallel group (TP or TP+PP).
+        # A worker is part of a parallel group if it's a secondary member (local_bundle_indices is None)
+        # or if it's a primary member of a group with multiple workers.
         is_part_of_parallel_workers = (
             local_bundle_indices is not None and len(local_bundle_indices) > 1
         ) or local_bundle_indices is None
@@ -192,22 +194,22 @@ class VllmGenerationWorker:
         vllm_kwargs: dict[str, Any] = copy.deepcopy(self.cfg.get("vllm_kwargs", {}))
 
         # Calculate total parallel size (TP * PP)
-        total_parallel_size = self.tensor_parallel_size * self.pipeline_parallel_size
+        model_parallel_size = self.tensor_parallel_size * self.pipeline_parallel_size
 
         # Special handling for parallel case (either TP or PP or both)
-        if total_parallel_size > 1:
+        if model_parallel_size > 1:
             # Configure vLLM for tensor/pipeline parallelism within Ray
             # Reset CUDA_VISIBLE_DEVICES to allow vLLM to manage GPU assignment
             os.environ.pop("CUDA_VISIBLE_DEVICES", None)
             os.environ["VLLM_RAY_PER_WORKER_GPUS"] = str(
-                self.fraction_of_gpus / total_parallel_size
+                self.fraction_of_gpus / model_parallel_size
             )
 
             # Set bundle indices for parallel workers
             bundle_indices_str = ",".join(map(str, bundle_indices))
             os.environ["VLLM_RAY_BUNDLE_INDICES"] = bundle_indices_str
             print(
-                f"[VLLM DEBUG] VLLM_RAY_BUNDLE_INDICES environment variable set to: {os.environ.get('VLLM_RAY_BUNDLE_INDICES')}"
+                f"VLLM_RAY_BUNDLE_INDICES environment variable set to: {os.environ.get('VLLM_RAY_BUNDLE_INDICES')}"
             )
 
             # Use Ray for distributed execution in parallel mode
@@ -922,7 +924,7 @@ class VllmGeneration(GenerationInterface):
             ),
             names=["data_parallel", "pipeline_parallel", "tensor_parallel"],
         )
-        self.total_parallel_size = self.sharding_annotations.get_axis_size(
+        self.model_parallel_size = self.sharding_annotations.get_axis_size(
             "tensor_parallel"
         ) * self.sharding_annotations.get_axis_size("pipeline_parallel")
 
@@ -932,7 +934,7 @@ class VllmGeneration(GenerationInterface):
         )
 
         # Check if we need parallelism-aware worker group creation
-        if self.total_parallel_size > 1:
+        if self.model_parallel_size > 1:
             # For parallelism, create node-aware worker groups
             node_bundle_indices = self._get_tied_worker_bundle_indices(cluster)
 
@@ -956,7 +958,9 @@ class VllmGeneration(GenerationInterface):
         # Number of data parallel groups is the number of tied worker groups
         self.dp_size = self.worker_group.group_count
 
-    def _get_tied_worker_bundle_indices(self, cluster):
+    def _get_tied_worker_bundle_indices(
+        self, cluster: RayVirtualCluster
+    ) -> List[Tuple[int, List[int]]]:
         """Calculate bundle indices for tensor and pipeline parallel workers.
 
         With a unified placement group (single PG for all resources), we need to create
@@ -979,7 +983,7 @@ class VllmGeneration(GenerationInterface):
         tp_size = self.sharding_annotations.get_axis_size("tensor_parallel")
         pp_size = self.sharding_annotations.get_axis_size("pipeline_parallel")
 
-        def get_node_bundles(pg) -> Dict[str, List[int]]:
+        def get_node_bundles(pg: ray.PlacementGroup) -> Dict[str, List[int]]:
             # Retrieve mapping from node ID to bundle indices from a placement group.
             try:
                 pg_table = ray.util.placement_group_table(pg)
@@ -997,7 +1001,7 @@ class VllmGeneration(GenerationInterface):
             return dict(node_bundles)
 
         def allocate_worker_groups(
-            pg, tp_size: int, pp_size: int
+            pg: ray.PlacementGroup, tp_size: int, pp_size: int
         ) -> List[Tuple[int, List[int]]]:
             # Allocate worker groups for TP and PP training, assuming all nodes have identical bundle counts.
 

@@ -388,8 +388,10 @@ class RayWorkerGroup:
 
         Args:
             remote_worker_builder: Builder function for Ray actors
+
             bundle_indices_list: List of (node_idx, local_bundle_indices) tuples, where each tuple
-                               specifies a tied group with its node and local bundle indices.
+                                specifies a tied group with its node and local bundle indices. If the local_bundle_indices
+                                spans multiple nodes, the node_idx will be the first node's index in the tied group.
         """
         self.master_address, self.master_port = (
             self.cluster.get_master_address_and_port()
