@@ -17,7 +17,19 @@ import copy
 import gc
 import os
 import uuid
-from typing import Any, AsyncGenerator, NotRequired, Optional, TypedDict, Union, cast
+from collections import defaultdict
+from typing import (
+    Any,
+    AsyncGenerator,
+    Dict,
+    List,
+    NotRequired,
+    Optional,
+    Tuple,
+    TypedDict,
+    Union,
+    cast,
+)
 
 import numpy as np
 import ray
@@ -41,6 +53,7 @@ from nemo_rl.models.huggingface.common import ModelFlag
 
 class VllmSpecificArgs(TypedDict):
     tensor_parallel_size: int
+    pipeline_parallel_size: int
     gpu_memory_utilization: float
     max_model_len: int
     # Additional arguments for vLLM inserted by nemo rl based on the context of when vllm is used
@@ -68,14 +81,14 @@ class VllmGenerationWorker:
     def configure_worker(
         num_gpus: int | float, bundle_indices: Optional[tuple[int, list[int]]] = None
     ) -> tuple[dict[str, Any], dict[str, str], dict[str, Any]]:
-        """Provides complete worker configuration for vLLM tensor parallelism.
+        """Provides complete worker configuration for vLLM tensor and pipeline parallelism.
 
-        This method configures the worker based on its role in tensor parallelism,
+        This method configures the worker based on its role in tensor and pipeline parallelism,
         which is determined directly from the bundle_indices parameter.
 
         Args:
             num_gpus: Original GPU allocation for this worker based on the placement group
-            bundle_indices: Tuple of (node_idx, local_bundle_indices) for tensor parallelism (if applicable)
+            bundle_indices: Tuple of (node_idx, local_bundle_indices) for parallelism (if applicable)
 
         Returns:
             tuple with complete worker configuration:
@@ -101,15 +114,25 @@ class VllmGenerationWorker:
             node_idx = 1, bundle_indices = [0, 1, 2, 3] -> seed = 1*1024 + 0
             node_idx = 1, bundle_indices = [4, 5, 6, 7] -> seed = 1*1024 + 1
             """
-            bundle_id = local_bundle_indices[0] // len(local_bundle_indices)
-            seed = node_idx * 1024 + bundle_id
+            # For single worker groups, use a simpler seed calculation
+            if len(local_bundle_indices) == 1:
+                seed = node_idx * 1024 + local_bundle_indices[0]
+            else:
+                # For parallel groups, use the original calculation
+                bundle_id = local_bundle_indices[0] // len(local_bundle_indices)
+                seed = node_idx * 1024 + bundle_id
+
             init_kwargs["seed"] = seed
 
-        is_part_of_tp_workers = (
+        # Check if this worker is part of a parallel group (TP or TP+PP).
+        # A worker is part of a parallel group if it's a secondary member (local_bundle_indices is None)
+        # or if it's a primary member of a group with multiple workers.
+        is_part_of_parallel_workers = (
             local_bundle_indices is not None and len(local_bundle_indices) > 1
         ) or local_bundle_indices is None
-        if is_part_of_tp_workers:
-            # Ray + vllm likes to manage GPU assignment internally
+
+        if is_part_of_parallel_workers:
+            # Ray + vllm likes to manage GPU assignment internally for parallel groups
             resources["num_gpus"] = 0
             env_vars["RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES"] = "1"
             init_kwargs["fraction_of_gpus"] = num_gpus
@@ -131,13 +154,16 @@ class VllmGenerationWorker:
 
         Args:
             config: Configuration dictionary for the policy
-            bundle_indices: List of local bundle indices within a node for tensor parallelism.
+            bundle_indices: List of local bundle indices within a node for parallelism.
                           Only needed for the first worker in each tied worker group.
+            fraction_of_gpus: Fraction of GPUs to use for this worker
+            seed: Random seed for initialization
         """
         self.cfg = config
 
         self.model_name = self.cfg["model_name"]
         self.tensor_parallel_size = self.cfg["vllm_cfg"]["tensor_parallel_size"]
+        self.pipeline_parallel_size = self.cfg["vllm_cfg"]["pipeline_parallel_size"]
         self.gpu_memory_utilization = self.cfg["vllm_cfg"]["gpu_memory_utilization"]
         self.fraction_of_gpus = fraction_of_gpus
         self.is_model_owner = bundle_indices is not None
@@ -151,7 +177,7 @@ class VllmGenerationWorker:
             return
 
         # In Ray+vLLM setup, each worker process considers itself rank 0
-        # vLLM handles the tensor parallelism internally through Ray
+        # vLLM handles the parallelism internally through Ray
         self.rank = 0
         self.world_size = 1
 
@@ -167,24 +193,29 @@ class VllmGenerationWorker:
             )
         vllm_kwargs: dict[str, Any] = copy.deepcopy(self.cfg.get("vllm_kwargs", {}))
 
-        # Special handling for tensor parallel case
-        if self.tensor_parallel_size > 1:
-            # Configure vLLM for tensor parallelism within Ray
+        # Calculate total parallel size (TP * PP)
+        model_parallel_size = self.tensor_parallel_size * self.pipeline_parallel_size
 
+        # Special handling for parallel case (either TP or PP or both)
+        if model_parallel_size > 1:
+            # Configure vLLM for tensor/pipeline parallelism within Ray
             # Reset CUDA_VISIBLE_DEVICES to allow vLLM to manage GPU assignment
             os.environ.pop("CUDA_VISIBLE_DEVICES", None)
             os.environ["VLLM_RAY_PER_WORKER_GPUS"] = str(
-                self.fraction_of_gpus / self.tensor_parallel_size
+                self.fraction_of_gpus / model_parallel_size
             )
 
-            # Set bundle indices for tensor parallelism workers
-            assert bundle_indices is not None
-            os.environ["VLLM_RAY_BUNDLE_INDICES"] = ",".join(map(str, bundle_indices))
+            # Set bundle indices for parallel workers
+            bundle_indices_str = ",".join(map(str, bundle_indices))
+            os.environ["VLLM_RAY_BUNDLE_INDICES"] = bundle_indices_str
+            print(
+                f"VLLM_RAY_BUNDLE_INDICES environment variable set to: {os.environ.get('VLLM_RAY_BUNDLE_INDICES')}"
+            )
 
-            # Use Ray for distributed execution in TP mode
+            # Use Ray for distributed execution in parallel mode
             vllm_kwargs["distributed_executor_backend"] = "ray"
         else:
-            # For non-TP mode, explicitly set executor to None to avoid Ray issues
+            # For non-parallel mode, explicitly set executor to None to avoid Ray issues
             vllm_kwargs["distributed_executor_backend"] = None
 
         if not self.cfg["vllm_cfg"]["async_engine"]:
@@ -198,8 +229,9 @@ class VllmGenerationWorker:
             model=self.model_name,
             load_format=load_format,
             skip_tokenizer_init=self.cfg["vllm_cfg"]["skip_tokenizer_init"],
-            tensor_parallel_size=self.cfg["vllm_cfg"]["tensor_parallel_size"],
-            gpu_memory_utilization=self.cfg["vllm_cfg"]["gpu_memory_utilization"],
+            tensor_parallel_size=self.tensor_parallel_size,
+            pipeline_parallel_size=self.pipeline_parallel_size,
+            gpu_memory_utilization=self.gpu_memory_utilization,
             enable_prefix_caching=torch.cuda.get_device_capability()[0] >= 8,
             dtype=self.cfg["vllm_cfg"]["precision"],
             seed=seed,
@@ -887,56 +919,139 @@ class VllmGeneration(GenerationInterface):
         self.sharding_annotations = NamedSharding(
             layout=np.arange(cluster.world_size()).reshape(
                 -1,  # DP
+                config["vllm_cfg"]["pipeline_parallel_size"],  # PP
                 config["vllm_cfg"]["tensor_parallel_size"],  # TP
             ),
-            names=["data_parallel", "tensor_parallel"],
+            names=["data_parallel", "pipeline_parallel", "tensor_parallel"],
         )
+        self.model_parallel_size = self.sharding_annotations.get_axis_size(
+            "tensor_parallel"
+        ) * self.sharding_annotations.get_axis_size("pipeline_parallel")
 
         # Create worker builder for VllmGenerationWorker
         worker_builder = RayWorkerBuilder(
             "nemo_rl.models.generation.vllm.VllmGenerationWorker", config
         )
 
-        self.worker_group = RayWorkerGroup(
-            cluster,
-            worker_builder,
-            name_prefix=name_prefix,
-            workers_per_node=workers_per_node,
-            bundle_indices_list=self._get_tied_worker_bundle_indices(cluster),
-            sharding_annotations=self.sharding_annotations,
-        )
+        # Check if we need parallelism-aware worker group creation
+        if self.model_parallel_size > 1:
+            # For parallelism, create node-aware worker groups
+            node_bundle_indices = self._get_tied_worker_bundle_indices(cluster)
+
+            self.worker_group = RayWorkerGroup(
+                cluster,
+                worker_builder,
+                name_prefix=name_prefix,
+                bundle_indices_list=node_bundle_indices,
+                sharding_annotations=self.sharding_annotations,
+            )
+        else:
+            # Use standard worker group creation for non-parallel case
+            self.worker_group = RayWorkerGroup(
+                cluster,
+                worker_builder,
+                name_prefix=name_prefix,
+                workers_per_node=workers_per_node,
+                sharding_annotations=self.sharding_annotations,
+            )
+
+        # Number of data parallel groups is the number of tied worker groups
+        self.dp_size = self.worker_group.group_count
 
     def _get_tied_worker_bundle_indices(
         self, cluster: RayVirtualCluster
-    ) -> list[tuple[int, list[int]]]:
-        """Calculate bundle indices for tensor parallel workers."""
-        # Get the placement groups (nodes) from the cluster
+    ) -> List[Tuple[int, List[int]]]:
+        """Calculate bundle indices for tensor and pipeline parallel workers.
+
+        With a unified placement group (single PG for all resources), we need to create
+        tied worker groups that do not accidentally span multiple physical nodes.  We
+        therefore construct groups by first grouping the bundles by the node Ray has
+        placed them on and then slicing those per-node bundle lists into chunks of
+        size `tensor_parallel_size`.  This mimics the behaviour we previously had
+        when each node had its own placement group while still keeping the single
+        placement-group design which vLLM expects.
+        """
+        # Get the placement groups from the cluster (should be a single unified PG)
         placement_groups = cluster.get_placement_groups()
 
-        tied_worker_groups = []
+        if not placement_groups:
+            raise ValueError("No placement groups available in the cluster")
 
+        unified_pg = placement_groups[0]
+
+        # Total parallel sizes
         tp_size = self.sharding_annotations.get_axis_size("tensor_parallel")
-        # For each node (placement group), create tied worker groups of size tensor_parallel_size
-        for node_idx, pg in enumerate(placement_groups):
-            # How many bundles (GPUs) are on this node
-            bundles_on_node = pg.bundle_count
-            tied_worker_groups_on_node = bundles_on_node // tp_size
+        pp_size = self.sharding_annotations.get_axis_size("pipeline_parallel")
 
-            if tied_worker_groups_on_node > 0:
-                for group_idx in range(tied_worker_groups_on_node):
-                    # Local bundle indices for this tied worker group (consecutive GPUs on this node)
-                    start_idx = group_idx * tp_size
-                    end_idx = start_idx + tp_size
-                    local_bundle_indices = list(range(start_idx, end_idx))
-                    tied_worker_groups.append((node_idx, local_bundle_indices))
+        def get_node_bundles(
+            pg: ray.util.placement_group.PlacementGroup,
+        ) -> Dict[str, List[int]]:
+            # Retrieve mapping from node ID to bundle indices from a placement group.
+            try:
+                pg_table = ray.util.placement_group_table(pg)
+                bundle_to_node = pg_table["bundles_to_node_id"]
+            except Exception as e:
+                raise RuntimeError(
+                    "Failed to retrieve bundle/node mapping from placement group"
+                ) from e
 
-        if not tied_worker_groups:
+            node_bundles: Dict[str, List[int]] = defaultdict(list)
+            for bundle_idx, node_id in bundle_to_node.items():
+                node_bundles[node_id].append(bundle_idx)
+            for bundles in node_bundles.values():
+                bundles.sort()
+            return dict(node_bundles)
+
+        def allocate_worker_groups(
+            pg: ray.util.placement_group.PlacementGroup, tp_size: int, pp_size: int
+        ) -> List[Tuple[int, List[int]]]:
+            # Allocate worker groups for TP and PP training, assuming all nodes have identical bundle counts.
+
+            # Retrieve both bundle mapping and per-node bundles
+            pg_table = ray.util.placement_group_table(pg)
+            bundle_to_node = pg_table["bundles_to_node_id"]
+            node_bundles = get_node_bundles(pg)
+
+            if not node_bundles:
+                raise ValueError("Placement group contains no bundles")
+
+            # Ensure all nodes have the same number of bundles
+            counts = [len(b) for b in node_bundles.values()]
+            assert len(set(counts)) == 1, "All nodes must have identical bundle counts"
+
+            total = sum(counts)
+            group_size = tp_size * pp_size
+            num_groups = total // group_size
+            if num_groups == 0:
+                raise ValueError(
+                    "Unable to allocate any worker groups with the available resources."
+                )
+
+            # Create reproducible node indices
+            sorted_nodes = sorted(node_bundles)
+            node_idx = {nid: idx for idx, nid in enumerate(sorted_nodes)}
+
+            # Flatten bundles in node order
+            flat: List[int] = []
+            for nid in sorted_nodes:
+                flat.extend(node_bundles[nid])
+
+            # Slice into groups and assign logical index
+            groups: List[Tuple[int, List[int]]] = []
+            for i in range(num_groups):
+                slice_ = flat[i * group_size : (i + 1) * group_size]
+                first_node = bundle_to_node[slice_[0]]
+                groups.append((node_idx[first_node], slice_))
+
+            return groups
+
+        tied_groups = allocate_worker_groups(unified_pg, tp_size, pp_size)
+        if not tied_groups:
             raise ValueError(
-                f"Cannot create any tensor parallel tied worker groups with size {tp_size}. "
-                f"Make sure each node has at least {tp_size} GPUs."
+                "Unable to allocate any worker groups with the available resources."
             )
 
-        return tied_worker_groups
+        return tied_groups
 
     def generate(
         self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
@@ -1089,7 +1204,9 @@ class VllmGeneration(GenerationInterface):
             )
             # Use run_all_workers_single_data for methods that don't need data
             futures = self.worker_group.run_all_workers_single_data(
-                method_name, run_rank_0_only_axes=["tensor_parallel"], **kwargs
+                method_name,
+                run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"],
+                **kwargs,
             )
             # Wait for all futures to complete
             results = ray.get(futures)
@@ -1108,7 +1225,7 @@ class VllmGeneration(GenerationInterface):
             # Use run_all_workers_single_data for methods that don't need data
             futures = self.worker_group.run_all_workers_single_data(
                 method_name,
-                run_rank_0_only_axes=["tensor_parallel"],
+                run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"],
             )
             # Wait for all futures to complete
             results = ray.get(futures)
@@ -1151,7 +1268,7 @@ class VllmGeneration(GenerationInterface):
             futures = self.worker_group.run_all_workers_single_data(
                 method_name,
                 ipc_handles=ipc_handles,
-                run_rank_0_only_axes=["tensor_parallel"],
+                run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"],
             )
             # Wait for all futures to complete
             results = ray.get(futures)

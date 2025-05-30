@@ -224,6 +224,7 @@ base_vllm_test_config: VllmConfig = {
         "async_engine": False,
         "precision": "bfloat16",
         "tensor_parallel_size": 1,
+        "pipeline_parallel_size": 1,
         "max_model_len": 2048,
         "disable_log_stats": True,
         "disable_log_requests": True,

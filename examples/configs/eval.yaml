@@ -18,6 +18,7 @@ generation:
     async_engine: false
     precision: "bfloat16"
     tensor_parallel_size: 1
+    pipeline_parallel_size: 1
     gpu_memory_utilization: 0.9
     max_model_len: 2048
 

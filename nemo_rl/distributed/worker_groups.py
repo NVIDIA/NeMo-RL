@@ -329,36 +329,50 @@ class RayWorkerGroup:
             # In this case, each worker is its own group (no tied workers)
             bundle_indices_list = []
 
-            # Determine how many workers per node
+            # Get placement groups
+            placement_groups = self.cluster.get_placement_groups()
+            assert len(placement_groups) == 1, (
+                "Nemo-RL uses a unified placement group for all workers"
+            )
+
+            pg = placement_groups[0]
+            workers_per_group = [pg.bundle_count]
+
+            # Determine how many workers per node/placement group
             if workers_per_node is None:
-                workers_per_node = [
-                    pg.bundle_count for pg in self.cluster.get_placement_groups()
-                ]
+                workers_per_group = [pg.bundle_count for pg in placement_groups]
             elif isinstance(workers_per_node, int):
-                workers_per_node = [workers_per_node] * self.cluster.node_count()
-            elif not isinstance(workers_per_node, list):
+                workers_per_group = [workers_per_node] * len(placement_groups)
+            elif isinstance(workers_per_node, list):
+                if len(workers_per_node) == 1 and len(placement_groups) == 1:
+                    workers_per_group = workers_per_node
+                elif len(workers_per_node) != len(placement_groups):
+                    raise ValueError(
+                        f"workers_per_node list length ({len(workers_per_node)}) must match "
+                        f"number of placement groups ({len(placement_groups)})"
+                    )
+                else:
+                    workers_per_group = workers_per_node
+            else:
                 raise ValueError(
-                    "workers_per_node must be None(for default node distribution), an int, or a list"
+                    "workers_per_node must be None (for default distribution), an int, or a list"
                 )
 
-            # Validate workers_per_node
-            assert len(workers_per_node) == self.cluster.node_count(), (
-                "workers_per_node_list must be the same length as the number of nodes in the virtual cluster"
-            )
-            assert all(
-                [
-                    workers_per_node[i] <= pg.bundle_count
-                    for i, pg in enumerate(self.cluster.get_placement_groups())
-                ]
-            ), (
-                "workers_per_node must be less than or equal to the number of bundles in the placement groups"
-            )
+            # Validate workers_per_group
+            for i, (pg, worker_count) in enumerate(
+                zip(placement_groups, workers_per_group)
+            ):
+                if worker_count > pg.bundle_count:
+                    raise ValueError(
+                        f"Placement group {i} has {pg.bundle_count} bundles, "
+                        f"but {worker_count} workers were requested"
+                    )
 
-            # Create bundle_indices_list where each worker is its own group
-            for node_idx, worker_count in enumerate(workers_per_node):
-                for local_idx in range(worker_count):
+                # Create bundle_indices for each worker (one per bundle)
+                # All in the same placement group (idx 0 for unified group)
+                for bundle_idx in range(worker_count):
                     # Each worker is its own single-element group
-                    bundle_indices_list.append((node_idx, [local_idx]))
+                    bundle_indices_list.append((0, [bundle_idx]))
 
         # Create workers based on the bundle_indices_list
         self._create_workers_from_bundle_indices(
@@ -374,8 +388,10 @@ class RayWorkerGroup:
 
         Args:
             remote_worker_builder: Builder function for Ray actors
+
             bundle_indices_list: List of (node_idx, local_bundle_indices) tuples, where each tuple
-                               specifies a tied group with its node and local bundle indices.
+                                specifies a tied group with its node and local bundle indices. If the local_bundle_indices
+                                spans multiple nodes, the node_idx will be the first node's index in the tied group.
         """
         self.master_address, self.master_port = (
             self.cluster.get_master_address_and_port()
@@ -385,14 +401,23 @@ class RayWorkerGroup:
         self.world_size = sum(len(indices) for _, indices in bundle_indices_list)
         global_rank = 0
 
+        # Get all placement groups
+        placement_groups = self.cluster.get_placement_groups()
+
+        assert len(placement_groups) == 1, (
+            "Nemo-RL uses a unified placement group for all workers"
+        )
+
         for group_idx, (node_idx, local_bundle_indices) in enumerate(
             bundle_indices_list
         ):
             current_group = []
 
-            # Get the placement group for this node
-            pg = self.cluster.get_placement_groups()[node_idx]
-            is_tp_group = len(local_bundle_indices) > 1
+            # Get the appropriate placement group
+            pg = placement_groups[0]
+
+            # Check if this group has multiple workers (for tensor or pipeline parallelism)
+            is_parallel_group = len(local_bundle_indices) > 1
 
             for local_rank, bundle_idx in enumerate(local_bundle_indices):
                 # Set up basic distributed environment variables
@@ -410,15 +435,16 @@ class RayWorkerGroup:
                     }
                 )
 
-                # For tensor parallel groups, only the first worker gets bundle_indices
-                worker_bundle_indices = (
-                    (node_idx, local_bundle_indices) if local_rank == 0 else None
-                )
+                # Only the first worker in each group gets bundle_indices
+                # This ensures only one worker per group is the model owner
+                worker_bundle_indices = None
+                if local_rank == 0:
+                    worker_bundle_indices = (node_idx, local_bundle_indices)
 
                 # Create a descriptive name based on group structure
                 name = (
                     f"{self.name_prefix}-grp{group_idx}-{local_rank}"
-                    if is_tp_group
+                    if is_parallel_group
                     else f"{self.name_prefix}-{node_idx}-{bundle_idx}"
                 )
 

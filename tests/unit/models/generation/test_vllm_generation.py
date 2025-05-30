@@ -29,12 +29,13 @@ from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.hf_policy import HfPolicy
 
+model_name = "Qwen/Qwen3-0.6B"
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
-    "model_name": "Qwen/Qwen3-0.6B",  # Small model for testing
+    "model_name": model_name,
     "tokenizer": {
-        "name": "Qwen/Qwen3-0.6B",
+        "name": model_name,
     },
     "dtype": "bfloat16",
     "max_new_tokens": 5,
@@ -46,7 +47,8 @@ basic_vllm_test_config: VllmConfig = {
     "vllm_cfg": {
         "precision": "bfloat16",
         "tensor_parallel_size": 1,
-        "gpu_memory_utilization": 0.3,
+        "pipeline_parallel_size": 1,
+        "gpu_memory_utilization": 0.7,
         "max_model_len": 1024,
         "async_engine": False,  # Default to False for synchronous tests
         "skip_tokenizer_init": False,
@@ -285,9 +287,11 @@ def test_vllm_policy_generation(policy, test_input_data, tokenizer):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tensor_parallel_size", [1, 2])
+@pytest.mark.parametrize(
+    "tensor_parallel_size,pipeline_parallel_size", [(2, 1), (1, 2)]
+)
 async def test_vllm_policy_generation_async(
-    cluster, test_input_data, tokenizer, tensor_parallel_size
+    cluster, test_input_data, tokenizer, tensor_parallel_size, pipeline_parallel_size
 ):
     """Test vLLM policy async generation capabilities."""
     # Ensure the policy is configured for async generation
@@ -299,17 +303,20 @@ async def test_vllm_policy_generation_async(
         vllm_config["vllm_cfg"]["async_engine"] = True
         vllm_config = configure_generation_config(vllm_config, tokenizer)
         vllm_config["vllm_cfg"]["tensor_parallel_size"] = tensor_parallel_size
-        async_policy = VllmGeneration(cluster, vllm_config)
-
-        hf_config = get_basic_hf_test_config()
+        vllm_config["vllm_cfg"]["pipeline_parallel_size"] = pipeline_parallel_size
+        hf_config = get_basic_hf_test_config(enable_dtensor=True)
         from nemo_rl.models.policy.hf_policy import HfPolicy
 
+        async_policy = VllmGeneration(cluster, vllm_config)
+        async_policy.finish_generation()
+        print("creating hf policy...")
+
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
+
         refit_policy_generation(
             hf_policy, async_policy, hf_config["refit_buffer_size_gb"]
         )
 
-        print("Testing async generation...")
         outputs = async_policy.generate_async(test_input_data)
         # Validate outputs format
         assert "output_ids" in outputs, "output_ids not found in generation output"
