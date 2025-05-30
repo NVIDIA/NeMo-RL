@@ -17,7 +17,19 @@ import copy
 import gc
 import os
 import uuid
-from typing import Any, AsyncGenerator, NotRequired, Optional, TypedDict, Union, cast
+from collections import defaultdict
+from typing import (
+    Any,
+    AsyncGenerator,
+    Dict,
+    List,
+    NotRequired,
+    Optional,
+    Tuple,
+    TypedDict,
+    Union,
+    cast,
+)
 
 import numpy as np
 import ray
@@ -967,79 +979,67 @@ class VllmGeneration(GenerationInterface):
         tp_size = self.sharding_annotations.get_axis_size("tensor_parallel")
         pp_size = self.sharding_annotations.get_axis_size("pipeline_parallel")
 
-        # ---------------------------------------------------------------
-        # Build bundle-to-node mapping once
-        # ---------------------------------------------------------------
-        try:
-            import ray
+        def get_node_bundles(pg) -> Dict[str, List[int]]:
+            # Retrieve mapping from node ID to bundle indices from a placement group.
+            try:
+                pg_table = ray.util.placement_group_table(pg)
+                bundle_to_node = pg_table["bundles_to_node_id"]
+            except Exception as e:
+                raise RuntimeError(
+                    "Failed to retrieve bundle/node mapping from placement group"
+                ) from e
 
-            pg_table = ray.util.placement_group_table(unified_pg)
-            bundle_to_node: dict[int, str] = pg_table["bundles_to_node_id"]
-        except Exception as e:
-            raise RuntimeError(
-                "Failed to retrieve bundle/node mapping from Ray for placement group."
-            ) from e
+            node_bundles: Dict[str, List[int]] = defaultdict(list)
+            for bundle_idx, node_id in bundle_to_node.items():
+                node_bundles[node_id].append(bundle_idx)
+            for bundles in node_bundles.values():
+                bundles.sort()
+            return dict(node_bundles)
 
-        from collections import defaultdict
+        def allocate_worker_groups(
+            pg, tp_size: int, pp_size: int
+        ) -> List[Tuple[int, List[int]]]:
+            # Allocate worker groups for TP and PP training, assuming all nodes have identical bundle counts.
 
-        node_id_to_bundles: dict[str, list[int]] = defaultdict(list)
-        for b_idx, n_id in bundle_to_node.items():
-            node_id_to_bundles[n_id].append(b_idx)
+            # Retrieve both bundle mapping and per-node bundles
+            pg_table = ray.util.placement_group_table(pg)
+            bundle_to_node = pg_table["bundles_to_node_id"]
+            node_bundles = get_node_bundles(pg)
 
-        for lst in node_id_to_bundles.values():
-            lst.sort()
+            if not node_bundles:
+                raise ValueError("Placement group contains no bundles")
 
-        # Logical node indices for reproducible seeding
-        node_idx_lookup = {
-            nid: idx for idx, nid in enumerate(sorted(node_id_to_bundles))
-        }
+            # Ensure all nodes have the same number of bundles
+            counts = [len(b) for b in node_bundles.values()]
+            assert len(set(counts)) == 1, "All nodes must have identical bundle counts"
 
-        def pop_stage_bundles(tp: int) -> list[int] | None:
-            # Return tp bundle indices, preferring a single node but falling back to multiple nodes if necessary.
+            total = sum(counts)
+            group_size = tp_size * pp_size
+            num_groups = total // group_size
+            if num_groups == 0:
+                raise ValueError(
+                    "Unable to allocate any worker groups with the available resources."
+                )
 
-            # 1. try one node
-            for nid, bundles in node_id_to_bundles.items():
-                if len(bundles) >= tp:
-                    chosen = bundles[:tp]
-                    del bundles[:tp]
-                    if not bundles:
-                        del node_id_to_bundles[nid]
-                    return chosen
+            # Create reproducible node indices
+            sorted_nodes = sorted(node_bundles)
+            node_idx = {nid: idx for idx, nid in enumerate(sorted_nodes)}
 
-            # 2. aggregate across nodes
-            chosen: list[int] = []
-            for nid in list(node_id_to_bundles.keys()):
-                take = min(tp - len(chosen), len(node_id_to_bundles[nid]))
-                chosen.extend(node_id_to_bundles[nid][:take])
-                del node_id_to_bundles[nid][:take]
-                if not node_id_to_bundles[nid]:
-                    del node_id_to_bundles[nid]
-                if len(chosen) == tp:
-                    break
-            return chosen if len(chosen) == tp else None
+            # Flatten bundles in node order
+            flat: List[int] = []
+            for nid in sorted_nodes:
+                flat.extend(node_bundles[nid])
 
-        tied_groups: list[tuple[int, list[int]]] = []
+            # Slice into groups and assign logical index
+            groups: List[Tuple[int, List[int]]] = []
+            for i in range(num_groups):
+                slice_ = flat[i * group_size : (i + 1) * group_size]
+                first_node = bundle_to_node[slice_[0]]
+                groups.append((node_idx[first_node], slice_))
 
-        total_stages = pp_size  # 1 for TP-only; >1 for PP
-        while True:
-            replica_bundles: list[int] = []
-            for stage in range(total_stages):
-                stage_bundles = pop_stage_bundles(tp_size)
-                if stage_bundles is None:
-                    # cannot satisfy more replicas
-                    replica_bundles = []
-                    break
-                replica_bundles.extend(stage_bundles)
+            return groups
 
-            if not replica_bundles:
-                break
-
-            first_node_id = bundle_to_node[replica_bundles[0]]
-            tied_groups.append((node_idx_lookup[first_node_id], replica_bundles))
-            print(
-                f"[VLLM DEBUG] Created worker group #{len(tied_groups) - 1} with bundles: {replica_bundles}"
-            )
-
+        tied_groups = allocate_worker_groups(unified_pg, tp_size, pp_size)
         if not tied_groups:
             raise ValueError(
                 "Unable to allocate any worker groups with the available resources."
