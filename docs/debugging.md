@@ -39,6 +39,13 @@ ssh -L $LOCAL_PORT:localhost:$DASHBOARD_PORT -N node-12
 ssh -L 52640:localhost:8265 -N node-12
 ```
 
+Example output from the port-forwarding with `ssh` may print logs like this, where the warning is expected:
+
+```text
+Warning: Permanently added 'node-12' (ED25519) to the list of known hosts.
+bind [::1]:52640: Cannot assign requested address
+```
+
 ### Open the Ray Debugger Extension
 
 In VS Code/Cursor, open the Ray Debugger extension by clicking on the Ray icon in the activity bar or by searching for "View: Show Ray Debugger" in the command palette (Ctrl+Shift+P or Cmd+Shift+P).
