@@ -40,6 +40,7 @@ class ClippedPGLossConfig(TypedDict):
     use_on_policy_kl_approximation: bool
     use_importance_sampling_correction: bool
     token_level_loss: bool
+    use_generation_logprobs_in_ppo_baseline: bool
 
 
 class ClippedPGLossDataDict(TypedDict):
@@ -194,6 +195,7 @@ class ClippedPGLossFn(LossFunction):
             ratios_clamped = ratios.clamp(
                 1.0 - self.ratio_clip_min, 1.0 + self.ratio_clip_max
             )
+
         else:
             ratios = curr_logprobs
             ratios_clamped = curr_logprobs
@@ -262,6 +264,15 @@ class ClippedPGLossFn(LossFunction):
                 global_normalization_factor=global_valid_toks,
             )
 
+            ratio_to_compare = (
+                generation_logprobs
+                if self.use_generation_logprobs_in_ppo_baseline
+                else prev_logprobs
+            ).detach()
+            sequence_level_ratios = (
+                ((curr_logprobs.detach() - ratio_to_compare) * mask).sum(-1).exp().sum()
+            )
+
         kl_for_loss = self.reference_policy_kl_penalty * kl
         loss = actor_loss + kl_for_loss
 
@@ -277,6 +288,24 @@ class ClippedPGLossFn(LossFunction):
                 global_normalization_factor=global_valid_toks,
             ).item()
 
+            if self.disable_ppo_ratio:
+                clipped_min = 0
+                clipped_max = 0
+            else:
+                advantages_neg = advantages < 0
+                advantages_pos = advantages > 0
+
+                clipped_min = (
+                    ((ratios < 1 - self.ratio_clip_min) * advantages_neg * mask)
+                    .sum()
+                    .item()
+                )
+                clipped_max = (
+                    ((ratios > 1 + self.ratio_clip_max) * advantages_pos * mask)
+                    .sum()
+                    .item()
+                )
+
         # If you provided a global_valid_{seqs/toks}, all metrics here are globally normalized
         # by either sequence or token count, depending on particular metric.
         # To get the true metric, you'll need to sum over the microbatch.
@@ -285,6 +314,9 @@ class ClippedPGLossFn(LossFunction):
             {
                 "loss": loss.item(),
                 "log_probs_mean": log_probs_mean.item(),
+                "sequence_level_ratios": sequence_level_ratios.item(),
+                "tokens_min_clipped": clipped_min,
+                "tokens_max_clipped": clipped_max,
                 "probs_ratio": probs_ratio,
                 "probs_ratio_clamped": probs_ratio_clamped,
                 "kl_penalty": kl.item(),

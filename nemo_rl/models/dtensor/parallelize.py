@@ -446,6 +446,47 @@ def clip_grad_by_total_norm_(
             g.mul_(clip_coeff)
 
 
+def get_grad_sparsity(
+    parameters: Union[List[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]],
+    dp_group: torch.distributed.ProcessGroup,
+    tp_group: torch.distributed.ProcessGroup,
+) -> float:
+    """NOTE: This function is somewhat incorrect if the grads are not all reduced across the data parallel GPUs.
+        * this is because the zeros might not be all in the same place across DP ranks
+
+    Args:
+        parameters (Union[List[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]]):
+            An iterable of Tensors or DTensors, or a single Tensor or DTensor
+            that will have gradient norm calculated.
+        dp_group (torch.distributed.ProcessGroup): Process group for data parallel communication.
+        tp_group (torch.distributed.ProcessGroup): Process group for tensor parallel communication.
+        norm_type (Union[int, float]): Type of the used p-norm. Can be ``'inf'`` for
+            infinity norm.
+
+    Returns:
+        float: Total norm of the gradients (viewed as a single vector)
+    """
+    if isinstance(parameters, (torch.Tensor, DTensor)):
+        parameters = [parameters]
+
+    # Grads.
+    grads_for_norm = [
+        to_local_if_dtensor(p.grad.detach()) for p in parameters if p.grad is not None
+    ]
+
+    num_zeros = sum([grad.numel() - grad.count_nonzero() for grad in grads_for_norm])
+    total_num_elements = sum([grad.numel() for grad in grads_for_norm])
+
+    to_reduce = torch.tensor(
+        [num_zeros, total_num_elements], dtype=torch.float32, device="cuda"
+    )
+
+    # Take max across all data-parallel GPUs if using FSDP and then all model-parallel GPUs.
+    torch.distributed.all_reduce(to_reduce, group=dp_group)
+    torch.distributed.all_reduce(to_reduce, group=tp_group)
+    return (to_reduce[0] / to_reduce[1]).item()
+
+
 def get_grad_norm(
     parameters: Union[List[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]],
     dp_group: torch.distributed.ProcessGroup,
