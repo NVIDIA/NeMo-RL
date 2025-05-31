@@ -619,7 +619,7 @@ class Logger(LoggerInterface):
         print(f"Logged data to {filepath}")
 
     def log_plot_token_mult_prob_error(
-        self, data: Dict[str, Any], step: int, name: str
+        self, data: dict[str, Any], step: int, name: str
     ) -> None:
         """Log a plot of log probability errors in samples.
 
@@ -662,23 +662,48 @@ class Logger(LoggerInterface):
         )
         diff_i = diff[sample_idx, generation_start_idx:generation_end_idx]
 
-        fig, ax = plt.subplots()
+        # Find max absolute error token
+        max_abs_error_idx = torch.argmax(diff_i).item()
+        max_abs_error = diff_i[max_abs_error_idx].item()
+
+        # Find max relative error token (ratio of probabilities)
+        gen_prob = torch.exp(generation_logprob)
+        prev_prob = torch.exp(prev_logprob)
+        relative_error = torch.abs((gen_prob - prev_prob) / gen_prob)
+        max_rel_error_idx = torch.argmax(relative_error).item()
+        max_rel_error = relative_error[max_rel_error_idx].item()
+
+        fig = plt.figure()
         step_idx = torch.arange(generation_start_idx, generation_end_idx)
 
-        ax.plot(step_idx, generation_logprob, label="logprob (inference engine)")
-        ax.plot(step_idx, prev_logprob, label="logprob (reference policy)")
-        ax.plot(step_idx, diff_i, label="abs logprob difference")
-
-        # Need to add annotation inside the plot area given title is not visible in wandb ui
-        ax.annotate(
-            f"token_mult_prob_error={sample_error:.4f}",
-            xy=(0.05, 0.05),
-            xycoords="axes fraction",
+        plt.plot(step_idx, generation_logprob, label="logprob (inference engine)")
+        plt.plot(step_idx, prev_logprob, label="logprob (reference policy)")
+        plt.plot(
+            step_idx,
+            diff_i,
+            label=f"abs diff (token_mult_prob_error={sample_error:.2f})",
         )
 
-        ax.set_xlabel("Token Position (starting from prompt end)")
-        ax.set_ylabel("Log Probability/Difference")
-        ax.legend()
+        # Highlight max errors with points
+        plt.plot(
+            step_idx[max_abs_error_idx],
+            diff_i[max_abs_error_idx],
+            "ro",
+            markersize=8,
+            label=f"Max abs error: {max_abs_error:.4f}",
+        )
+        plt.plot(
+            step_idx[max_rel_error_idx],
+            diff_i[max_rel_error_idx],
+            "bo",
+            markersize=8,
+            label=f"Max rel error (prob): {max_rel_error:.4f}",
+        )
+
+        plt.xlabel("Token Position (starting from prompt end)")
+        plt.ylabel("Log Probability/Difference")
+        plt.legend()
+        plt.tight_layout()
 
         for logger in self.loggers:
             logger.log_plot(fig, step, name)
