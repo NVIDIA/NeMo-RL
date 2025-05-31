@@ -11,17 +11,28 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import random
 import warnings
 from functools import wraps
-from typing import Optional
+from typing import Callable, Optional, Tuple, TypedDict
 
 import numpy as np
 import torch
+from torchdata.stateful_dataloader import StatefulDataLoader
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 from nemo_rl.data import hf_datasets
-from nemo_rl.models.policy import TokenizerConfig
+from nemo_rl.data.datasets import AllTaskProcessedDataset
+from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+from nemo_rl.models.dtensor.parallelize import (
+    get_logprobs_from_vocab_parallel_logits,
+)
+from nemo_rl.models.policy import PolicyConfig, TokenizerConfig
+from nemo_rl.models.policy.hf_policy import HfPolicy
+from nemo_rl.utils.checkpoint import CheckpointingConfig, CheckpointManager
+from nemo_rl.utils.logger import Logger
+from nemo_rl.utils.timer import Timer
 
 
 def calculate_kl_penalty_joschu2020(
@@ -126,7 +137,7 @@ def masked_mean(
     mask: torch.Tensor,
     dim: Optional[int] = None,
     global_normalization_factor: Optional[torch.Tensor | float] = None,
-):
+) -> torch.Tensor:
     """Computes the mean of a microbatch, using a global statistic as the normalization factor."""
     normalization_factor = (
         torch.sum(mask, dim=dim)
@@ -134,6 +145,39 @@ def masked_mean(
         else global_normalization_factor
     )
     return torch.sum(values * mask, dim=dim) / (normalization_factor + 1e-8)
+
+
+def get_logprobs(
+    data: BatchedDataDict, next_token_logits: torch.Tensor
+) -> torch.Tensor:
+    """Get the log probabilities for the (potentially vocab parallel) actual next tokens.
+
+    This function handles gathering log probabilities for both FSDP1 and dtensor.
+
+    Args:
+        data (BatchedDataDict): Dictionary containing input_ids tensor with token indices
+        next_token_logits (torch.Tensor): Tensor of logits for next token predictions
+
+    Returns:
+        torch.Tensor: Log probabilities of the actual next tokens that occurred in the sequence
+    """
+    if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
+        token_logprobs = get_logprobs_from_vocab_parallel_logits(
+            next_token_logits, data["input_ids"]
+        )
+    else:
+        next_token_logits_wo_last = next_token_logits[
+            :, :-1
+        ]  # Remove last position's logits
+        next_token_logprobs = torch.nn.functional.log_softmax(
+            next_token_logits_wo_last, dim=-1
+        )
+        next_tokens = data.get("input_ids")[:, 1:].cuda()  # Skip first token
+        token_logprobs = next_token_logprobs.gather(
+            dim=-1, index=next_tokens.unsqueeze(-1)
+        ).squeeze(-1)
+
+    return token_logprobs
 
 
 def set_seed(seed: int) -> None:
@@ -220,3 +264,230 @@ def get_tokenizer(tokenizer_config: TokenizerConfig) -> PreTrainedTokenizerBase:
         print("No chat template provided, using tokenizer's default")
 
     return tokenizer
+
+
+######## utils for main entry point functions ########
+
+
+def setup_checkpointer(
+    checkpointer_config: CheckpointingConfig,
+    default_save_state: TypedDict,
+) -> Tuple[CheckpointManager, Optional[str], TypedDict]:
+    """Configure and initialize a checkpoint manager.
+
+    Args:
+        checkpointer_config (CheckpointingConfig): Configuration for checkpointing.
+        default_save_state (TypedDict): Default state dictionary to use if no
+            checkpoint exists. Should contain training progress tracking variables.
+
+    Returns:
+        tuple: A 3-tuple containing:
+            - CheckpointManager: Initialized checkpoint manager
+            - Optional[str]: Path to latest checkpoint if one exists, None otherwise
+            - TypedDict: Training state dictionary, either loaded from checkpoint or default
+    """
+    checkpointer = CheckpointManager(checkpointer_config)
+    last_checkpoint_path = checkpointer.get_latest_checkpoint_path()
+    if last_checkpoint_path is not None:
+        save_state = checkpointer.load_training_info(last_checkpoint_path)
+    else:
+        save_state = default_save_state
+    return checkpointer, last_checkpoint_path, save_state
+
+
+def validate_checkpointing_config(
+    checkpointer_config: CheckpointingConfig,
+    algorithm_config: TypedDict,
+) -> None:
+    """Validate checkpointing configuration against algorithm configuration.
+
+    Ensures that checkpointing is properly configured to save at intervals that align with
+    validation periods, since validation metrics are used to determine which checkpoints to keep.
+
+    Args:
+        checkpointer_config (CheckpointingConfig): Checkpointing configuration.
+        algorithm_config (TypedDict): Algorithm configuration.
+
+    Raises:
+        AssertionError: If checkpointing is enabled but save period is not valid, or if
+            save period is not a multiple of validation period.
+    """
+    # config validation checks
+    if checkpointer_config["enabled"]:
+        assert checkpointer_config["save_period"] > 0
+        assert (
+            checkpointer_config["save_period"] % algorithm_config["val_period"] == 0
+        ), (
+            f"Checkpointing save period {checkpointer_config['save_period']} "
+            f"must be a multiple of validation period {algorithm_config['val_period']}"
+            f", or we won't know what metric to save!"
+        )
+
+
+def setup_dataloaders(
+    train_dataset: AllTaskProcessedDataset,
+    val_dataset: Optional[AllTaskProcessedDataset],
+    collate_fn: Callable,
+    algorithm_config: TypedDict,
+    policy_config: PolicyConfig,
+    last_checkpoint_path: Optional[str] = None,
+    shuffle: bool = True,
+) -> Tuple[StatefulDataLoader, Optional[StatefulDataLoader]]:
+    """Setup training and validation dataloaders.
+
+    Args:
+        train_dataset (AllTaskProcessedDataset): Training dataset.
+        val_dataset (Optional[AllTaskProcessedDataset]): Validation dataset.
+        collate_fn (Callable): Collation function for dataset.
+        algorithm_config (TypedDict): Algorithm configuration.
+        policy_config (PolicyConfig): Policy configuration.
+        last_checkpoint_path (Optional[str]): Path to latest checkpoint if one exists, None otherwise.
+        shuffle (bool): Whether to shuffle the training dataloader.
+
+    Returns:
+        tuple: A 2-tuple containing (train_dataloader, val_dataloader).
+    """
+    train_dataloader = StatefulDataLoader(
+        train_dataset,
+        batch_size=policy_config["train_global_batch_size"],
+        shuffle=shuffle,
+        collate_fn=collate_fn,
+        drop_last=True,
+    )
+    if last_checkpoint_path is not None:
+        dataloader_state_dict = torch.load(
+            os.path.join(last_checkpoint_path, "train_dataloader.pt")
+        )
+        train_dataloader.load_state_dict(dataloader_state_dict)
+
+    print(f"  ✓ Training dataloader loaded with {len(train_dataset)} samples")
+
+    # Load validation dataset if provided
+    val_dataloader: Optional[StatefulDataLoader] = None
+    # If validation is enabled, load the validation dataloader
+    if algorithm_config["val_period"] > 0 or algorithm_config["val_at_start"]:
+        assert val_dataset is not None, (
+            "Validation dataset is required if validation is enabled"
+        )
+        val_dataloader = StatefulDataLoader(
+            val_dataset,
+            batch_size=(
+                algorithm_config.get("val_global_batch_size", None)  ## sft, dpo
+                or algorithm_config["val_batch_size"]  ## grpo
+            ),
+            shuffle=False,
+            collate_fn=collate_fn,
+            drop_last=True,
+        )
+        print(f"  ✓ Validation dataloader loaded with {len(val_dataset)} samples")
+
+    return train_dataloader, val_dataloader
+
+
+def save_checkpoint(
+    checkpointer: CheckpointManager,
+    master_config: TypedDict,
+    save_state: TypedDict,
+    total_steps: int,
+    train_dataloader: StatefulDataLoader,
+    policy: HfPolicy,
+    timer: Timer,
+) -> None:
+    """Save a checkpoint.
+
+    Args:
+        checkpointer (CheckpointManager): The checkpoint manager to use for checkpointing
+        master_config (TypedDict): The master configuration to dump to the checkpoint
+        save_state (TypedDict): The save state to dump to the checkpoint
+        total_steps (int): The number of training steps
+        train_dataloader (StatefulDataLoader): The training dataloader
+        policy (HfPolicy): The policy
+        timer (Timer): The timer
+    """
+    with timer.time("checkpointing"):
+        print(f"Saving checkpoint for step {total_steps}...")
+        checkpoint_path = checkpointer.init_tmp_checkpoint(
+            total_steps, save_state, master_config
+        )
+        policy.save_checkpoint(
+            weights_path=os.path.join(checkpoint_path, "policy", "weights"),
+            optimizer_path=os.path.join(checkpoint_path, "policy", "optimizer"),
+            tokenizer_path=os.path.join(checkpoint_path, "policy", "tokenizer"),
+        )
+        torch.save(
+            train_dataloader.state_dict(),
+            os.path.join(checkpoint_path, "train_dataloader.pt"),
+        )
+        checkpointer.finalize_checkpoint(checkpoint_path)
+
+
+def reduce_microbatch_metrics(metrics: dict) -> dict:
+    """Reduce microbatch metrics to a single value.
+
+    For lr, global_valid_seqs, and global_valid_toks, takes the mean across microbatches.
+    For all other metrics, takes the sum across microbatches.
+
+    Args:
+        metrics (dict): The metrics to reduce
+
+    Returns:
+        dict: The reduced metrics
+    """
+    for k, v in metrics.items():
+        if k in {"lr", "global_valid_seqs", "global_valid_toks"}:
+            metrics[k] = np.mean(v).item()
+        else:
+            metrics[k] = np.sum(v).item()
+    return metrics
+
+
+def log_metrics(
+    log_to_console: dict,
+    metrics: dict,
+    timing_metrics: dict,
+    step: int,
+    logger: Logger,
+    is_val: bool = False,
+) -> None:
+    """Log training or validation metrics both to console and to logger (wandb/tensorboard).
+
+    Args:
+        log_to_console (dict): Metrics to display in console output
+        metrics (dict): Full metrics dictionary to log to logger
+        timing_metrics (dict): Timing metrics to log to logger
+        step (int): Current training step
+        logger (Logger): Logger object
+        is_val (bool, optional): Whether these are validation metrics. Defaults to False.
+
+    The function:
+    1. Prints metrics and timing information to console in a formatted way
+    2. For training metrics, shows detailed timing breakdown
+    3. Logs all metrics and timing info to the logger with appropriate prefixes
+    """
+    prefix: str = "validation" if is_val else "train"
+
+    ## print metrics to std out
+    print(f"\n📊 {prefix.capitalize()} Results:")
+    for k, v in log_to_console.items():
+        print(f"  • {k}: {v:.4f}")
+    print(f"\n⏱️  {prefix.capitalize()} Timing:")
+
+    total_time = (
+        timing_metrics["total_step_time"]
+        if prefix == "train"
+        else timing_metrics["total_validation_time"]
+    )
+    print(f"  • Total {prefix} time: {total_time:.2f}s")
+
+    if not is_val:
+        # Display all other timing metrics (if any)
+        for k, v in sorted(
+            timing_metrics.items(), key=lambda item: item[1], reverse=True
+        ):
+            if k != "total_step_time":
+                percent = (v / total_time * 100) if total_time > 0 else 0
+                print(f"  • {k}: {v:.2f}s ({percent:.1f}%)")
+
+    ## log metrics to wandb/tensorboard
+    logger.log_metrics(metrics, step, prefix=f"{prefix}")
+    logger.log_metrics(timing_metrics, step, prefix=f"timing/{prefix}")

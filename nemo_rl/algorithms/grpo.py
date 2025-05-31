@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
-from pathlib import Path
 from typing import Any, Optional, TypedDict, cast
 
 import numpy as np
@@ -26,7 +24,15 @@ from nemo_rl.algorithms.loss_functions import (
     ClippedPGLossDataDict,
     ClippedPGLossFn,
 )
-from nemo_rl.algorithms.utils import calculate_baseline_and_std_per_prompt
+from nemo_rl.algorithms.utils import (
+    calculate_baseline_and_std_per_prompt,
+    log_metrics,
+    reduce_microbatch_metrics,
+    save_checkpoint,
+    setup_checkpointer,
+    setup_dataloaders,
+    validate_checkpointing_config,
+)
 from nemo_rl.data import DataConfig
 from nemo_rl.data.datasets import AllTaskProcessedDataset, rl_collate_fn
 from nemo_rl.data.interfaces import (
@@ -74,20 +80,17 @@ class GRPOConfig(TypedDict):
     val_batch_size: int
     val_at_start: bool
     max_val_samples: int
-    checkpoint_dir: str
 
 
 class GRPOSaveState(TypedDict):
     step: int
     val_reward: float
-    consumed_samples: int
 
 
 def _default_grpo_save_state() -> GRPOSaveState:
     return {
-        "step": 0,
+        "step": 1,
         "val_reward": -99999999.0,
-        "consumed_samples": 0,
     }
 
 
@@ -95,7 +98,7 @@ class GRPOLoggerConfig(LoggerConfig):
     num_val_samples_to_print: int  # number of val samples to print to stdout
 
 
-class MasterConfig(TypedDict):
+class GRPOMasterConfig(TypedDict):
     policy: PolicyConfig
     loss_fn: ClippedPGLossConfig
     env: dict[str, Any]
@@ -112,7 +115,7 @@ class MasterConfig(TypedDict):
 
 
 def setup(
-    master_config: MasterConfig,
+    master_config: GRPOMasterConfig,
     tokenizer: TokenizerType,
     dataset: AllTaskProcessedDataset,
     val_dataset: Optional[AllTaskProcessedDataset],
@@ -126,87 +129,44 @@ def setup(
     Logger,
     CheckpointManager,
     GRPOSaveState,
-    MasterConfig,
+    GRPOMasterConfig,
 ]:
     """Main entry point for running GRPO algorithm.
 
     Returns:
-        Tuple of policy, cluster, dataloader, tokenizer, loss_fn, math_env, logger, master_config, val_dataloader
+        Tuple of policy, cluster, train_dataloader, val_dataloader, loss_fn, logger, checkpointer, grpo_save_state, master_config
     """
-    # Extract individual configs for easier access
     policy_config = master_config["policy"]
-    generation_config = master_config["policy"]["generation"]
-    loss_config = master_config["loss_fn"]
-    data_config = master_config["data"]
-    grpo_config = master_config["grpo"]
     logger_config = master_config["logger"]
     cluster_config = master_config["cluster"]
+    checkpointing_config = master_config["checkpointing"]
+    loss_config = master_config["loss_fn"]
+    grpo_config = master_config["grpo"]
+    generation_config = policy_config["generation"]
 
     assert generation_config is not None, (
         "A generation config in the PolicyConfig is required for GRPO"
     )
 
-    # ==========================
-    #         Logger
-    # ==========================
     logger = Logger(logger_config)
     logger.log_hyperparams(master_config)
 
-    # ==========================
-    #      Checkpointing
-    # ==========================
-    checkpointer = CheckpointManager(master_config["checkpointing"])
-    last_checkpoint_path = checkpointer.get_latest_checkpoint_path()
-    grpo_save_state: Optional[GRPOSaveState] = checkpointer.load_training_info(
-        last_checkpoint_path
+    checkpointer, last_checkpoint_path, grpo_save_state = setup_checkpointer(
+        checkpointing_config, _default_grpo_save_state()
     )
-    if grpo_save_state is None:
-        grpo_save_state = _default_grpo_save_state()
 
-    # config validation checks
-    if master_config["checkpointing"]["enabled"]:
-        assert master_config["checkpointing"]["save_period"] > 0
-        assert (
-            master_config["checkpointing"]["save_period"]
-            % master_config["grpo"]["val_period"]
-            == 0
-        ), (
-            f"Checkpointing save period {master_config['checkpointing']['save_period']} "
-            f"must be a multiple of validation period {master_config['grpo']['val_period']}"
-            f", or we won't know what metric to save!"
-        )
+    # verify that checkpoint period is a multiple of validation period
+    validate_checkpointing_config(checkpointing_config, grpo_config)
 
-    # ==========================
-    #           Data
-    # ==========================
-    dataloader = StatefulDataLoader(
+    train_dataloader, val_dataloader = setup_dataloaders(
         dataset,
-        batch_size=grpo_config["num_prompts_per_step"],
+        val_dataset,
+        rl_collate_fn,
+        grpo_config,
+        policy_config,
+        last_checkpoint_path,
         shuffle=False,
-        collate_fn=rl_collate_fn,
     )
-    if last_checkpoint_path is not None:
-        dataloader_state_dict = torch.load(
-            os.path.join(last_checkpoint_path, "train_dataloader.pt")
-        )
-        dataloader.load_state_dict(dataloader_state_dict)
-
-    print(f"  ✓ Training dataloader loaded with {len(dataset)} samples")
-
-    # Load validation dataset if provided
-    val_dataloader: Optional[StatefulDataLoader] = None
-    # If validation is enabled, load the validation dataloader
-    if grpo_config["val_period"] > 0 or grpo_config["val_at_start"]:
-        assert val_dataset is not None, (
-            "Validation dataset is required if validation is enabled"
-        )
-        val_dataloader = StatefulDataLoader(
-            val_dataset,
-            batch_size=grpo_config["val_batch_size"],
-            shuffle=False,
-            collate_fn=rl_collate_fn,
-        )
-        print(f"  ✓ Validation dataloader loaded with {len(val_dataset)} samples")
 
     # ==========================
     #          Cluster
@@ -245,19 +205,9 @@ def setup(
             f"  ✓ Using vLLM backend for generation with {policy_config['model_name']}"
         )
 
-    policy = HfPolicy(
-        cluster=cluster,
-        config=policy_config,
-        tokenizer=tokenizer,
-        weights_path=Path(last_checkpoint_path) / "policy" / "weights"
-        if last_checkpoint_path
-        else None,
-        optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
-        if last_checkpoint_path
-        else None,
-        init_optimizer=True,
-    )
+    policy = HfPolicy(cluster, policy_config, tokenizer, last_checkpoint_path)
 
+    # initialize loss function
     loss_fn = ClippedPGLossFn(loss_config)
 
     print("\n" + "=" * 60)
@@ -268,7 +218,7 @@ def setup(
         policy,
         policy_generation,
         cluster,
-        dataloader,
+        train_dataloader,
         val_dataloader,
         loss_fn,
         logger,
@@ -276,6 +226,14 @@ def setup(
         grpo_save_state,
         master_config,
     )
+
+
+def get_grpo_save_state(step, val_metrics):
+    grpo_save_state = {
+        "step": step + 1,
+        "val_reward": val_metrics["accuracy"],
+    }
+    return grpo_save_state
 
 
 # ===============================================================================
@@ -340,7 +298,7 @@ def grpo_train(
     logger: Logger,
     checkpointer: CheckpointManager,
     grpo_save_state: GRPOSaveState,
-    master_config: MasterConfig,
+    master_config: GRPOMasterConfig,
 ) -> None:
     """Run GRPO training algorithm."""
     timer = Timer()
@@ -354,20 +312,19 @@ def grpo_train(
 
     # common config/state itmes
     step = grpo_save_state["step"]
-    consumed_samples = grpo_save_state["consumed_samples"]
     val_period = master_config["grpo"]["val_period"]
     val_at_start = master_config["grpo"]["val_at_start"]
     refit_buffer_size_gb = master_config["policy"]["refit_buffer_size_gb"]
 
     # Run validation at the start if configured
-    if val_at_start and step == 0:
+    if val_at_start and step == 1:
         print("\n🔍 Running initial validation...")
         if NEED_REFIT and POLICY_GENERATION_STALE:
             refit_policy_generation(policy, policy_generation, refit_buffer_size_gb)
             POLICY_GENERATION_STALE = False
         else:
             policy_generation.prepare_for_generation()
-        val_metrics, validation_timings = validate(
+        val_metrics, timing_metrics, log_to_console = validate(
             policy_generation,
             val_dataloader,
             tokenizer,
@@ -376,14 +333,21 @@ def grpo_train(
             master_config=master_config,
         )
         policy_generation.finish_generation()
-        logger.log_metrics(val_metrics, step, prefix="validation")
-        logger.log_metrics(validation_timings, step, prefix="timing/validation")
+
+        log_metrics(
+            log_to_console,
+            val_metrics,
+            timing_metrics,
+            0,
+            logger,
+            is_val=True,
+        )
 
     # Run grpo training (single-turn)
     batch: BatchedDataDict[DatumSpec]
     for batch in dataloader:
         print(
-            f"\n{'=' * 25} Step {step + 1}/{min(len(dataloader), master_config['grpo']['max_num_steps'])} {'=' * 25}"
+            f"\n{'=' * 25} Step {step}/{min(len(dataloader), master_config['grpo']['max_num_steps'])} {'=' * 25}"
         )
         val_metrics, validation_timings = None, None
 
@@ -515,12 +479,12 @@ def grpo_train(
             with timer.time("policy_training"):
                 train_results = policy.train(train_data, loss_fn)
 
-            is_last_step = step + 1 == min(
+            is_last_step = step == min(
                 master_config["grpo"]["max_num_steps"], len(dataloader)
             )
 
             # Run validation if it's a validation step
-            if is_last_step or (val_period > 0 and (step + 1) % val_period == 0):
+            if is_last_step or (val_period > 0 and step % val_period == 0):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
                     refit_policy_generation(
                         policy,
@@ -530,102 +494,74 @@ def grpo_train(
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
-                val_metrics, validation_timings = validate(
+                val_metrics, timing_metrics, log_to_console = validate(
                     policy_generation,
                     val_dataloader,
                     tokenizer,
                     val_task_to_env,
-                    step=step + 1,
+                    step=step,
                     master_config=master_config,
                 )
                 policy_generation.finish_generation()
-                logger.log_metrics(
-                    validation_timings, step + 1, prefix="timing/validation"
+
+                log_metrics(
+                    log_to_console,
+                    val_metrics,
+                    timing_metrics,
+                    step,
+                    logger,
+                    is_val=True,
                 )
-                logger.log_metrics(val_metrics, step + 1, prefix="validation")
 
             ## Checkpointing
-            consumed_samples += master_config["grpo"]["num_prompts_per_step"]
             if master_config["checkpointing"]["enabled"] and (
                 is_last_step
-                or (step + 1) % master_config["checkpointing"]["save_period"] == 0
-            ):  # +1 because step is 0-indexed
+                or step % master_config["checkpointing"]["save_period"] == 0
+            ):
                 policy.prepare_for_training()
 
-                grpo_save_state["step"] = step + 1
-                grpo_save_state["val_reward"] = val_metrics["accuracy"]
-                grpo_save_state["consumed_samples"] = consumed_samples
-                with timer.time("checkpointing"):
-                    print(f"Saving checkpoint for step {step + 1}...")
-                    checkpoint_path = checkpointer.init_tmp_checkpoint(
-                        step + 1, grpo_save_state, master_config
-                    )
-                    policy.save_checkpoint(
-                        weights_path=os.path.join(checkpoint_path, "policy", "weights"),
-                        optimizer_path=os.path.join(
-                            checkpoint_path, "policy", "optimizer"
-                        ),
-                        tokenizer_path=os.path.join(
-                            checkpoint_path, "policy", "tokenizer"
-                        ),
-                    )
-                    torch.save(
-                        dataloader.state_dict(),
-                        os.path.join(checkpoint_path, "train_dataloader.pt"),
-                    )
-                    checkpointer.finalize_checkpoint(checkpoint_path)
+                grpo_save_state = get_grpo_save_state(step, val_metrics)
+                save_checkpoint(
+                    checkpointer,
+                    master_config,
+                    grpo_save_state,
+                    step,
+                    dataloader,
+                    policy,
+                    timer,
+                )
                 policy.offload_after_refit()
 
         # Logging
         # Log training data
-        log_data = {"content": flat_messages["content"]}
-        log_data["rewards"] = rewards.tolist()
-        log_data["generation_logprobs"] = train_data["generation_logprobs"].tolist()
-        log_data["prev_logprobs"] = train_data["prev_logprobs"].tolist()
-        log_data["input_lengths"] = input_lengths.tolist()
+        log_data = {
+            "content": flat_messages["content"],
+            "rewards": rewards.tolist(),
+            "generation_logprobs": train_data["generation_logprobs"].tolist(),
+            "prev_logprobs": train_data["prev_logprobs"].tolist(),
+            "input_lengths": input_lengths.tolist(),
+        }
         logger.log_batched_dict_as_jsonl(log_data, f"train_data_step{step}.jsonl")
 
-        print("\n📊 Training Results:")
         metrics = {
             "loss": train_results["loss"].numpy(),
-            "reward": rewards.numpy(),
+            "reward": np.mean(rewards.numpy()),
             "grad_norm": train_results["grad_norm"].numpy(),
         }
-        metrics.update(train_results["all_mb_metrics"])
-        for k, v in metrics.items():
-            if k in {"lr", "reward", "global_valid_seqs", "global_valid_toks"}:
-                metrics[k] = np.mean(v).item()
-            else:
-                metrics[k] = np.sum(v).item()
+        metrics.update(reduce_microbatch_metrics(train_results["all_mb_metrics"]))
         metrics.update(rollout_metrics)
 
+        log_to_console = {
+            "loss": metrics["loss"],
+            "Avg Reward": np.mean(rewards.numpy()),
+            "Avg Generation Length": rollout_metrics["mean_gen_tokens_per_sample"],
+        }
         timing_metrics: dict[str, float] = timer.get_timing_metrics(reduction_op="sum")  # type: ignore
-
-        print(f"  • Loss: {metrics['loss']:.4f}")
-        print(f"  • Avg Reward: {np.mean(rewards.numpy()):.4f}")
-        print(
-            f"  • Mean Generation Length: {rollout_metrics['mean_gen_tokens_per_sample']:.4f}"
-        )
-
-        print("\n⏱️  Timing:")
-        # Display total time first, separately
-        total_time = timing_metrics.get("total_step_time", 0)
-        print(f"  • Total step time: {total_time:.2f}s")
-
-        # Display all other timing metrics
-        for k, v in sorted(
-            timing_metrics.items(), key=lambda item: item[1], reverse=True
-        ):
-            if k != "total_step_time":
-                percent = (v / total_time * 100) if total_time > 0 else 0
-                print(f"  • {k}: {v:.2f}s ({percent:.1f}%)")
-
-        logger.log_metrics(metrics, step + 1, prefix="train")
-        logger.log_metrics(timing_metrics, step + 1, prefix="timing/train")
+        log_metrics(log_to_console, metrics, timing_metrics, step, logger, is_val=False)
 
         timer.reset()
         step += 1
-        if step >= master_config["grpo"]["max_num_steps"]:
+        if step > master_config["grpo"]["max_num_steps"]:
             break
 
 
@@ -635,7 +571,7 @@ def validate(
     tokenizer,
     val_task_to_env: Optional[dict[str, EnvironmentInterface]],
     step: int,
-    master_config: MasterConfig,
+    master_config: GRPOMasterConfig,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Run validation on the validation dataset."""
     if val_dataloader is None:
@@ -704,21 +640,14 @@ def validate(
             print("  ⚠️ Continuing validation without displaying samples...")
 
     # Get timing metrics
+    log_to_console = {
+        "Accuracy": accuracy,
+        "Average response length:": avg_length,
+        "Samples processed:": len(total_rewards),
+    }
+
     timing_metrics = timer.get_timing_metrics(reduction_op="sum")
-    validation_time = timing_metrics.get("total_validation_time", 0)
-
-    # Print summary of validation results
-    print("\n📊 Validation Results:")
-    print(f"    • Accuracy: {accuracy:.4f}")
-    print(f"    • Average response length: {avg_length:.1f} tokens")
-    print(f"    • Samples processed: {len(total_rewards)}")
-
-    # Print timing information
-    print("\n  ⏱️  Validation Timing:")
-    validation_time = timing_metrics.get("total_validation_time", 0)
-    print(f"    • Total validation time: {validation_time:.2f}s")
-
     # Make sure to reset the timer after validation
     timer.reset()
 
-    return val_metrics, timing_metrics
+    return val_metrics, timing_metrics, log_to_console

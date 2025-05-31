@@ -34,7 +34,7 @@ from nemo_rl.distributed.ray_actor_environment_registry import (
 )
 from nemo_rl.distributed.virtual_cluster import init_ray
 from nemo_rl.environments.math_environment import MathEnvironment
-from nemo_rl.evals.eval import MasterConfig, run_env_eval, setup
+from nemo_rl.evals.eval import EvalMasterConfig, run_env_eval, setup
 from nemo_rl.models.generation import configure_generation_config
 
 
@@ -110,7 +110,7 @@ def main():
         print(f"Overrides: {override_conf}")
         config = OmegaConf.merge(config, override_conf)
 
-    config: MasterConfig = OmegaConf.to_container(config, resolve=True)
+    config: EvalMasterConfig = OmegaConf.to_container(config, resolve=True)
     print("Applied CLI overrides")
 
     # Print config

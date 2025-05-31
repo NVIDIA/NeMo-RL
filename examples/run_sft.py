@@ -21,7 +21,7 @@ from typing import Any
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
-from nemo_rl.algorithms.sft import MasterConfig, setup, sft_train
+from nemo_rl.algorithms.sft import SFTMasterConfig, setup, sft_train
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data import DataConfig, hf_datasets
 from nemo_rl.data.datasets import AllTaskProcessedDataset
@@ -163,7 +163,7 @@ def main():
         print(f"Overrides: {overrides}")
         config = parse_hydra_overrides(config, overrides)
 
-    config: MasterConfig = OmegaConf.to_container(config, resolve=True)
+    config: SFTMasterConfig = OmegaConf.to_container(config, resolve=True)
     print("Applied CLI overrides")
 
     # Print config

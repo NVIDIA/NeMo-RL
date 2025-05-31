@@ -40,7 +40,7 @@ class EvalConfig(TypedDict):
     seed: int
 
 
-class MasterConfig(TypedDict):
+class EvalMasterConfig(TypedDict):
     eval: EvalConfig
     generate: GenerationConfig
     data: MathDataConfig
@@ -54,13 +54,13 @@ class MasterConfig(TypedDict):
 
 
 def setup(
-    master_config: MasterConfig,
+    master_config: EvalMasterConfig,
     tokenizer: AutoTokenizer,
     dataset: AllTaskProcessedDataset,
 ) -> tuple[
     VllmGeneration,
     DataLoader,
-    MasterConfig,
+    EvalMasterConfig,
 ]:
     """Set up components for model evaluation.
 

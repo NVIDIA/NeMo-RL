@@ -23,7 +23,7 @@ from omegaconf import OmegaConf
 from torch.utils.data import IterableDataset
 from transformers import AutoTokenizer
 
-from nemo_rl.algorithms.grpo import MasterConfig, grpo_train, setup
+from nemo_rl.algorithms.grpo import GRPOMasterConfig, grpo_train, setup
 from nemo_rl.algorithms.utils import get_tokenizer
 from nemo_rl.data.interfaces import DatumSpec, LLMMessageLogType
 from nemo_rl.distributed.virtual_cluster import init_ray
@@ -206,7 +206,7 @@ def main():
         print(f"Overrides: {overrides}")
         config = parse_hydra_overrides(config, overrides)
 
-    config: MasterConfig = OmegaConf.to_container(config, resolve=True)
+    config: GRPOMasterConfig = OmegaConf.to_container(config, resolve=True)
     print("Applied CLI overrides")
 
     # Print config

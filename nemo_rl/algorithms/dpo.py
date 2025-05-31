@@ -11,12 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
+import math
 import warnings
 from collections import defaultdict
 from functools import partial
-from pathlib import Path
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 import numpy as np
 import torch
@@ -26,10 +25,17 @@ from transformers import AutoTokenizer
 from nemo_rl.algorithms.loss_functions import (
     DPOLossFn,
 )
-from nemo_rl.algorithms.utils import set_seed
+from nemo_rl.algorithms.utils import (
+    log_metrics,
+    reduce_microbatch_metrics,
+    save_checkpoint,
+    set_seed,
+    setup_checkpointer,
+    setup_dataloaders,
+    validate_checkpointing_config,
+)
 from nemo_rl.data import DataConfig
 from nemo_rl.data.datasets import AllTaskProcessedDataset, dpo_collate_fn
-from nemo_rl.data.interfaces import TaskDataSpec
 from nemo_rl.distributed.virtual_cluster import ClusterConfig, RayVirtualCluster
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.hf_policy import HfPolicy
@@ -37,23 +43,6 @@ from nemo_rl.models.policy.interfaces import PolicyInterface
 from nemo_rl.utils.checkpoint import CheckpointingConfig, CheckpointManager
 from nemo_rl.utils.logger import Logger, LoggerConfig
 from nemo_rl.utils.timer import Timer
-
-
-class DPOSaveState(TypedDict):
-    epoch: int  # Track current epoch
-    step: int  # Track step within current epoch
-    total_steps: int  # Track total number of steps across all epochs
-    val_loss: float
-    consumed_samples: int
-
-
-def _default_dpo_save_state() -> DPOSaveState:
-    return {
-        "epoch": 0,
-        "step": 0,
-        "total_steps": 0,
-        "consumed_samples": 0,
-    }
 
 
 class DPOConfig(TypedDict):
@@ -77,7 +66,22 @@ class DPOConfig(TypedDict):
     sft_loss_weight: float
 
 
-class MasterConfig(TypedDict):
+class DPOSaveState(TypedDict):
+    epoch: int  # Track current epoch
+    step: int  # Track step within current epoch
+    total_steps: int  # Track total number of steps across all epochs
+    val_loss: float
+
+
+def _default_dpo_save_state() -> DPOSaveState:
+    return {
+        "epoch": 1,
+        "step": 1,
+        "total_steps": 1,
+    }
+
+
+class DPOMasterConfig(TypedDict):
     policy: PolicyConfig
     data: DataConfig
     dpo: DPOConfig
@@ -90,7 +94,7 @@ class MasterConfig(TypedDict):
 # Setup & Initialization
 # =======================================================
 def setup(
-    master_config: MasterConfig,
+    master_config: DPOMasterConfig,
     tokenizer: AutoTokenizer,
     train_dataset: AllTaskProcessedDataset,
     val_dataset: AllTaskProcessedDataset,
@@ -100,88 +104,53 @@ def setup(
     StatefulDataLoader,
     StatefulDataLoader,
     DPOLossFn,
-    MasterConfig,
     Logger,
-    TaskDataSpec,
+    CheckpointManager,
     DPOSaveState,
+    DPOMasterConfig,
 ]:
     """Main entry point for running DPO algorithm.
 
     Returns:
-        Tuple of policy, cluster, dataloader, tokenizer, loss_fn, math_env, master_config, logger
+        Tuple of policy, cluster, train_dataloader, val_dataloader, loss_fn, logger, checkpointer, dpo_save_state, master_config
     """
     set_seed(master_config["dpo"]["seed"])
 
     # Extract individual configs for easier access
     policy_config = master_config["policy"]
-    data_config = master_config["data"]
     logger_config = master_config["logger"]
     cluster_config = master_config["cluster"]
+    checkpointing_config = master_config["checkpointing"]
     dpo_config = master_config["dpo"]
 
-    # ==========================
-    #         Logger
-    # ==========================
     logger = Logger(logger_config)
     logger.log_hyperparams(master_config)
 
-    # ==========================
-    #      Checkpointing
-    # ==========================
-    checkpointer = CheckpointManager(master_config["checkpointing"])
-    last_checkpoint_path = checkpointer.get_latest_checkpoint_path()
-    dpo_save_state: Optional[DPOSaveState] = checkpointer.load_training_info(
-        last_checkpoint_path
+    checkpointer, last_checkpoint_path, dpo_save_state = setup_checkpointer(
+        checkpointing_config, _default_dpo_save_state()
     )
-    # config validation checks
-    if master_config["checkpointing"]["enabled"]:
-        assert master_config["checkpointing"]["save_period"] > 0
-        assert (
-            master_config["checkpointing"]["save_period"]
-            % master_config["dpo"]["val_period"]
-            == 0
-        ), (
-            f"Checkpointing save period {master_config['checkpointing']['save_period']} "
-            f"must be a multiple of validation period {master_config['dpo']['val_period']}"
-            f", or we won't know what metric to save!"
-        )
+
+    # verify that checkpoint period is a multiple of validation period
+    validate_checkpointing_config(checkpointing_config, dpo_config)
 
     # ==========================
     #           Data
     # ==========================
     ## TODO(@ashors) reduce boilerplate and move reused code into utils
-    train_dataloader = StatefulDataLoader(
-        train_dataset,
-        batch_size=policy_config["train_global_batch_size"],
-        shuffle=True,
-        collate_fn=partial(
-            dpo_collate_fn,
-            tokenizer=tokenizer,
-            make_sequence_length_divisible_by=policy_config[
-                "make_sequence_length_divisible_by"
-            ],
-        ),
-        drop_last=True,
+    dpo_collate = partial(
+        dpo_collate_fn,
+        tokenizer=tokenizer,
+        make_sequence_length_divisible_by=policy_config[
+            "make_sequence_length_divisible_by"
+        ],
     )
-
-    if last_checkpoint_path is not None:
-        dataloader_state_dict = torch.load(
-            os.path.join(last_checkpoint_path, "train_dataloader.pt")
-        )
-        train_dataloader.load_state_dict(dataloader_state_dict)
-
-    val_dataloader = StatefulDataLoader(
+    train_dataloader, val_dataloader = setup_dataloaders(
+        train_dataset,
         val_dataset,
-        batch_size=dpo_config["val_global_batch_size"],
-        shuffle=False,
-        collate_fn=partial(
-            dpo_collate_fn,
-            tokenizer=tokenizer,
-            make_sequence_length_divisible_by=policy_config[
-                "make_sequence_length_divisible_by"
-            ],
-        ),
-        drop_last=True,
+        dpo_collate,
+        dpo_config,
+        policy_config,
+        last_checkpoint_path,
     )
 
     # ==========================
@@ -201,22 +170,9 @@ def setup(
     # ==========================
     #   Training
     # ==========================
-    print("\n▶ Setting up model...")
-    policy = HfPolicy(
-        cluster=cluster,
-        config=policy_config,
-        tokenizer=tokenizer,
-        weights_path=Path(last_checkpoint_path) / "policy" / "weights"
-        if last_checkpoint_path
-        else None,
-        optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
-        if last_checkpoint_path
-        else None,
-        init_optimizer=True,
-        init_reference_model=True,
-    )
-    loss_fn = DPOLossFn(master_config["dpo"])
-    print("  ✓ Model initialized")
+    policy = HfPolicy(cluster, policy_config, tokenizer, last_checkpoint_path)
+
+    loss_fn = DPOLossFn(dpo_config)
 
     print("\n" + "=" * 60)
     print(" " * 18 + "SETUP COMPLETE")
@@ -262,6 +218,18 @@ def add_ref_logprobs_to_data(dataloader, policy, master_config, is_val=False):
             break
 
 
+def get_dpo_save_state(
+    current_epoch, current_step, total_steps, val_metrics, train_dataloader
+):
+    dpo_save_state = {
+        "step": (current_step + 1) % len(train_dataloader),
+        "total_steps": total_steps + 1,
+        "epoch": current_epoch,
+        "val_loss": val_metrics["loss"],
+    }
+    return dpo_save_state
+
+
 # =======================================================
 # Training & Validation
 # =======================================================
@@ -271,7 +239,7 @@ def validate(
     tokenizer,
     loss_fn,
     step: int,
-    master_config: MasterConfig,
+    master_config: DPOMasterConfig,
     val_batches: int,
     val_batch_size: int,
     val_mbs: int,
@@ -325,31 +293,23 @@ def validate(
         # Calculate validation metrics
         policy.prepare_for_training()
 
-    # Get timing metrics
-    timing_metrics = timer.get_timing_metrics(reduction_op="sum")
-    validation_time = timing_metrics.get("total_validation_time", 0)
-
     if len(val_metrics) == 0:
         warnings.warn(
             "No validation metrics were collected."
             " This is likely because there were no valid samples in the validation set."
         )
+        log_to_console = {}
 
     else:
-        # Print summary of validation results
-        print("\n📊 Validation Results:")
-        print(f"    • Validation loss: {float(val_metrics['loss']):.4f}")
-        print(f"    • Validation accuracy: {float(val_metrics['accuracy']):.4f}")
-
-        # Print timing information
-        print("\n  ⏱️  Validation Timing:")
-        validation_time = timing_metrics.get("total_validation_time", 0)
-        print(f"    • Total validation time: {validation_time:.2f}s")
+        log_to_console = {
+            "loss": float(val_metrics["loss"]),
+        }
 
     # Make sure to reset the timer after validation
+    timing_metrics = timer.get_timing_metrics(reduction_op="sum")
     timer.reset()
 
-    return val_metrics, timing_metrics
+    return val_metrics, timing_metrics, log_to_console
 
 
 def dpo_train(
@@ -368,13 +328,10 @@ def dpo_train(
 
     if dpo_save_state is None:
         dpo_save_state = _default_dpo_save_state()
-        current_epoch = 0
-        current_step = 0
-        total_steps = 0
-    else:
-        current_epoch = dpo_save_state["epoch"]
-        current_step = dpo_save_state["step"]
-        total_steps = dpo_save_state["total_steps"]
+
+    current_epoch = dpo_save_state["epoch"]
+    current_step = dpo_save_state["step"]
+    total_steps = dpo_save_state["total_steps"]
 
     dpo_config = master_config["dpo"]
     # Validation configuration
@@ -383,9 +340,9 @@ def dpo_train(
     max_num_epochs = dpo_config["max_num_epochs"]
 
     # Run validation at the start if configured
-    if val_at_start and total_steps == 0:
+    if val_at_start and total_steps == 1:
         print("\n🔍 Running initial validation...")
-        val_metrics, validation_timings = validate(
+        val_metrics, timing_metrics, log_to_console = validate(
             policy,
             val_dataloader,
             tokenizer,
@@ -396,21 +353,40 @@ def dpo_train(
             val_batch_size=dpo_config["val_global_batch_size"],
             val_mbs=dpo_config["val_micro_batch_size"],
         )
-
-        logger.log_metrics(val_metrics, total_steps, prefix="validation")
-        logger.log_metrics(validation_timings, total_steps, prefix="timing/validation")
+        log_metrics(
+            log_to_console,
+            val_metrics,
+            timing_metrics,
+            0,
+            logger,
+            is_val=True,
+        )
 
     policy.prepare_for_training()
 
+    total_num_epochs = min(
+        max_num_epochs,
+        math.ceil(master_config["dpo"]["max_num_steps"] / len(train_dataloader)),
+    )
+
     while (
-        current_epoch < max_num_epochs
-        and total_steps < master_config["dpo"]["max_num_steps"]
+        current_epoch <= max_num_epochs
+        and total_steps <= master_config["dpo"]["max_num_steps"]
     ):
-        print(f"\n{'=' * 25} Epoch {current_epoch + 1}/{max_num_epochs} {'=' * 25}")
+        print(f"\n{'=' * 25} Epoch {current_epoch}/{total_num_epochs} {'=' * 25}")
+
+        remaining_num_steps = master_config["dpo"]["max_num_steps"] % len(
+            train_dataloader
+        )
+        num_steps_in_this_epoch = (
+            remaining_num_steps
+            if current_epoch == total_num_epochs
+            else len(train_dataloader)
+        )
 
         for batch in add_ref_logprobs_to_data(train_dataloader, policy, master_config):
             print(
-                f"\n{'=' * 25} Step {current_step + 1}/{min(len(train_dataloader), master_config['dpo']['max_num_steps'])} {'=' * 25}"
+                f"\n{'=' * 25} Step {current_step}/{num_steps_in_this_epoch} {'=' * 25}"
             )
             val_metrics, validation_timings = None, None
 
@@ -426,107 +402,74 @@ def dpo_train(
                     mbs=master_config["policy"]["train_micro_batch_size"] * 2,
                 )
 
-                is_last_step = total_steps + 1 >= master_config["dpo"][
-                    "max_num_steps"
-                ] or (
-                    current_epoch + 1 == max_num_epochs
-                    and current_step + 1 == len(train_dataloader)
+                is_last_step = total_steps >= master_config["dpo"]["max_num_steps"] or (
+                    current_epoch == max_num_epochs
+                    and current_step == len(train_dataloader)
                 )
 
                 # Run validation if it's a validation step
-                if is_last_step or (
-                    val_period > 0 and (total_steps + 1) % val_period == 0
-                ):
-                    val_metrics, validation_timings = validate(
+                if is_last_step or (val_period > 0 and total_steps % val_period == 0):
+                    val_metrics, timing_metrics, log_to_console = validate(
                         policy,
                         val_dataloader,
                         tokenizer,
                         loss_fn,
-                        step=total_steps + 1,
+                        step=total_steps,
                         master_config=master_config,
                         val_batches=dpo_config["val_batches"],
                         val_batch_size=dpo_config["val_global_batch_size"],
                         val_mbs=dpo_config["val_micro_batch_size"],
                     )
-                    logger.log_metrics(
-                        validation_timings, total_steps + 1, prefix="timing/validation"
-                    )
-                    logger.log_metrics(
-                        val_metrics, total_steps + 1, prefix="validation"
+                    log_metrics(
+                        log_to_console,
+                        val_metrics,
+                        timing_metrics,
+                        total_steps,
+                        logger,
+                        is_val=True,
                     )
 
                 ## Checkpointing
-                dpo_save_state["consumed_samples"] += master_config["policy"][
-                    "train_global_batch_size"
-                ]
                 if master_config["checkpointing"]["enabled"] and (
                     is_last_step
-                    or (total_steps + 1) % master_config["checkpointing"]["save_period"]
-                    == 0
-                ):  # +1 because step is 0-indexed
-                    dpo_save_state["step"] = (current_step + 1) % len(train_dataloader)
-                    dpo_save_state["total_steps"] = total_steps + 1
-                    dpo_save_state["epoch"] = current_epoch
-                    dpo_save_state["val_loss"] = val_metrics["loss"]
-                    with timer.time("checkpointing"):
-                        print(f"Saving checkpoint for step {total_steps + 1}...")
-                        checkpoint_path = checkpointer.init_tmp_checkpoint(
-                            total_steps + 1, dpo_save_state, master_config
-                        )
-                        policy.save_checkpoint(
-                            weights_path=os.path.join(
-                                checkpoint_path, "policy", "weights"
-                            ),
-                            optimizer_path=os.path.join(
-                                checkpoint_path, "policy", "optimizer"
-                            ),
-                            tokenizer_path=os.path.join(
-                                checkpoint_path, "policy", "tokenizer"
-                            ),
-                        )
-                        torch.save(
-                            train_dataloader.state_dict(),
-                            os.path.join(checkpoint_path, "train_dataloader.pt"),
-                        )
-                        checkpointer.finalize_checkpoint(checkpoint_path)
+                    or total_steps % master_config["checkpointing"]["save_period"] == 0
+                ):
+                    dpo_save_state = get_dpo_save_state(
+                        current_epoch,
+                        current_step,
+                        total_steps,
+                        val_metrics,
+                        train_dataloader,
+                    )
+                    save_checkpoint(
+                        checkpointer,
+                        master_config,
+                        dpo_save_state,
+                        total_steps,
+                        train_dataloader,
+                        policy,
+                        timer,
+                    )
 
             losses = train_results["loss"]
             metrics = {
                 "loss": train_results["loss"].numpy(),
                 "grad_norm": train_results["grad_norm"].numpy(),
             }
-            metrics.update(train_results["all_mb_metrics"])
-            for k, v in metrics.items():
-                if k in {"lr", "global_valid_seqs", "global_valid_toks"}:
-                    metrics[k] = np.mean(v).item()
-                else:
-                    metrics[k] = np.sum(v).item()
+            metrics.update(reduce_microbatch_metrics(train_results["all_mb_metrics"]))
+
+            log_to_console = {
+                "loss": float(metrics["loss"]),
+            }
             timing_metrics = timer.get_timing_metrics(reduction_op="sum")
-
-            print("\n📊 Training Results:")
-            print(f"  • Loss: {float(metrics['loss']):.4f}")
-            print("\n⏱️  Timing:")
-            # Display total time first, separately
-            total_time = timing_metrics.get("total_step_time", 0)
-            print(f"  • Total step time: {total_time:.2f}s")
-
-            # Display all other timing metrics (if any)
-            for k, v in sorted(
-                timing_metrics.items(), key=lambda item: item[1], reverse=True
-            ):
-                if k != "total_step_time":
-                    percent = (v / total_time * 100) if total_time > 0 else 0
-                    print(f"  • {k}: {v:.2f}s ({percent:.1f}%)")
-
-            logger.log_metrics(metrics, total_steps + 1, prefix="train")
-            logger.log_metrics(timing_metrics, total_steps + 1, prefix="timing/train")
+            log_metrics(log_to_console, metrics, timing_metrics, total_steps, logger)
 
             timer.reset()
             current_step += 1
             total_steps += 1
 
-            if total_steps >= master_config["dpo"]["max_num_steps"]:
+            if total_steps > master_config["dpo"]["max_num_steps"]:
                 return
 
         current_epoch += 1
-        current_step = 0  # Reset step counter for new epoch
+        current_step = 1  # Reset step counter for new epoch
