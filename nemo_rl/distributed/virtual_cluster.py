@@ -204,15 +204,39 @@ class RayVirtualCluster:
             )
         self.max_colocated_worker_groups = max_colocated_worker_groups
         self.name = name
+        self.placement_group_strategy = placement_group_strategy
+
+    def _init_placement_groups(
+        self, strategy: str = None, use_unified_pg: bool = None
+    ) -> list[PlacementGroup]:
+        """Creates placement groups based on whether cross-node model parallelism is needed.
+
+        Args:
+            strategy: Ray placement group strategy (defaults to self.placement_group_strategy)
+            use_unified_pg: If True, create a single unified placement group.
+                          If False, create per-node placement groups.
+
+        Returns:
+            List of placement groups
+        """
+        if self._node_placement_groups is not None:
+            return self._node_placement_groups
+
+        if strategy is None:
+            strategy = self.placement_group_strategy
+
+        # Add retry logic that was previously in __init__
         max_retries = int(os.environ.get("NRL_VIRTUAL_CLUSTER_MAX_RETRIES", 6))
         assert max_retries > 0, (
             f"NRL_VIRTUAL_CLUSTER_MAX_RETRIES={max_retries} must be an integer greater than 0"
         )
+
         for i in range(max_retries):
             try:
-                self._init_placement_groups(placement_group_strategy)
-                # Reaching here means we were successful
-                break
+                self._node_placement_groups = self._create_placement_groups_internal(
+                    strategy, use_unified_pg
+                )
+                return self._node_placement_groups
             except ResourceInsufficientError as e:
                 print(e)
                 print(
@@ -225,18 +249,10 @@ class RayVirtualCluster:
                 f"Maximum number of retries reached ({max_retries}). Cluster resources may be insufficient or cluster itself is highly unstable. Please check your cluster configuration and your cluster logs."
             )
 
-    def _init_placement_groups(self, strategy: str) -> list[PlacementGroup]:
-        """Creates a single placement group containing all bundles from all nodes.
-
-        Args:
-            strategy: Ray placement group strategy
-
-        Returns:
-            List with a single placement group containing all bundles
-        """
-        if self._node_placement_groups is not None:
-            return self._node_placement_groups
-
+    def _create_placement_groups_internal(
+        self, strategy: str, use_unified_pg: bool = False
+    ) -> list[PlacementGroup]:
+        """Internal method to create placement groups without retry logic."""
         # Check available resources in the Ray cluster
         cluster_resources = ray.cluster_resources()
         total_available_gpus = int(cluster_resources.get("GPU", 0))
@@ -265,43 +281,60 @@ class RayVirtualCluster:
         # num_gpus_per_bundle == 1 indicates that there is 1 GPU per process
         num_gpus_per_bundle = 1 if self.use_gpus else 0
 
-        # Create a single unified bundle list
-        all_bundles = []
-        for bundle_count in self._bundle_ct_per_node_list:
-            for _ in range(bundle_count):
-                all_bundles.append(
-                    {"CPU": num_cpus_per_bundle, "GPU": num_gpus_per_bundle}
-                )
+        placement_groups = []
+        if use_unified_pg:
+            # Create a single unified placement group for cross-node model parallelism
+            all_bundles = []
+            for bundle_count in self._bundle_ct_per_node_list:
+                for _ in range(bundle_count):
+                    all_bundles.append(
+                        {"CPU": num_cpus_per_bundle, "GPU": num_gpus_per_bundle}
+                    )
 
-        # Create a single placement group with all bundles
-        self._node_placement_groups = [
-            placement_group(
-                bundles=all_bundles, strategy=strategy, name=f"{self.name}-unified"
-            )
-        ]
+            placement_groups = [
+                placement_group(
+                    bundles=all_bundles, strategy=strategy, name=f"{self.name}-unified"
+                )
+            ]
+        else:
+            # Create per-node placement groups to respect bundle_ct_per_node_list
+            for node_idx, bundle_count in enumerate(self._bundle_ct_per_node_list):
+                if bundle_count > 0:
+                    node_bundles = [
+                        {"CPU": num_cpus_per_bundle, "GPU": num_gpus_per_bundle}
+                        for _ in range(bundle_count)
+                    ]
+                    pg = placement_group(
+                        bundles=node_bundles,
+                        strategy="PACK",  # Use PACK to keep bundles together
+                        name=f"{self.name}-node{node_idx}",
+                    )
+                    placement_groups.append(pg)
 
         # Add timeout to prevent hanging indefinitely
         try:
             ray.get(
-                [pg.ready() for pg in self._node_placement_groups], timeout=180
+                [pg.ready() for pg in placement_groups], timeout=180
             )  # 3-minute timeout
         except (TimeoutError, ray.exceptions.GetTimeoutError):
             # Clean up any created placement groups
-            for pg in self._node_placement_groups:
+            for pg in placement_groups:
                 try:
                     remove_placement_group(pg)
                 except Exception:
                     pass
-            self._node_placement_groups = None
             raise TimeoutError(
                 "Timed out waiting for placement groups to be ready. The cluster may not have enough resources "
                 "to satisfy the requested configuration, or the resources may be busy with other tasks."
             )
 
-        return self._node_placement_groups
+        return placement_groups
 
     def get_placement_groups(self) -> list[PlacementGroup]:
-        # Returns a single placement group containing all bundles.
+        # Initialize placement groups if not already created
+        if self._node_placement_groups is None:
+            self._init_placement_groups()
+
         assert self._node_placement_groups is not None, (
             "Placement groups must be initialized before calling get_placement_groups"
         )
@@ -323,7 +356,8 @@ class RayVirtualCluster:
         if not self._node_placement_groups:
             self.get_placement_groups()
 
-        # Use the first bundle in the unified placement group
+        # Use the first bundle of the first placement group
+        # This works for both unified PG and per-node PGs
         pg = self.get_placement_groups()[0]
         if pg.bundle_specs:
             # Launch port finder on the first bundle of this placement group

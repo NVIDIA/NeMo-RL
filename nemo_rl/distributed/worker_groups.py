@@ -330,12 +330,13 @@ class RayWorkerGroup:
 
             # Get placement groups
             placement_groups = self.cluster.get_placement_groups()
-            assert len(placement_groups) == 1, (
-                "Nemo-RL uses a unified placement group for all workers"
-            )
-
-            pg = placement_groups[0]
-            workers_per_group = [pg.bundle_count]
+            if len(placement_groups) == 1:
+                # Single unified placement group
+                pg = placement_groups[0]
+                workers_per_group = [pg.bundle_count]
+            else:
+                # Multiple per-node placement groups
+                workers_per_group = [pg.bundle_count for pg in placement_groups]
 
             # Determine how many workers per node/placement group
             if workers_per_node is None:
@@ -367,11 +368,10 @@ class RayWorkerGroup:
                         f"but {worker_count} workers were requested"
                     )
 
-                # Create bundle_indices for each worker (one per bundle)
-                # All in the same placement group (idx 0 for unified group)
                 for bundle_idx in range(worker_count):
                     # Each worker is its own single-element group
-                    bundle_indices_list.append((0, [bundle_idx]))
+                    # The first element is the PG index (node_idx in the context of tied workers)
+                    bundle_indices_list.append((i, [bundle_idx]))
 
         # Create workers based on the bundle_indices_list
         self._create_workers_from_bundle_indices(
@@ -403,19 +403,10 @@ class RayWorkerGroup:
         # Get all placement groups
         placement_groups = self.cluster.get_placement_groups()
 
-        assert len(placement_groups) == 1, (
-            "Nemo-RL uses a unified placement group for all workers"
-        )
-
-        for group_idx, (node_idx, local_bundle_indices) in enumerate(
-            bundle_indices_list
-        ):
+        for group_idx, (pg_idx, local_bundle_indices) in enumerate(bundle_indices_list):
             current_group = []
 
-            # Get the appropriate placement group
-            pg = placement_groups[0]
-
-            # Check if this group has multiple workers (for tensor or pipeline parallelism)
+            pg = placement_groups[pg_idx]
             is_parallel_group = len(local_bundle_indices) > 1
 
             for local_rank, bundle_idx in enumerate(local_bundle_indices):
@@ -430,7 +421,7 @@ class RayWorkerGroup:
                         "WORLD_SIZE": str(self.world_size),
                         "MASTER_ADDR": self.master_address,
                         "MASTER_PORT": str(self.master_port),
-                        "NODE_RANK": str(node_idx),
+                        "NODE_RANK": str(pg_idx),
                     }
                 )
 
@@ -438,13 +429,13 @@ class RayWorkerGroup:
                 # This ensures only one worker per group is the model owner
                 worker_bundle_indices = None
                 if local_rank == 0:
-                    worker_bundle_indices = (node_idx, local_bundle_indices)
+                    worker_bundle_indices = (pg_idx, local_bundle_indices)
 
                 # Create a descriptive name based on group structure
                 name = (
                     f"{self.name_prefix}-grp{group_idx}-{local_rank}"
                     if is_parallel_group
-                    else f"{self.name_prefix}-{node_idx}-{bundle_idx}"
+                    else f"{self.name_prefix}-{pg_idx}-{bundle_idx}"
                 )
 
                 # Calculate GPU resources
@@ -474,7 +465,7 @@ class RayWorkerGroup:
                 self._workers.append(worker)
                 self._worker_metadata.append(
                     {
-                        "node_idx": node_idx,
+                        "node_idx": pg_idx,
                         "local_rank": local_rank,
                         "global_rank": global_rank,
                         "name": name,
