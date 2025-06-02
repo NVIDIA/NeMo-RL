@@ -37,7 +37,6 @@ from nemo_rl.environments.utils import chunk_list_to_workers
 class MathEnvConfig(TypedDict):
     num_workers: int
     stop_strings: Optional[list[str]]  # Default stop strings for this env
-    parse_timeout: float  # default timeout within math-verify for parsing
 
 
 @contextlib.contextmanager
