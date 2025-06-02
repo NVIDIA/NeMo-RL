@@ -486,7 +486,11 @@ def _parallelize_model(
         )
 
     return fully_shard(
-        model, mesh=dp_mesh, mp_policy=mp_policy, offload_policy=offload_policy
+        model,
+        mesh=dp_mesh,
+        mp_policy=mp_policy,
+        offload_policy=offload_policy,
+        reshard_after_forward=False,
     )
 
 
