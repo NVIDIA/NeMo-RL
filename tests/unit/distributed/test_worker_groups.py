@@ -403,10 +403,10 @@ def test_run_all_workers_multiple_data_1d_sharding(worker_group_1d_sharding):
     multi_data = [data_for_worker0, data_for_worker1]
     common_arg = "common_arg_multi"
 
-    future_bundle = worker_group.run_all_workers_multiple_data(
+    futures = worker_group.run_all_workers_multiple_data(
         "record_call", multi_data, common_kwargs={"common": common_arg}
     )
-    results = worker_group.get_all_worker_results(future_bundle)
+    results = ray.get(futures)
     assert len(results) == 2
 
     # Check worker 0
@@ -435,26 +435,10 @@ def test_run_all_workers_multiple_data_fewer_data_than_workers(
     data_for_worker1 = SlicedDataDict({"id": 1})
     multi_data = [data_for_worker0, data_for_worker1]  # Only 2 data items
 
-    future_bundle = worker_group.run_all_workers_multiple_data(
-        "record_call", multi_data
-    )
-    results = worker_group.get_all_worker_results(future_bundle)
-    assert len(results) == 2  # Only 2 calls made
-
-    # Workers 0 and 1 should have been called
-    d0, _, _, c0 = ray.get(worker_group.workers[0].get_recorded_data.remote())
-    assert c0 == 1
-    assert d0 == data_for_worker0
-
-    d1, _, _, c1 = ray.get(worker_group.workers[1].get_recorded_data.remote())
-    assert c1 == 1
-    assert d1 == data_for_worker1
-
-    # Workers 2 and 3 should NOT have been called
-    _, _, _, c2 = ray.get(worker_group.workers[2].get_recorded_data.remote())
-    assert c2 == 0
-    _, _, _, c3 = ray.get(worker_group.workers[3].get_recorded_data.remote())
-    assert c3 == 0
+    with pytest.raises(
+        AssertionError, match="data length should be equal to the number of workers: "
+    ):
+        futures = worker_group.run_all_workers_multiple_data("record_call", multi_data)
 
 
 def test_run_all_workers_sharded_data_1d(worker_group_1d_sharding):

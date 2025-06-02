@@ -701,7 +701,7 @@ class VllmGenerationWorker:
             print(f"Error during vLLM shutdown: {e}")
             return False
 
-    def report_device_id(self) -> str:
+    def report_device_id(self) -> list[str]:
         """Report device ID from the vLLM worker."""
         assert self.llm is not None, (
             "Attempting to report device id with either an uninitialized vLLM or non-model-owner"
@@ -712,11 +712,12 @@ class VllmGenerationWorker:
                 "report_device_id cannot be used with async_engine=True. Use report_device_id_async instead."
             )
 
-        result_or_coro = self.llm.collective_rpc("report_device_id", args=tuple())
-        list_of_worker_results = result_or_coro
-        return cast(str, list_of_worker_results[0])
+        list_of_worker_results = self.llm.collective_rpc(
+            "report_device_id", args=tuple()
+        )
+        return cast(list[str], list_of_worker_results)
 
-    async def report_device_id_async(self) -> str:
+    async def report_device_id_async(self) -> list[str]:
         """Async version of report_device_id."""
         assert self.llm is not None, (
             "Attempting to report device id with either an uninitialized vLLM or non-model-owner"
@@ -736,7 +737,7 @@ class VllmGenerationWorker:
         else:
             list_of_worker_results = result_or_coro
 
-        return cast(str, list_of_worker_results[0])
+        return cast(list[str], list_of_worker_results)
 
     def update_weights_from_ipc_handles(self, ipc_handles: dict[str, Any]) -> bool:
         """Update weights from IPC handles by delegating to the vLLM Worker implementation.
@@ -959,6 +960,9 @@ class VllmGeneration(GenerationInterface):
         # Number of data parallel groups is the number of tied worker groups
         self.dp_size = self.worker_group.group_count
 
+        # Save the device uuids for the workers
+        self.device_uuids = self._report_device_id()
+
     def _get_tied_worker_bundle_indices(
         self, cluster: RayVirtualCluster
     ) -> List[Tuple[int, List[int]]]:
@@ -1053,6 +1057,22 @@ class VllmGeneration(GenerationInterface):
             )
 
         return tied_groups
+
+    def _report_device_id(self) -> list[list[str]]:
+        """Report the device ID of vllm workers."""
+        # Choose the appropriate method based on async_engine setting
+        method_name = (
+            "report_device_id_async"
+            if self.cfg["vllm_cfg"]["async_engine"]
+            else "report_device_id"
+        )
+        # Use run_all_workers_single_data for methods that don't need data
+        futures = self.worker_group.run_all_workers_single_data(
+            method_name, run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"]
+        )
+        # Wait for all futures to complete
+        results = ray.get(futures)
+        return results
 
     def generate(
         self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
@@ -1258,17 +1278,27 @@ class VllmGeneration(GenerationInterface):
         if not self.worker_group or not self.worker_group.workers:
             return False
 
+        # Choose the appropriate method based on async_engine setting
+        method_name = (
+            "update_weights_from_ipc_handles_async"
+            if self.cfg["vllm_cfg"]["async_engine"]
+            else "update_weights_from_ipc_handles"
+        )
+
+        # Only send the ipc handles required by the current worker
+        ipc_handles_list = []
+        for worker_device_uuids in self.device_uuids:
+            worker_ipc_handles = {
+                device_uuid: ipc_handles[device_uuid]
+                for device_uuid in worker_device_uuids
+            }
+            ipc_handles_list.append(worker_ipc_handles)
+
         try:
-            # Choose the appropriate method based on async_engine setting
-            method_name = (
-                "update_weights_from_ipc_handles_async"
-                if self.cfg["vllm_cfg"]["async_engine"]
-                else "update_weights_from_ipc_handles"
-            )
             # Directly pass ipc_handles to the method
-            futures = self.worker_group.run_all_workers_single_data(
+            futures = self.worker_group.run_all_workers_multiple_data(
                 method_name,
-                ipc_handles=ipc_handles,
+                data=ipc_handles_list,
                 run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"],
             )
             # Wait for all futures to complete

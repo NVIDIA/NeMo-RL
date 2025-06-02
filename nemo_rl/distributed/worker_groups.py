@@ -13,7 +13,6 @@
 # limitations under the License.
 import importlib
 import os
-import warnings
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional, Union
@@ -505,43 +504,58 @@ class RayWorkerGroup:
     def run_all_workers_multiple_data(
         self,
         method_name: str,
-        data: list[SlicedDataDict],
+        data: list[Any],
+        run_rank_0_only_axes: list[str] | None = None,
         common_kwargs: Optional[dict[str, Any]] = None,
-    ) -> MultiWorkerFuture:
+    ) -> list[ray.ObjectRef]:
         """Run a method on all workers in parallel with different data.
 
         Args:
             method_name: Name of the method to call on each worker
-            data: List of data slices to pass to workers/groups
+            data: List of data to pass to workers/groups
+            run_rank_0_only_axes: List of named axes for which only rank 0 should run the method.
             common_kwargs: Additional keyword arguments to pass to all workers
 
         Returns:
-            MultiWorkerFuture: Object containing futures and their associated worker information
+            list[ray.ObjectRef]: A list of ray futures
         """
-        # Verify that the data is a list of SlicedDataDict objects
-        if not all(isinstance(d, SlicedDataDict) for d in data):
-            warnings.warn(
-                f"Expected all elements in 'data' to be of type SlicedDataDict, but got "
-                f"{[type(d).__name__ for d in data]}. This may cause unexpected behavior. "
-                f"Please use make sure you're passing in Sharded Data to this function (and not replicated data)",
-                UserWarning,
+        if run_rank_0_only_axes is None:
+            assert len(data) == len(self.workers), (
+                "data length should be equal to the number of workers: "
+                f"data length = {len(data)}, number of workers = {len(self.workers)}"
             )
 
+        futures = []
+
+        if run_rank_0_only_axes is None:
+            run_rank_0_only_axes = []
         if common_kwargs is None:
             common_kwargs = {}
 
-        futures = []
-        for worker_id, worker in enumerate(self.workers):
-            if worker_id >= len(data):
-                break
-            method = getattr(worker, method_name)
-            futures.append(method.remote(data[worker_id], **common_kwargs))
+        data_idx = 0
+        for worker_idx, worker in enumerate(self.workers):
+            worker_coords = self.sharding_annotations.get_worker_coords(worker_idx)
 
-        # Return a MultiWorkerFuture containing both futures and worker information
-        return MultiWorkerFuture(
-            futures=futures,
-            return_from_workers=list(range(len(futures))),
+            # Determine if this worker should receive data
+            should_run = True
+            for axis in self.sharding_annotations.names:
+                if axis not in worker_coords:
+                    continue
+                if axis in run_rank_0_only_axes and worker_coords[axis] != 0:
+                    should_run = False
+                    break
+
+            if should_run:
+                method = getattr(worker, method_name)
+                futures.append(method.remote(data[data_idx], **common_kwargs))
+                data_idx += 1
+
+        assert data_idx == len(data), (
+            "data length should be equal to the number of workers started: "
+            f"data length = {len(data)}, number of workers started = {data_idx}"
         )
+
+        return futures
 
     def run_all_workers_single_data(
         self,
