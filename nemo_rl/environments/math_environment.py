@@ -18,7 +18,10 @@ from typing import Any, Optional, TypedDict
 
 import ray
 import torch
+from math_verify.errors import TimeoutException
 from math_verify.metric import math_metric
+
+# from nemo_rl.environments.math_verify_metrics import math_metric_with_timeout as math_metric
 from math_verify.parser import ExprExtractionConfig, LatexExtractionConfig
 
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
@@ -35,7 +38,8 @@ from nemo_rl.environments.utils import chunk_list_to_workers
 
 class MathEnvConfig(TypedDict):
     num_workers: int
-    stop_strings: Optional[list[str]] = None  # Default stop strings for this env
+    stop_strings: Optional[list[str]]  # Default stop strings for this env
+    parse_timeout: float  # default timeout within math-verify for parsing
 
 
 @contextlib.contextmanager
@@ -48,7 +52,7 @@ def _mute_output():
         yield
 
 
-@ray.remote(max_restarts=-1, max_task_retries=-1)
+@ray.remote
 class HFVerifyWorker:
     def __init__(self) -> None:
         logging.getLogger("math_verify").setLevel(logging.CRITICAL)
@@ -84,7 +88,10 @@ class HFVerifyWorker:
                         ret_score, _ = self.verify_func(
                             [ground_truth_parsable], [response]
                         )
-                    except Exception:
+                    # It's possible to emit a TimeoutException and that wouldn't be caught since
+                    # it actually subclasses from BaseException and math-verify itself does not
+                    # to catch it.
+                    except (Exception, TimeoutException):
                         ret_score = 0.0
 
                 results.append(float(ret_score))

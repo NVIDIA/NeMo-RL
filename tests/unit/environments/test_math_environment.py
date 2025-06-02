@@ -253,3 +253,52 @@ def test_math_exception_handling(math_env):
     # Program should not crash
     assert result.rewards.shape == (1,), "Rewards should be a tensor of shape (1,)"
     assert result.rewards[0] == 0.0, "Reward should be 0.0"
+
+
+def test_math_timeout_handling(math_env):
+    """Test MathEnvironment step with content that causes TimeoutException."""
+    # This content contains complex symbolic math that causes sympy to timeout
+    timeout_content = r"""We are given that \(x = (2 + \sqrt{3})^{1000}\), so \(n = \lfloor x \rfloor\), and \(f = x - n\). We want to find the value of \(x(1 - f)\).
+
+First, let's examine the binomial expansion of \(x = (2 + \sqrt{3})^{1000}\). Notice that:
+\[
+(2 + \sqrt{3}) = 2 + \sqrt{3} = \left(2 - (\sqrt{3})\right)^{-1}
+\]
+
+Using the binomial theorem, we can expand \(x\):
+\[
+x = \sum_{k=0}^{1000} \binom{1000}{k} (2)^{1000-k} (\sqrt{3})^k
+\]
+
+Notice that \((2 - \sqrt{3}) = -1\), so we can use this to our advantage. We can rewrite \(x - 1\) as:
+\[
+x - 1 = (2 + \sqrt{3})^{1000} - 1 = \sum_{k=0}^{1000} \binom{1000}{k} (2)^{1000-k} (\sqrt{3})^k - 1
+\]
+
+Now, let's consider \(f = x - n = (2 + \sqrt{3})^{1000} - \lfloor (2 + \sqrt{3})^{10"""
+
+    message_log_batch = [
+        [
+            {"role": "user", "content": "Solve this complex problem"},
+            {"role": "assistant", "content": timeout_content},
+        ]
+    ]
+    metadata = [{"ground_truth": "13"}]
+
+    # This should complete without hanging, even though it contains timeout-inducing content
+    result = ray.get(math_env.step.remote(message_log_batch, metadata))
+
+    # Program should not crash and should handle timeout gracefully
+    assert result.rewards.shape == (1,), "Rewards should be a tensor of shape (1,)"
+    assert result.rewards[0] == 0.0, "Reward should be 0.0 due to timeout"
+    assert len(result.observations) == 1, "Should return one observation"
+    assert result.observations[0]["role"] == "environment", (
+        "Observation should be from environment"
+    )
+    assert result.observations[0]["content"] == "Environment: incorrect", (
+        "Should be marked as incorrect due to timeout"
+    )
+    assert result.terminateds.shape == (1,), (
+        "Terminated flags should be a tensor of shape (1,)"
+    )
+    assert result.terminateds[0] == 1.0, "Terminated flag should be 1.0"
