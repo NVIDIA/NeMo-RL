@@ -20,8 +20,6 @@ import ray
 import torch
 from math_verify.errors import TimeoutException
 from math_verify.metric import math_metric
-
-# from nemo_rl.environments.math_verify_metrics import math_metric_with_timeout as math_metric
 from math_verify.parser import ExprExtractionConfig, LatexExtractionConfig
 
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
