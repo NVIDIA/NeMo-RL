@@ -207,7 +207,7 @@ class RayVirtualCluster:
         self.placement_group_strategy = placement_group_strategy
 
     def _init_placement_groups(
-        self, strategy: str = None, use_unified_pg: bool = None
+        self, strategy: str | None = None, use_unified_pg: bool | None = None
     ) -> list[PlacementGroup]:
         """Creates placement groups based on whether cross-node model parallelism is needed.
 
