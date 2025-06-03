@@ -76,6 +76,7 @@ class PolicyConfig(TypedDict):
     fsdp_offload_enabled: bool
     activation_checkpointing_enabled: bool
     refit_buffer_size_gb: int
+    enable_seq_packing: Optional[bool] = False  # Enable sequence packing
     optimizer: NotRequired[PytorchOptimizerConfig] = None
     scheduler: NotRequired[list[SinglePytorchSchedulerConfig] | SchedulerMilestones] = (
         None

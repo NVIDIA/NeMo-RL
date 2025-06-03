@@ -30,3 +30,17 @@ class DataConfig(TypedDict):
 class MathDataConfig(DataConfig):
     problem_key: str
     solution_key: str
+
+
+class BinPackingConfig(TypedDict):
+    enabled: bool
+    algorithm: str
+    prefetch_samples: int
+    collect_metrics: Optional[bool]
+
+
+class SFTDataConfig(DataConfig):
+    train_bin_packing: Optional[BinPackingConfig]
+    validation_bin_packing: Optional[BinPackingConfig]
+    shuffle_train: Optional[bool] = True
+    shuffle_val: Optional[bool] = False

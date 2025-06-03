@@ -133,16 +133,18 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
         sharded_data: list[SlicedDataDict]
         unsorted_data_indices: list[int]
         if self.use_dynamic_batches:
+            # FIXME(ahmadki): SFT needs shard_by_batch_size2 and GRPO needs shard_by_batch_size : merge both methods
             self.dynamic_batching_args["max_tokens_per_microbatch"] = self.cfg[
                 "dynamic_batching"
             ]["logprob_mb_tokens"]
-            sharded_data, unsorted_data_indices = data.shard_by_batch_size(  # type: ignore
+            sharded_data, unsorted_data_indices = data.shard_by_batch_size2(  # type: ignore
                 dp_size,
                 batch_size=None,
                 dynamic_batching_args=self.dynamic_batching_args,
             )
         else:
-            sharded_data = data.shard_by_batch_size(  # type: ignore
+            # FIXME(ahmadki): SFT needs shard_by_batch_size2 and GRPO needs shard_by_batch_size : merge both methods
+            sharded_data = data.shard_by_batch_size2(  # type: ignore
                 dp_size,
                 batch_size=None,
             )
@@ -230,13 +232,15 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
             self.dynamic_batching_args["max_tokens_per_microbatch"] = self.cfg[
                 "dynamic_batching"
             ]["train_mb_tokens"]
-            sharded_data, _ = data.shard_by_batch_size(
+            # FIXME(ahmadki): SFT needs shard_by_batch_size2 and GRPO needs shard_by_batch_size : merge both methods
+            sharded_data, _ = data.shard_by_batch_size2(
                 dp_size,
                 batch_size=batch_size,
                 dynamic_batching_args=self.dynamic_batching_args,
             )
         else:
-            sharded_data = data.shard_by_batch_size(
+            # FIXME(ahmadki): SFT needs shard_by_batch_size2 and GRPO needs shard_by_batch_size : merge both methods
+            sharded_data = data.shard_by_batch_size2(
                 dp_size,
                 batch_size=batch_size,
             )

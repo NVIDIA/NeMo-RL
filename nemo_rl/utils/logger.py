@@ -66,6 +66,175 @@ class LoggerConfig(TypedDict):
     gpu_monitoring: GPUMonitoringConfig
 
 
+def log_json(var_name: str, value, max_inline=30):
+    """Log any object in a nice formatted way with recursive handling.
+
+    Args:
+        var_name: Name of the variable being logged
+        value: The value to log
+        max_inline: Maximum length for inline representation before switching to multiline
+    """
+    import json
+    import logging
+
+    import numpy as np
+    import torch
+
+    logger = logging.getLogger(__name__)
+
+    def _format_value(obj, indent_level=0):
+        """Recursively format a value with proper indentation."""
+        indent = "  " * indent_level
+        next_indent = "  " * (indent_level + 1)
+
+        # Handle None
+        if obj is None:
+            return "null"
+
+        # Handle basic types
+        if isinstance(obj, (str, int, float, bool)):
+            return json.dumps(obj)
+
+        # Handle numpy arrays
+        if isinstance(obj, np.ndarray):
+            # For numeric arrays, show values, shape, and type
+            if obj.dtype.kind in "biufc":  # numeric types
+                values_list = obj.tolist()
+                values_json = json.dumps(values_list)
+                shape_json = json.dumps(list(obj.shape))
+                type_name = type(obj).__name__
+                return (
+                    "{"
+                    f'{next_indent}"values": {values_json},\n'
+                    f'{next_indent}"shape": {shape_json},\n'
+                    f'{next_indent}"type": "{type_name}"\n'
+                    f"{indent}"
+                    "}"
+                )
+            else:
+                # For non-numeric arrays, just show basic info
+                shape_json = json.dumps(list(obj.shape))
+                dtype_str = str(obj.dtype)
+                type_name = type(obj).__name__
+                return (
+                    "{\n"
+                    f'{next_indent}"shape": {shape_json},\n'
+                    f'{next_indent}"dtype": "{dtype_str}",\n'
+                    f'{next_indent}"type": "{type_name}"\n'
+                    f"{indent}"
+                    "}"
+                )
+
+        # Handle PyTorch tensors
+        if isinstance(obj, torch.Tensor):
+            # For numeric tensors, show values, shape, and type
+            if obj.dtype in [
+                torch.float16,
+                torch.float32,
+                torch.float64,
+                torch.int8,
+                torch.int16,
+                torch.int32,
+                torch.int64,
+                torch.uint8,
+                torch.bool,
+            ]:
+                # Convert to CPU and numpy for serialization
+                cpu_tensor = obj.detach().cpu()
+                values_list = cpu_tensor.numpy().tolist()
+                values_json = json.dumps(values_list)
+                shape_json = json.dumps(list(obj.shape))
+                type_name = type(obj).__name__
+                return (
+                    "{\n"
+                    f'{next_indent}"values": {values_json},\n'
+                    f'{next_indent}"shape": {shape_json},\n'
+                    f'{next_indent}"type": "{type_name}"\n'
+                    f"{indent}"
+                    "}"
+                )
+            else:
+                # For complex tensors, just show basic info
+                shape_json = json.dumps(list(obj.shape))
+                dtype_str = str(obj.dtype)
+                type_name = type(obj).__name__
+                return (
+                    "{\n"
+                    f'{next_indent}"shape": {shape_json},\n'
+                    f'{next_indent}"dtype": "{dtype_str}",\n'
+                    f'{next_indent}"type": "{type_name}"\n'
+                    f"{indent}"
+                    "}"
+                )
+
+        # Handle lists and tuples
+        if isinstance(obj, (list, tuple)):
+            if not obj:
+                return "[]"
+
+            # Check if we should format inline
+            if len(obj) <= 3 and all(
+                isinstance(item, (str, int, float, bool, type(None))) for item in obj
+            ):
+                try:
+                    inline_repr = json.dumps(list(obj))
+                    if len(inline_repr) <= max_inline:
+                        return inline_repr
+                except (TypeError, ValueError):
+                    pass
+
+            # Format as multiline
+            items = []
+            for item in obj:
+                formatted_item = _format_value(item, indent_level + 1)
+                items.append(f"{next_indent}{formatted_item}")
+
+            items_str = ",\n".join(items)
+            return f"[\n{items_str}\n{indent}]"
+
+        # Handle dictionaries
+        if isinstance(obj, dict):
+            if not obj:
+                return "{}"
+
+            # Check if we should format inline
+            if len(obj) <= 2 and all(
+                isinstance(v, (str, int, float, bool, type(None))) for v in obj.values()
+            ):
+                try:
+                    inline_repr = json.dumps(obj)
+                    if len(inline_repr) <= max_inline:
+                        return inline_repr
+                except (TypeError, ValueError):
+                    pass
+
+            # Format as multiline
+            items = []
+            for key, val in obj.items():
+                formatted_val = _format_value(val, indent_level + 1)
+                items.append(f'{next_indent}"{key}": {formatted_val}')
+
+            items_str = ",\n".join(items)
+            return f"{{\n{items_str}\n{indent}}}"
+
+        # Handle other objects by trying to convert to dict or string
+        if hasattr(obj, "__dict__"):
+            return _format_value(obj.__dict__, indent_level)
+
+        # Fallback to string representation
+        try:
+            return json.dumps(str(obj))
+        except (TypeError, ValueError):
+            return f'"{str(obj)}"'
+
+    # Format the main value
+    formatted_value = _format_value(value)
+
+    # Log the result
+    log_message = f"{var_name}: {formatted_value}"
+    logger.debug(log_message)
+
+
 class LoggerInterface(ABC):
     """Abstract base class for logger backends."""
 

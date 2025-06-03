@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from itertools import chain
 from typing import Any, Optional, Union
 
 import torch
@@ -143,6 +144,24 @@ def rl_collate_fn(data_batch: list[DatumSpec]) -> BatchedDataDict[Any]:
         batch_max_length=batch_max_length,
         stop_strings=stop_strings,
     )
+
+    return output
+
+
+def packed_rl_collate_fn(
+    packet_data_batch: list[list[DatumSpec]],
+) -> BatchedDataDict[Any]:
+    """Collate function for packed RL training.
+
+    This function handles packed data batches from PackedDataset.
+    It reuses the logic from rl_collate_fn but adapts it for packed data.
+    """
+    # Create a list of flattened samples to pass to rl_collate_fn
+    flattened_dataums: list[DatumSpec] = list(chain.from_iterable(packet_data_batch))
+    output = rl_collate_fn(flattened_dataums)
+    # Update the output to reflect the packed nature of the data
+    output.packed_sequence_size = [len(inner) for inner in packet_data_batch]
+
     return output
 
 

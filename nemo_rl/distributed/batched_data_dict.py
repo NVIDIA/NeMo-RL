@@ -59,12 +59,14 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
         self.micro_batch_indices = None
         self.micro_batch_lengths = None
+        self.packed_sequence_size = None
 
     @classmethod
     def from_batches(
         cls: Type[Self],
         batches: list[dict[Any, Any]],
         pad_value_dict: Optional[dict[str, int]] = None,
+        packed_sequence_size: Optional[List[int]] = None,
     ) -> Self:
         """Given a list of batches, stack the tensors/lists within and put them in a single dictionary.
 
@@ -108,6 +110,9 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 )
             stacked_dict[k] = tensor_or_list
 
+        if packed_sequence_size is not None:
+            stacked_dict.packed_sequence_size = packed_sequence_size
+
         return stacked_dict
 
     def all_gather(self, group: torch.distributed.ProcessGroup) -> Self:
@@ -115,8 +120,16 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
         If using reshard, it will treat PP as DP ranks.
         Works with data that is either tensors or string lists.
+        When using packed sequences, also gathers the packed_sequence_size information.
         """
         global_rollout_batch: Self = type(self)()
+
+        # Gather packed_sequence_size if it exists
+        if self.packed_sequence_size is not None:
+            gathered_packed_sizes = gather_jagged_object_lists(
+                self.packed_sequence_size, group=group
+            )
+            global_rollout_batch.packed_sequence_size = gathered_packed_sizes
 
         for k, value in self.data.items():
             if isinstance(value, torch.Tensor):
@@ -135,6 +148,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
         return global_rollout_batch
 
+    # FIXME(ahmadki): review after packed_sequence_size
     def chunk(self, rank: int, chunks: int) -> "SlicedDataDict":
         """Chunks a global batch into 'chunks' splits and returns the 'rank'th split batch=[A A A B B B D D E], rank=2, chunks=3 -> [D D E].
 
@@ -171,6 +185,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
         return chunked_batch
 
+    # FIXME(ahmadki): review after packed_sequence_size
     def reorder_data(self, reorded_indices: List[int]):
         """Reorders the data along the batch dimension by the given indices."""
         batch_sizes = set()
@@ -199,6 +214,107 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 sorted_v = [v[i] for i in reordered_indices]
             self.data[k] = sorted_v
 
+    # FIXME(ahmadki) merge with shard_by_batch_size
+    def shard_by_batch_size2(
+        self,
+        shards: int,
+        batch_size: Optional[int] = None,
+        allow_uneven_shards: bool = False,
+        dynamic_batching_args: Optional[DynamicBatchingArgs] = None,
+    ) -> List["SlicedDataDict"]:
+        """Shards a batch by first dividing it into chunks of size batch_size, then further dividing each chunk into shards equal parts. Finally aggregates the sub-shards by their position.
+
+        If batch_size is None, there will be no chunking beforehand (will default to the total batch size).
+        """
+        if self.packed_sequence_size is not None:
+            total_batch_size = len(self.packed_sequence_size)
+            packed_offsets = self._get_packed_offsets()
+        else:
+            sample_key = next(iter(self.data))
+            total_batch_size = self.data[sample_key].shape[0]
+            packed_offsets = None
+
+        if batch_size is None:
+            batch_size = total_batch_size
+
+        if not allow_uneven_shards:
+            assert total_batch_size % batch_size == 0, (
+                f"Total batch size ({total_batch_size}) must be divisible by batch_size ({batch_size})"
+            )
+
+        num_chunks = (
+            (total_batch_size + batch_size - 1) // batch_size
+            if allow_uneven_shards
+            else total_batch_size // batch_size
+        )
+        shard_size = (
+            (batch_size + shards - 1) // shards
+            if allow_uneven_shards
+            else batch_size // shards
+        )
+
+        aggregated_shards = [SlicedDataDict() for _ in range(shards)]
+        if self.packed_sequence_size is not None:
+            for shard_idx in range(shards):
+                for chunk_idx in range(num_chunks):
+                    packed_start = chunk_idx * batch_size + shard_idx * shard_size
+                    packed_end = chunk_idx * batch_size + (shard_idx + 1) * shard_size
+                    packed_start = min(packed_start, total_batch_size)
+                    packed_end = min(packed_end, total_batch_size)
+                    if packed_start >= packed_end:
+                        continue
+
+                    flat_start = packed_offsets[packed_start][0]
+                    flat_end = packed_offsets[packed_end - 1][1]
+                    indices = torch.arange(flat_start, flat_end)
+
+                    for k in self.data:
+                        if torch.is_tensor(self.data[k]):
+                            aggregated_shards[shard_idx].setdefault(k, []).append(
+                                self.data[k][indices]
+                            )
+                        else:
+                            aggregated_shards[shard_idx].setdefault(k, []).extend(
+                                [self.data[k][i] for i in indices]
+                            )
+
+                    aggregated_shards[shard_idx].setdefault(
+                        "packed_sequence_size", []
+                    ).extend(self.packed_sequence_size[packed_start:packed_end])
+
+            for shard in aggregated_shards:
+                for k, v in shard.items():
+                    if isinstance(v, list) and torch.is_tensor(v[0]):
+                        shard[k] = torch.cat(v)
+                shard.packed_sequence_size = shard.pop("packed_sequence_size")
+
+        else:
+            for shard_idx in range(shards):
+                for chunk_idx in range(num_chunks):
+                    shard_start = chunk_idx * batch_size + shard_idx * shard_size
+                    shard_end = chunk_idx * batch_size + (shard_idx + 1) * shard_size
+                    shard_start = min(shard_start, total_batch_size)
+                    shard_end = min(shard_end, total_batch_size)
+                    indices = torch.arange(shard_start, shard_end)
+
+                    for k in self.data:
+                        if torch.is_tensor(self.data[k]):
+                            aggregated_shards[shard_idx].setdefault(k, []).append(
+                                self.data[k][indices]
+                            )
+                        else:
+                            aggregated_shards[shard_idx].setdefault(k, []).extend(
+                                [self.data[k][i] for i in indices]
+                            )
+
+            for shard in aggregated_shards:
+                for k, v in shard.items():
+                    if isinstance(v, list) and torch.is_tensor(v[0]):
+                        shard[k] = torch.cat(v)
+
+        return aggregated_shards
+
+    # FIXME(ahmadki) merge with shard_by_batch_size2
     def shard_by_batch_size(
         self,
         shards: int,
@@ -458,6 +574,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
         return aggregated_shards
 
+    # FIXME(ahmadki): review after packed_sequence_size
     def get_batch(self, batch_idx, batch_size) -> "SlicedDataDict":
         """Slices a subbatch from the batch.
 
@@ -477,6 +594,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
 
         return batch
 
+    # FIXME(ahmadki): review after packed_sequence_size
     def slice(self, start: int, end: int) -> "SlicedDataDict":
         """Slices the batch from start to end.
 
@@ -488,10 +606,25 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             BatchedDataDict: A new BatchedDataDict containing the sliced data
         """
         sliced_batch = SlicedDataDict()
+        start_ = start
+        end_ = end
+        if self.packed_sequence_size is not None:
+            offsets = self._get_packed_offsets()
+            assert end <= len(offsets)
+            start_ = offsets[start][0]
+            end_ = offsets[end - 1][1]
+
         for k in self.data:
-            sliced_batch[k] = self.data[k][start:end]
+            sliced_batch[k] = self.data[k][start_:end_]
+        sliced_batch.packed_sequence_size = (
+            self.packed_sequence_size[start:end]
+            if self.packed_sequence_size is not None
+            else None
+        )
+
         return sliced_batch
 
+    # FIXME(ahmadki): review after packed_sequence_size
     def repeat_interleave(self, num_repeats: int) -> Self:
         """Repeats the batch num_repeats times.
 
@@ -511,17 +644,19 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 ]
         return repeated_batch
 
+    # FIXME(ahmadki): review after packed_sequence_size
     def truncate_tensors(self, dim: int, truncated_len: int):
         """Truncates tensors in this dict of a given dim to a given length."""
         for k, v in self.items():
             if torch.is_tensor(v) and len(v.shape) >= dim + 1:
                 self.data[k] = torch.narrow(v, dim=dim, start=0, length=truncated_len)
 
+    # FIXME(ahmadki): review after packed_sequence_size
     def make_microbatch_iterator_with_dynamic_shapes(
         self,
         sequence_dim: int = 1,
     ) -> Iterator["SlicedDataDict"]:
-        """Makes an interator that yields microbatchs of dynamic batch and sequence sizes.
+        """Makes an iterator that yields microbatchs of dynamic batch and sequence sizes.
 
         Args:
             sequence_dim: the index of the sequence dim for all tensors in the data dict
@@ -542,6 +677,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
             mb.truncate_tensors(dim=sequence_dim, truncated_len=seqlen)
             yield mb
 
+    # FIXME(ahmadki): review after packed_sequence_size
     def make_microbatch_iterator(
         self, microbatch_size: int
     ) -> Iterator["SlicedDataDict"]:
@@ -553,14 +689,50 @@ class BatchedDataDict(UserDict, Generic[DictT]):
         for i in range(0, bsize, microbatch_size):
             yield self.slice(i, i + microbatch_size)
 
+    def _get_packed_offsets(self) -> List[tuple[int, int]]:
+        """Compute slice indices for each packed sequence group."""
+        assert self.packed_sequence_size is not None
+        offsets = []
+        start = 0
+        for size in self.packed_sequence_size:
+            end = start + size
+            offsets.append((start, end))
+            start = end
+        return offsets
+
     @property
     def size(self) -> int:
-        """Get the batch size of the batch."""
+        """Get the batch size of the batch.
+
+        When packed_sequence_size is provided, this returns the number of packed sequences
+        (i.e., the logical batch size), not the total number of samples.
+        """
+        if not self.data:
+            return 0
+
+        if self.packed_sequence_size is not None:
+            # Return the number of packed sequences (logical batch size)
+            return len(self.packed_sequence_size)
+
         # Get the first key and use its size as the batch size
         # This assumes all keys have the same batch size
         key = next(iter(self.data))
+        if not torch.is_tensor(self.data[key]):
+            return len(self.data[key])
+        return self.data[key].shape[0]  # type: ignore # it's a tensor here
+
+    @property
+    def total_samples(self) -> int:
+        """Get the total number of samples in the batch.
+
+        This is different from size when using packed sequences - size returns the number
+        of packed sequences, while total_samples returns the actual number of individual samples.
+        """
         if not self.data:
             return 0
+
+        # Get the first key and use its size as the total sample count
+        key = next(iter(self.data))
         if not torch.is_tensor(self.data[key]):
             return len(self.data[key])
         return self.data[key].shape[0]  # type: ignore # it's a tensor here
@@ -572,6 +744,7 @@ class BatchedDataDict(UserDict, Generic[DictT]):
                 self.data[k] = v.to(device)
         return self
 
+    # FIXME(ahmadki): review after packed_sequence_size
     def select_indices(self, indices: Union[list[int], torch.Tensor]) -> Self:
         """Selects specific rows from the batch based on indices.
 

@@ -111,14 +111,15 @@ class ClippedPGLossFn(LossFunction):
         data: BatchedDataDict[ClippedPGLossDataDict],
         global_valid_seqs: torch.Tensor,
         global_valid_toks: torch.Tensor,
+        max_seq_len: int | None = None,
     ) -> tuple[torch.Tensor, dict]:
         """Clipped Policy Gradient RL loss function."""
-        token_mask = data["token_mask"][:, 1:]
+        token_mask = data["token_mask"][:, 1:max_seq_len]
         sample_mask = data["sample_mask"]
-        advantages = data["advantages"][:, 1:]
-        prev_logprobs = data["prev_logprobs"][:, 1:]
-        generation_logprobs = data["generation_logprobs"][:, 1:]
-        reference_policy_logprobs = data["reference_policy_logprobs"][:, 1:]
+        advantages = data["advantages"][:, 1:max_seq_len]
+        prev_logprobs = data["prev_logprobs"][:, 1:max_seq_len]
+        generation_logprobs = data["generation_logprobs"][:, 1:max_seq_len]
+        reference_policy_logprobs = data["reference_policy_logprobs"][:, 1:max_seq_len]
 
         mask = token_mask * sample_mask.unsqueeze(-1)
 
@@ -136,7 +137,7 @@ class ClippedPGLossFn(LossFunction):
 
         if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
             curr_logprobs = get_logprobs_from_vocab_parallel_logits(
-                next_token_logits, data["input_ids"]
+                next_token_logits, data["input_ids"][:, :max_seq_len]
             )
         else:
             next_token_logits_wo_last = next_token_logits[
@@ -145,7 +146,7 @@ class ClippedPGLossFn(LossFunction):
             next_token_logprobs = torch.nn.functional.log_softmax(
                 next_token_logits_wo_last, dim=-1
             )
-            next_tokens = data["input_ids"][:, 1:].cuda()  # Skip first token
+            next_tokens = data["input_ids"][:, 1:max_seq_len].cuda()  # Skip first token
             curr_logprobs = next_token_logprobs.gather(
                 dim=-1, index=next_tokens.unsqueeze(-1)
             ).squeeze(-1)
@@ -296,10 +297,11 @@ class NLLLoss(LossFunction):
         global_valid_toks: Tensor,
         dpo_loss: bool = False,
         dpo_average_log_probs: bool = False,
+        max_seq_len: int | None = None,
     ) -> tuple[Tensor, dict[str, Any]]:
         # logits shape: [batch_size, seq_len, vocab_size]
         # Get the next token logits for each position
-        token_mask = data["token_mask"][:, 1:]
+        token_mask = data["token_mask"][:, 1:max_seq_len]
         sample_mask = data["sample_mask"]
         mask = token_mask * sample_mask.unsqueeze(-1)
 
@@ -308,10 +310,10 @@ class NLLLoss(LossFunction):
         # Gather the logprobs for the actual next tokens
         if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
             token_logprobs = get_logprobs_from_vocab_parallel_logits(
-                next_token_logits, data["input_ids"]
+                next_token_logits, data["input_ids"][:, :max_seq_len]
             )
         else:
-            next_tokens = data["input_ids"][:, 1:].cuda()  # Skip first token
+            next_tokens = data["input_ids"][:, 1:max_seq_len].cuda()  # Skip first token
             next_token_logprobs = torch.nn.functional.log_softmax(
                 next_token_logits, dim=-1
             )
