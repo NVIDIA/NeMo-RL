@@ -1,7 +1,7 @@
 # GRPO Algorithm Configuration
 grpo:
-  num_prompts_per_step: 32
-  num_generations_per_prompt: 16
+  num_prompts_per_step: 16
+  num_generations_per_prompt: 8
   max_rollout_turns: 1 # for multi-turn rollouts. Math Environments just have 1 turn (answering the question)
   max_num_steps: 1000000
   normalize_rewards: true
@@ -46,7 +46,7 @@ policy:
   dtensor_cfg:
     enabled: true
     cpu_offload: False
-    sequence_parallel: true
+    sequence_parallel: False
     activation_checkpointing: false
     tensor_parallel_size: 1
     custom_parallel_plan: null
