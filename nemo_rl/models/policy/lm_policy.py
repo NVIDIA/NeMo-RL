@@ -119,10 +119,9 @@ class Policy(ColocatablePolicyInterface, GenerationInterface):
 
         if config["dynamic_batching"]["enabled"]:
             assert (
-                config["dtensor_cfg"]["enabled"] or config["training_backend"] == "megatron"
-            ), (
-                "Dynamic batch is only supported for DTensor policy or Megatron policy."
-            )
+                config["dtensor_cfg"]["enabled"]
+                or config["training_backend"] == "megatron"
+            ), "Dynamic batch is only supported for DTensor policy or Megatron policy."
             self.use_dynamic_batches = True
             self.dynamic_batching_args: DynamicBatchingArgs = {
                 "input_key": "input_ids",

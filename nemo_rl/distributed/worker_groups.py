@@ -186,33 +186,29 @@ class RayWorkerBuilder:
         self.args = args
         self.kwargs = kwargs
 
-    def __call__(
+    def create_worker_async(
         self,
         placement_group: PlacementGroup,
         placement_group_bundle_index: int,
         num_gpus: float | int,
         bundle_indices: Optional[tuple[int, list[int]]] = None,
         **extra_options: Any,
-    ) -> ray.actor.ActorHandle:
-        """Create a Ray worker with the specified configuration.
+    ) -> tuple[ray.ObjectRef, ray.actor.ActorHandle]:
+        """Create a Ray worker asynchronously, returning futures.
 
-        Order of precedence for worker options configuration (from lowest to highest):
-        1. Options passed by the user to __call__ (extra_options)
-        2. Options required by the worker via configure_worker (may override user options with warning)
-        3. Options set by the RayWorkerBuilder.__call__ (specifically scheduling strategy)
-
-        If the worker needs to override user-provided options, it should log a warning
-        to inform the user about the change and the reason for it.
+        This method returns immediately with futures that can be awaited later.
 
         Args:
             placement_group: Ray placement group for resource allocation
             placement_group_bundle_index: Index of the bundle in the placement group
             num_gpus: Number of GPUs to allocate to this worker (can be fractional)
             bundle_indices: Tuple of (node_idx, local_bundle_indices) for tensor parallelism (if applicable)
-            extra_options: Additional options to pass to the Ray actor (may be overridden by actor's configure_worker(...) method)
+            extra_options: Additional options to pass to the Ray actor
 
         Returns:
-            A Ray actor reference to the created worker
+            Tuple of (worker_future, initializer_actor):
+                - worker_future: A Ray ObjectRef that will resolve to the worker actor
+                - initializer_actor: The initializer actor (needed to prevent GC)
         """
         # Set up worker arguments and resources
         options = deepcopy(extra_options)
@@ -241,15 +237,58 @@ class RayWorkerBuilder:
         isolated_initializer = self.IsolatedWorkerInitializer.options(  # type: ignore # @ray.remote call
             **initializer_options
         ).remote(self.ray_actor_class_fqn, *self.args, **self.kwargs)
-        worker = ray.get(
-            isolated_initializer.create_worker.remote(
-                placement_group,
-                placement_group_bundle_index,
-                num_gpus,
-                bundle_indices,
-                **options,
-            )
+
+        # Return the future and the initializer actor
+        worker_future = isolated_initializer.create_worker.remote(
+            placement_group,
+            placement_group_bundle_index,
+            num_gpus,
+            bundle_indices,
+            **options,
         )
+
+        return worker_future, isolated_initializer
+
+    def __call__(
+        self,
+        placement_group: PlacementGroup,
+        placement_group_bundle_index: int,
+        num_gpus: float | int,
+        bundle_indices: Optional[tuple[int, list[int]]] = None,
+        **extra_options: Any,
+    ) -> ray.actor.ActorHandle:
+        """Create a Ray worker with the specified configuration.
+
+        Order of precedence for worker options configuration (from lowest to highest):
+        1. Options passed by the user to __call__ (extra_options)
+        2. Options required by the worker via configure_worker (may override user options with warning)
+        3. Options set by the RayWorkerBuilder.__call__ (specifically scheduling strategy)
+
+        If the worker needs to override user-provided options, it should log a warning
+        to inform the user about the change and the reason for it.
+
+        Args:
+            placement_group: Ray placement group for resource allocation
+            placement_group_bundle_index: Index of the bundle in the placement group
+            num_gpus: Number of GPUs to allocate to this worker (can be fractional)
+            bundle_indices: Tuple of (node_idx, local_bundle_indices) for tensor parallelism (if applicable)
+            extra_options: Additional options to pass to the Ray actor (may be overridden by actor's configure_worker(...) method)
+
+        Returns:
+            A Ray actor reference to the created worker
+        """
+        # Use the async method and then block on the result
+        worker_future, isolated_initializer = self.create_worker_async(
+            placement_group,
+            placement_group_bundle_index,
+            num_gpus,
+            bundle_indices,
+            **extra_options,
+        )
+
+        # Block to get the worker
+        worker = ray.get(worker_future)
+
         # We hold onto a reference to the initializer actor to avoid gc (would kill the child, 'real' actor)
         worker._RAY_INITIALIZER_ACTOR_REF_TO_AVOID_GC = isolated_initializer
         return worker
@@ -362,6 +401,10 @@ class RayWorkerGroup:
         self.world_size = sum(len(indices) for _, indices in bundle_indices_list)
         global_rank = 0
 
+        # Collect all async creation calls
+        worker_futures = []
+        worker_info = []  # Store metadata for each worker
+
         for group_idx, (node_idx, local_bundle_indices) in enumerate(
             bundle_indices_list
         ):
@@ -410,8 +453,8 @@ class RayWorkerGroup:
                 runtime_env = {"env_vars": env_vars}
                 extra_options = {"runtime_env": runtime_env, "name": name}
 
-                # Create the worker
-                worker = remote_worker_builder(
+                # start worker creation asynchronously
+                worker_future, initializer = remote_worker_builder.create_worker_async(
                     placement_group=pg,
                     placement_group_bundle_index=bundle_idx,
                     num_gpus=num_gpus,
@@ -419,25 +462,56 @@ class RayWorkerGroup:
                     **extra_options,
                 )
 
-                # Store worker metadata
-                worker_idx = len(self._workers)
-                current_group.append(worker_idx)
-                self.worker_to_tied_group_index[worker_idx] = group_idx
-                self._workers.append(worker)
-                self._worker_metadata.append(
+                # Store the future and metadata
+                worker_idx = len(worker_futures)
+                worker_futures.append((worker_future, initializer))
+                worker_info.append(
                     {
+                        "group_idx": group_idx,
+                        "worker_idx": worker_idx,
                         "node_idx": node_idx,
                         "local_rank": local_rank,
                         "global_rank": global_rank,
                         "name": name,
                         "bundle_indices": worker_bundle_indices,
-                        "tied_group_idx": group_idx,
                     }
                 )
+                current_group.append(worker_idx)
 
                 global_rank += 1
 
-            # Add this tied group to our list
+        print(
+            f"Waiting for {len(worker_futures)} workers to finish initializing...",
+            flush=True,
+        )
+        worker_refs = [future for future, _ in worker_futures]
+        workers = ray.get(worker_refs)
+
+        for idx, (worker, (_, initializer)) in enumerate(zip(workers, worker_futures)):
+            worker._RAY_INITIALIZER_ACTOR_REF_TO_AVOID_GC = initializer
+            self._workers.append(worker)
+
+            # Get the corresponding metadata
+            info = worker_info[idx]
+            self._worker_metadata.append(
+                {
+                    "node_idx": info["node_idx"],
+                    "local_rank": info["local_rank"],
+                    "global_rank": info["global_rank"],
+                    "name": info["name"],
+                    "bundle_indices": info["bundle_indices"],
+                    "tied_group_idx": info["group_idx"],
+                }
+            )
+
+            self.worker_to_tied_group_index[idx] = info["group_idx"]
+
+        # Reconstruct tied worker groups
+        for group_idx, (_, local_bundle_indices) in enumerate(bundle_indices_list):
+            current_group = []
+            for idx, info in enumerate(worker_info):
+                if info["group_idx"] == group_idx:
+                    current_group.append(idx)
             self.tied_workers_groups.append(current_group)
 
     @property
@@ -639,7 +713,9 @@ class RayWorkerGroup:
                 # If this worker doesn't need data:
                 if make_dummy_calls_to_free_axes:
                     # If make_dummy_calls_to_free_axes is True, just call the method with None
-                    future = getattr(worker, method_name).remote(data=None, **common_kwargs)
+                    future = getattr(worker, method_name).remote(
+                        data=None, **common_kwargs
+                    )
                     futures.append(future)
                     called_workers.append(worker_idx)
                 else:

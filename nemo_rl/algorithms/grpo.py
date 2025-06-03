@@ -47,8 +47,8 @@ from nemo_rl.models.generation.interfaces import (
 )
 from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy import PolicyConfig
-from nemo_rl.models.policy.lm_policy import Policy
 from nemo_rl.models.policy.interfaces import ColocatablePolicyInterface
+from nemo_rl.models.policy.lm_policy import Policy
 from nemo_rl.utils.checkpoint import CheckpointingConfig, CheckpointManager
 from nemo_rl.utils.logger import (
     Logger,
@@ -232,7 +232,7 @@ def setup(
     backend = generation_config["backend"]
     generation_config["model_name"] = policy_config["model_name"]  # Needed for vLLM
 
-    if backend == "hf":
+    if backend in ["hf", "megatron"]:
         policy_generation = None
         print(f"  ✓ Using HF backend for generation with {policy_config['model_name']}")
     elif backend == "vllm":
@@ -245,16 +245,19 @@ def setup(
             f"  ✓ Using vLLM backend for generation with {policy_config['model_name']}"
         )
 
+    if last_checkpoint_path:
+        weights_path = Path(last_checkpoint_path) / "policy" / "weights"
+        optimizer_path = Path(last_checkpoint_path) / "policy" / "optimizer"
+    else:
+        weights_path = None
+        optimizer_path = None
+
     policy = Policy(
         cluster=cluster,
         config=policy_config,
         tokenizer=tokenizer,
-        weights_path=Path(last_checkpoint_path) / "policy" / "weights"
-        if last_checkpoint_path
-        else None,
-        optimizer_path=Path(last_checkpoint_path) / "policy" / "optimizer"
-        if last_checkpoint_path
-        else None,
+        weights_path=weights_path,
+        optimizer_path=optimizer_path,
         init_optimizer=True,
     )
 
@@ -593,7 +596,7 @@ def grpo_train(
         }
         metrics.update(train_results["all_mb_metrics"])
         for k, v in metrics.items():
-            if k in {"lr", "reward", "global_valid_seqs", "global_valid_toks"}:
+            if k in {"lr", "wd", "reward", "global_valid_seqs", "global_valid_toks"}:
                 metrics[k] = np.mean(v).item()
             else:
                 metrics[k] = np.sum(v).item()

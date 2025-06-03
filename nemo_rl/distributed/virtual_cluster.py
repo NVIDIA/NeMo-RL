@@ -47,7 +47,7 @@ class PY_EXECUTABLES:
 
     # Use NeMo-RL direct dependencies and vllm.
     VLLM = "uv run --locked --extra vllm"
-    
+
     # Megatron-Core (and NeMo deps)
     MCORE = "uv run --extra mcore --no-build-isolation"
 

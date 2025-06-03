@@ -35,6 +35,7 @@ dependencies = [
     "torchdata",
     "nvidia-ml-py",
     "hydra-core",
+    "debugpy",
 ]
 
 [project.optional-dependencies]
