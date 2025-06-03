@@ -25,7 +25,12 @@ from torch import nn
 from torch.distributed.fsdp import (
     FSDPModule,
 )
-from torch.distributed.tensor import DTensor, Shard
+from torch.distributed.tensor import DTensor
+from torch.distributed.tensor.experimental import context_parallel
+from torch.distributed.tensor.experimental._attention import (
+    context_parallel_unshard,
+    set_rotate_method,
+)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.integrations.accelerate import find_tied_parameters
 
@@ -172,6 +177,7 @@ class DTensorPolicyWorker:
 
         tp_size = self.cfg["dtensor_cfg"]["tensor_parallel_size"]
         cp_size = self.cfg["dtensor_cfg"]["context_parallel_size"]
+        print(f"tp_size: {tp_size}, cp_size: {cp_size}, world_size: {world_size}")
         dp_size = world_size // tp_size // cp_size
         assert world_size == dp_size * tp_size * cp_size, (
             f"World size({world_size}) must equal to dp_size({dp_size}) * tp_size({tp_size}) * cp_size({cp_size}) to use DTensor"
@@ -293,11 +299,7 @@ class DTensorPolicyWorker:
             cp_no_restore_buffers (Set[torch.Tensor]): The no restore buffers for context parallel.
             cp_rotate_method (str): The rotation method for context parallel, such as "allgather" or "addtoall".
         """
-        from torch.distributed.tensor.experimental import context_parallel
-
-        # TODO: uncomment this when torch.distributed.tensor.experimental._attention.set_rotate_method is available
-        # from torch.distributed.tensor.experimental._attention import set_rotate_method
-        # set_rotate_method(cp_rotate_method)
+        set_rotate_method(cp_rotate_method)
         return context_parallel(
             cp_mesh,
             buffers=cp_buffers,
@@ -460,10 +462,13 @@ class DTensorPolicyWorker:
                             seq_len, device=input_ids.device
                         ).repeat(batch_size, 1)
 
-                    cp_buffers = (
-                        [input_ids, attention_mask_input_all_ones, position_ids]
-                        if self.cp_size > 1
-                        else []
+                    cp_buffers = [input_ids, position_ids] if self.cp_size > 1 else []
+
+                    print(
+                        "Out train input ids:",
+                        mb["input_ids"].shape,
+                        id(input_ids),
+                        id(mb["input_ids"]),
                     )
                     # Create context parallel context
                     context_parallel_ctx = (
@@ -479,6 +484,12 @@ class DTensorPolicyWorker:
                     )
 
                     with self.get_train_context()(context_parallel_ctx):
+                        print(
+                            "In train input ids:",
+                            input_ids.shape,
+                            id(input_ids),
+                            id(mb["input_ids"]),
+                        )
                         with torch.autocast(device_type="cuda", dtype=self.dtype):
                             outputs = self.model(
                                 input_ids=input_ids,
@@ -500,34 +511,37 @@ class DTensorPolicyWorker:
                         ):
                             logits.div_(self.cfg["generation"]["temperature"])
 
+                        print("Before train input ids:", mb["input_ids"].shape)
+
                         if self.cp_size > 1:
-                            # When cp enabled, create DTensor for each mb data tensor to see full sequence during loss calculation.
+                            # Unshard tensors, if we only use token level loss, we don't need to unshard the logits someday.
                             for tensor_name in mb:
                                 tensor = mb[tensor_name]
                                 for buffer in cp_buffers:
                                     if tensor is buffer:
-                                        mb[tensor_name] = DTensor.from_local(
-                                            tensor,
-                                            device_mesh=self.cp_mesh,
-                                            placements=[Shard(sequence_dim)],
-                                        )
+                                        print(f"Converting {tensor_name} to DTensor:")
+                                        mb[tensor_name] = context_parallel_unshard(
+                                            self.cp_mesh, [tensor], [sequence_dim]
+                                        )[0]
                                         break
 
-                            # TP-parallel logits
-                            logits = DTensor.from_local(
-                                logits.to_local()
-                                if isinstance(logits, DTensor)
-                                else logits,
-                                device_mesh=self.device_mesh["cp", "tp"],
-                                placements=[
-                                    Shard(sequence_dim),
-                                    Shard(len(logits.shape) - 1),
-                                ],
-                            )
+                            logits = context_parallel_unshard(
+                                self.cp_mesh, [logits], [sequence_dim]
+                            )[0]
+                            print("logits.shape:", logits.shape, "type:", type(logits))
 
+                        print("logits.shape:", logits.shape, "type:", type(logits))
+                        print(
+                            "DTensor train input ids:",
+                            mb["input_ids"].shape,
+                            type(mb["input_ids"]),
+                        )
                         loss, loss_metrics = loss_fn(
                             logits, mb, global_valid_seqs, global_valid_toks
                         )
+
+                        print(f"loss: {loss.mean()}")
+                        assert loss < 5.0, f"Loss is {loss}"
 
                         ## scale by the number of global batches so we get the correct
                         ## value when summing metrics across all microbatches
