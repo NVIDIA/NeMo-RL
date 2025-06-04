@@ -27,6 +27,7 @@ from torch.distributed.fsdp import (
     FullyShardedDataParallel,
     MixedPrecision,
 )
+from torch.distributed.fsdp.api import ShardedStateDictConfig, StateDictType
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
 from transformers import AutoModelForCausalLM, PreTrainedTokenizerBase
 from transformers.integrations.accelerate import find_tied_parameters
@@ -818,8 +819,18 @@ class FSDP1PolicyWorker:
         return get_device_uuid(device_idx)
 
     @torch.no_grad()
-    def prepare_weights_for_ipc(self) -> list[tuple[str, int]]:
-        from torch.distributed.fsdp.api import ShardedStateDictConfig, StateDictType
+    def prepare_weights_for_ipc(self) -> tuple[list[tuple[str, int]], float]:
+        """Prepare the weights for IPC.
+
+        This function:
+        - Prepares the state_dict of the model.
+        - Collects the info for streaming multiple tensors.
+
+        Returns:
+            list: The list of parameters sizes.
+            float: The total available memory in bytes.
+        """
+        from nemo_rl.utils.nvml import get_free_memory_bytes
 
         # If the model is not FSDP, then we need to manually move it to the GPU
         # For an FSDP model, model.state_dict() will move the params to the GPU
@@ -837,12 +848,20 @@ class FSDP1PolicyWorker:
 
         # Collect info for streaming multiple tensors
         state_dict_info = []
-        for name, tensor in self._held_sharded_state_dict_reference.items():  # type: ignore
+        for name, tensor in self._held_sharded_state_dict_reference.items():
             # dtensor's numel will return complete tensor instead of only local tensor
             size_in_bytes = tensor.element_size() * tensor.numel()
             state_dict_info.append((name, size_in_bytes))
 
-        return state_dict_info
+        # Collect current available memory for refit
+        ## Get current device index from torch
+        device_idx = torch.cuda.current_device()
+        ## Get device free memory using NVML
+        total_available_bytes = get_free_memory_bytes(device_idx)
+        ## Use 80% of the free memory for safety
+        total_available_bytes *= 0.8
+
+        return state_dict_info, total_available_bytes
 
     @torch.no_grad()
     def get_weights_ipc_handles(self, keys: list[str]) -> dict[str, Any]:
@@ -852,6 +871,11 @@ class FSDP1PolicyWorker:
         assert self._held_sharded_state_dict_reference is not None, (
             "prepare_weights_for_ipc must be called before get_weights_ipc_handles"
         )
+
+        # Clean up the held tensors to reduce peak memory
+        if self._held_streamed_param_reference is not None:
+            del self._held_streamed_param_reference
+            self._held_streamed_param_reference = None
 
         converted_params = {}
         for key in keys:

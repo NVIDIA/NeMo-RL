@@ -75,7 +75,6 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
         "precision": "float32",
         "fsdp_offload_enabled": False,
         "activation_checkpointing_enabled": False,
-        "refit_buffer_size_gb": 4,
         "optimizer": {
             "name": "torch.optim.AdamW",
             "kwargs": {
@@ -312,10 +311,7 @@ async def test_vllm_policy_generation_async(
         print("creating hf policy...")
 
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
-
-        refit_policy_generation(
-            hf_policy, async_policy, hf_config["refit_buffer_size_gb"]
-        )
+        refit_policy_generation(hf_policy, async_policy)
 
         outputs = async_policy.generate_async(test_input_data)
         # Validate outputs format
@@ -410,7 +406,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
     print("refitting vllm policy...")
-    refit_policy_generation(hf_policy, policy, hf_config["refit_buffer_size_gb"])
+    refit_policy_generation(hf_policy, policy)
 
     try:
         # Generate with duplicated prompts
@@ -566,9 +562,7 @@ def test_vllm_generation_with_hf_training(
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print("refitting vllm policy...")
-        refit_policy_generation(
-            hf_policy, vllm_policy, hf_config["refit_buffer_size_gb"]
-        )
+        refit_policy_generation(hf_policy, vllm_policy)
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
@@ -846,9 +840,9 @@ def test_vllm_weight_update_and_prefix_cache_reset(
         )
 
         print("Updating vLLM weights from HF policy...")
-        param_keys = hf_policy.prepare_weights_for_ipc()
-        for key, _ in param_keys:
-            ipc_handles = hf_policy.get_weights_ipc_handles([key])
+        grouped_param_keys = hf_policy.prepare_weights_for_ipc()
+        for keys in grouped_param_keys:
+            ipc_handles = hf_policy.get_weights_ipc_handles(keys)
             update_success = vllm_policy.update_weights(ipc_handles)
             assert update_success, "Weight update should succeed"
         print("vLLM weights successfully updated.")
@@ -920,7 +914,7 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     # reset peak memory stats before refit
     workers = hf_policy.worker_group.workers
     ray.get([w.reset_peak_memory_stats.remote() for w in workers])
-    refit_policy_generation(hf_policy, vllm_policy, refit_buffer_size_gb=1)
+    refit_policy_generation(hf_policy, vllm_policy, _refit_buffer_size_gb=1)
     gpu_infos = ray.get([w.get_gpu_info.remote() for w in workers])
 
     # Gather memory stats
@@ -987,11 +981,7 @@ def test_vllm_generation_with_stop(
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print("refitting vllm policy...")
-        refit_policy_generation(
-            hf_policy,
-            vllm_generation,
-            hf_config["refit_buffer_size_gb"],
-        )
+        refit_policy_generation(hf_policy, vllm_generation)
 
     # test generate
     outputs = vllm_generation.generate(test_input_data, greedy=True)
@@ -1095,7 +1085,6 @@ def test_vllm_refit_non_collocated_handles_update_failure(
                 refit_policy_generation(
                     hf_policy_instance,
                     vllm_policy_instance,
-                    hf_config["refit_buffer_size_gb"],
                 )
         print("RuntimeError during refit correctly caught.")
 
