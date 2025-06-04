@@ -742,7 +742,7 @@ class VllmGenerationWorker:
                 "report_device_id_async can only be used with async_engine=True. Use report_device_id instead."
             )
 
-        result_or_coro = self.llm.collective_rpc("report_device_id", args=tuple())
+        result_or_coro = await self.llm.collective_rpc("report_device_id", args=tuple())
 
         if asyncio.iscoroutine(result_or_coro):
             list_of_worker_results = await result_or_coro
@@ -809,7 +809,7 @@ class VllmGenerationWorker:
                     "update_weights_from_ipc_handles_async can only be used with async_engine=True. Use update_weights_from_ipc_handles instead."
                 )
 
-            result_or_coro = self.llm.collective_rpc(
+            result_or_coro = await self.llm.collective_rpc(
                 "update_weights_from_ipc_handles", args=(ipc_handles,)
             )
 
@@ -863,7 +863,7 @@ class VllmGenerationWorker:
             )
 
         # Reset the prefix cache to ensure that prefix cache is not reused after weights are updated
-        self.llm.reset_prefix_cache()
+        await self.llm.reset_prefix_cache()
         await self.llm.sleep(level=1)
 
         gc.collect()
