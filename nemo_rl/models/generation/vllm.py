@@ -532,16 +532,18 @@ class VllmGenerationWorker:
             request_id_to_context[request_id] = context_for_this_task
             task_futures.append(task)
 
-        for task_future_completed in asyncio.as_completed(task_futures):
-            try:
-                vllm_output_single = await task_future_completed
-            except Exception as e:
-                print(f"Error in a generation task: {e}")
-                import traceback
+        # Wait for all tasks to finish in the original request order to preserve deterministic
+        # alignment between inputs and outputs.
+        finished_task_results = await asyncio.gather(
+            *task_futures, return_exceptions=True
+        )
 
-                traceback.print_exc()
+        for i, task_result in enumerate(finished_task_results):
+            if isinstance(task_result, Exception):
+                print(f"Error in a generation task (index {i}): {task_result}")
                 continue
 
+            vllm_output_single = task_result
             request_id_from_output = vllm_output_single.request_id
             context = request_id_to_context[request_id_from_output]
             original_input_ids_single_row = context["original_input_ids_row"]
