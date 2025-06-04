@@ -272,6 +272,7 @@ class RayWorkerBuilder:
         worker._RAY_INITIALIZER_ACTOR_REF_TO_AVOID_GC = isolated_initializer
         return worker
 
+
 class RayWorkerGroup:
     """Manages a group of distributed Ray worker/actor processes that execute tasks in parallel.
 
@@ -391,7 +392,9 @@ class RayWorkerGroup:
             self.cluster.get_master_address_and_port()
         )
 
-        actor_python_env = get_actor_python_env(remote_worker_builder.ray_actor_class_fqn)
+        actor_python_env = get_actor_python_env(
+            remote_worker_builder.ray_actor_class_fqn
+        )
         if actor_python_env.startswith("uv"):
             # If the py_executable begins with uv it signals that we need to create a
             #  local venv first and then replace the py_executable with the local venv's python.

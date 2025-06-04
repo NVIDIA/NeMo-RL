@@ -102,7 +102,9 @@ def _env_builder(py_executable: str, venv_name: str, node_idx: int):
 
     if started_file.exists():
         # Another node is already building, wait for completion
-        logger.info(f"Node {node_idx}: Another node is building {venv_name}, skipping...")
+        logger.info(
+            f"Node {node_idx}: Another node is building {venv_name}, skipping..."
+        )
         # Wait for the venv to be ready (check for python executable)
         python_path = venv_path / "bin" / "python"
         while not python_path.exists():

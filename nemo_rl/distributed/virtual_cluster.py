@@ -126,9 +126,7 @@ def init_ray(log_dir: Optional[str] = None) -> None:
 
         # Always reuse if it's an externally managed cluster.
         else:
-            logger.info(
-                f"Connected to existing Ray cluster: {cluster_res}"
-            )
+            logger.info(f"Connected to existing Ray cluster: {cluster_res}")
             return
 
     except ConnectionError:
