@@ -61,7 +61,10 @@ def generate_responses(
         generation_input_data["stop_strings"] = [None] * len(input_lengths)
 
     # Generate responses
-    if policy_generation.cfg["vllm_cfg"]["async_engine"]:
+    if (
+        "vllm_cfg" in policy_generation.cfg
+        and policy_generation.cfg["vllm_cfg"]["async_engine"]
+    ):
         generation_outputs = policy_generation.generate_async(
             generation_input_data, greedy=greedy
         )
