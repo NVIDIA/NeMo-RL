@@ -208,69 +208,6 @@ class RayWorkerBuilder:
         self.args = args
         self.kwargs = kwargs
 
-    def create_worker_async(
-        self,
-        placement_group: PlacementGroup,
-        placement_group_bundle_index: int,
-        num_gpus: float | int,
-        bundle_indices: Optional[tuple[int, list[int]]] = None,
-        **extra_options: Any,
-    ) -> tuple[ray.ObjectRef, ray.actor.ActorHandle]:
-        """Create a Ray worker asynchronously, returning futures.
-
-        This method returns immediately with futures that can be awaited later.
-
-        Args:
-            placement_group: Ray placement group for resource allocation
-            placement_group_bundle_index: Index of the bundle in the placement group
-            num_gpus: Number of GPUs to allocate to this worker (can be fractional)
-            bundle_indices: Tuple of (node_idx, local_bundle_indices) for tensor parallelism (if applicable)
-            extra_options: Additional options to pass to the Ray actor
-
-        Returns:
-            Tuple of (worker_future, initializer_actor):
-                - worker_future: A Ray ObjectRef that will resolve to the worker actor
-                - initializer_actor: The initializer actor (needed to prevent GC)
-        """
-        # Set up worker arguments and resources
-        options = deepcopy(extra_options)
-
-        # If the user hasn't specified a py_executable, use the worker class's default
-        initializer_options = {}
-        if not options.get("runtime_env", {}).get("py_executable", None):
-            if "runtime_env" not in options:
-                options["runtime_env"] = {}
-            options["runtime_env"]["py_executable"] = get_actor_python_env(
-                self.ray_actor_class_fqn
-            )
-
-        if options.get("runtime_env", {}).get("py_executable", "n/a").startswith("uv"):
-            # If the py_executable begins with uv it signals that we need to create a
-            #  local venv first and then replace the py_executable with the local venv's python.
-            #  The directory the venv will be created in is controlled by the env var
-            #  NEMO_RL_VENV_DIR and defaults to $GIT_ROOT/venvs/.
-            venv_python = create_local_venv(
-                py_executable=options["runtime_env"]["py_executable"],
-                venv_name=self.ray_actor_class_fqn,
-            )
-            options["runtime_env"]["py_executable"] = venv_python
-
-        initializer_options = {"runtime_env": options["runtime_env"]}
-        isolated_initializer = self.IsolatedWorkerInitializer.options(  # type: ignore # @ray.remote call
-            **initializer_options
-        ).remote(self.ray_actor_class_fqn, *self.args, **self.kwargs)
-
-        # Return the future and the initializer actor
-        worker_future = isolated_initializer.create_worker.remote(
-            placement_group,
-            placement_group_bundle_index,
-            num_gpus,
-            bundle_indices,
-            **options,
-        )
-
-        return worker_future, isolated_initializer
-
     def __call__(
         self,
         placement_group: PlacementGroup,
@@ -299,18 +236,42 @@ class RayWorkerBuilder:
         Returns:
             A Ray actor reference to the created worker
         """
-        # Use the async method and then block on the result
-        worker_future, isolated_initializer = self.create_worker_async(
-            placement_group,
-            placement_group_bundle_index,
-            num_gpus,
-            bundle_indices,
-            **extra_options,
+        # Set up worker arguments and resources
+        options = deepcopy(extra_options)
+
+        # If the user hasn't specified a py_executable, use the worker class's default
+        initializer_options = {}
+        if not options.get("runtime_env", {}).get("py_executable", None):
+            if "runtime_env" not in options:
+                options["runtime_env"] = {}
+            options["runtime_env"]["py_executable"] = get_actor_python_env(
+                self.ray_actor_class_fqn
+            )
+
+        if options.get("runtime_env", {}).get("py_executable", "n/a").startswith("uv"):
+            # If the py_executable begins with uv it signals that we need to create a
+            #  local venv first and then replace the py_executable with the local venv's python.
+            #  The directory the venv will be created in is controlled by the env var
+            #  NEMO_RL_VENV_DIR and defaults to $GIT_ROOT/venvs/.
+            venv_python = create_local_venv(
+                py_executable=options["runtime_env"]["py_executable"],
+                venv_name=self.ray_actor_class_fqn,
+            )
+            options["runtime_env"]["py_executable"] = venv_python
+
+        initializer_options = {"runtime_env": options["runtime_env"]}
+        isolated_initializer = self.IsolatedWorkerInitializer.options(  # type: ignore # @ray.remote call
+            **initializer_options
+        ).remote(self.ray_actor_class_fqn, *self.args, **self.kwargs)
+        worker = ray.get(
+            isolated_initializer.create_worker.remote(
+                placement_group,
+                placement_group_bundle_index,
+                num_gpus,
+                bundle_indices,
+                **options,
+            )
         )
-
-        # Block to get the worker
-        worker = ray.get(worker_future)
-
         # We hold onto a reference to the initializer actor to avoid gc (would kill the child, 'real' actor)
         worker._RAY_INITIALIZER_ACTOR_REF_TO_AVOID_GC = isolated_initializer
         return worker
@@ -439,10 +400,6 @@ class RayWorkerGroup:
         self.world_size = sum(len(indices) for _, indices in bundle_indices_list)
         global_rank = 0
 
-        # Collect all async creation calls
-        worker_futures = []
-        worker_info = []  # Store metadata for each worker
-
         # Get all placement groups
         placement_groups = self.cluster.get_placement_groups()
 
@@ -492,8 +449,8 @@ class RayWorkerGroup:
                 runtime_env = {"env_vars": env_vars}
                 extra_options = {"runtime_env": runtime_env, "name": name}
 
-                # start worker creation asynchronously
-                worker_future, initializer = remote_worker_builder.create_worker_async(
+                # Create the worker
+                worker = remote_worker_builder(
                     placement_group=pg,
                     placement_group_bundle_index=bundle_idx,
                     num_gpus=num_gpus,
@@ -501,56 +458,25 @@ class RayWorkerGroup:
                     **extra_options,
                 )
 
-                # Store the future and metadata
-                worker_idx = len(worker_futures)
-                worker_futures.append((worker_future, initializer))
-                worker_info.append(
+                # Store worker metadata
+                worker_idx = len(self._workers)
+                current_group.append(worker_idx)
+                self.worker_to_tied_group_index[worker_idx] = group_idx
+                self._workers.append(worker)
+                self._worker_metadata.append(
                     {
-                        "group_idx": group_idx,
-                        "worker_idx": worker_idx,
                         "node_idx": pg_idx,
                         "local_rank": local_rank,
                         "global_rank": global_rank,
                         "name": name,
                         "bundle_indices": worker_bundle_indices,
+                        "tied_group_idx": group_idx,
                     }
                 )
-                current_group.append(worker_idx)
 
                 global_rank += 1
 
-        print(
-            f"Waiting for {len(worker_futures)} workers to finish initializing...",
-            flush=True,
-        )
-        worker_refs = [future for future, _ in worker_futures]
-        workers = ray.get(worker_refs)
-
-        for idx, (worker, (_, initializer)) in enumerate(zip(workers, worker_futures)):
-            worker._RAY_INITIALIZER_ACTOR_REF_TO_AVOID_GC = initializer
-            self._workers.append(worker)
-
-            # Get the corresponding metadata
-            info = worker_info[idx]
-            self._worker_metadata.append(
-                {
-                    "node_idx": info["node_idx"],
-                    "local_rank": info["local_rank"],
-                    "global_rank": info["global_rank"],
-                    "name": info["name"],
-                    "bundle_indices": info["bundle_indices"],
-                    "tied_group_idx": info["group_idx"],
-                }
-            )
-
-            self.worker_to_tied_group_index[idx] = info["group_idx"]
-
-        # Reconstruct tied worker groups
-        for group_idx, (_, local_bundle_indices) in enumerate(bundle_indices_list):
-            current_group = []
-            for idx, info in enumerate(worker_info):
-                if info["group_idx"] == group_idx:
-                    current_group.append(idx)
+            # Add this tied group to our list
             self.tied_workers_groups.append(current_group)
 
     @property
