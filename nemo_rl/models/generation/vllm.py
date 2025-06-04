@@ -219,8 +219,7 @@ class VllmGenerationWorker:
             # For non-parallel mode, explicitly set executor to None to avoid Ray issues
             vllm_kwargs["distributed_executor_backend"] = None
 
-        if not self.cfg["vllm_cfg"]["async_engine"]:
-            os.environ["VLLM_USE_V1"] = "1"
+        os.environ["VLLM_USE_V1"] = "1"
 
         load_format = self.cfg["vllm_cfg"]["load_format"]
         if ModelFlag.VLLM_LOAD_FORMAT_AUTO.matches(self.model_name):
@@ -248,9 +247,9 @@ class VllmGenerationWorker:
 
         if self.cfg["vllm_cfg"]["async_engine"]:
             from vllm.engine.arg_utils import AsyncEngineArgs
-            from vllm.engine.async_llm_engine import AsyncLLMEngine
+            from vllm.v1.engine.async_llm import AsyncLLM
 
-            self.llm = AsyncLLMEngine.from_engine_args(AsyncEngineArgs(**llm_kwargs))
+            self.llm = AsyncLLM.from_engine_args(AsyncEngineArgs(**llm_kwargs))
         else:
             self.llm = vllm.LLM(**llm_kwargs)
 
@@ -698,7 +697,7 @@ class VllmGenerationWorker:
 
                 if is_async_engine:
                     try:
-                        self.llm.shutdown_background_loop()
+                        self.llm.shutdown()
                     except Exception as e_stop:
                         print(f"Error calling shutdown_background_loop: {e_stop}")
                 # Explicitly delete the engine. This may trigger its __del__ method.
@@ -743,9 +742,7 @@ class VllmGenerationWorker:
                 "report_device_id_async can only be used with async_engine=True. Use report_device_id instead."
             )
 
-        result_or_coro = self.llm.engine.model_executor.collective_rpc(
-            "report_device_id", args=tuple()
-        )
+        result_or_coro = self.llm.collective_rpc("report_device_id", args=tuple())
 
         if asyncio.iscoroutine(result_or_coro):
             list_of_worker_results = await result_or_coro
@@ -812,7 +809,7 @@ class VllmGenerationWorker:
                     "update_weights_from_ipc_handles_async can only be used with async_engine=True. Use update_weights_from_ipc_handles instead."
                 )
 
-            result_or_coro = self.llm.engine.model_executor.collective_rpc(
+            result_or_coro = self.llm.collective_rpc(
                 "update_weights_from_ipc_handles", args=(ipc_handles,)
             )
 
@@ -866,7 +863,7 @@ class VllmGenerationWorker:
             )
 
         # Reset the prefix cache to ensure that prefix cache is not reused after weights are updated
-        self.llm.engine.reset_prefix_cache()
+        self.llm.reset_prefix_cache()
         await self.llm.sleep(level=1)
 
         gc.collect()
