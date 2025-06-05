@@ -659,10 +659,14 @@ def validate(
             total_lengths.append(gen_metrics["mean_gen_tokens_per_sample"])
 
             # Collect message logs for later display
-            to_env = get_keys_from_message_log(
-                val_batch["message_log"], ["role", "content"]
-            )
-            all_message_logs.append(to_env)
+            to_env = [
+                get_keys_from_message_log(
+                    val_batch["message_log"][i], ["role", "content"]
+                )
+                for i in range(len(val_batch["message_log"]))
+            ]
+
+            all_message_logs.extend(to_env)
 
         # Calculate validation metrics
         accuracy = sum(total_rewards) / len(total_rewards)
