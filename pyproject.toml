@@ -35,6 +35,8 @@ dependencies = [
     "torchdata",
     "nvidia-ml-py",
     "hydra-core",
+    "mamba-ssm",
+    "causal-conv1d",
 ]
 
 [project.optional-dependencies]
