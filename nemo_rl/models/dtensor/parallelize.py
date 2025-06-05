@@ -545,6 +545,7 @@ def clip_grad_by_total_norm_(
 def get_grad_norm(
     parameters: Union[list[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]],
     dp_group: torch.distributed.ProcessGroup,
+    cp_group: torch.distributed.ProcessGroup,
     tp_group: torch.distributed.ProcessGroup,
     norm_type: Union[int, float] = 2,
     dtype: torch.dtype = torch.float32,
@@ -558,6 +559,7 @@ def get_grad_norm(
             An iterable of Tensors or DTensors, or a single Tensor or DTensor
             that will have gradient norm calculated.
         dp_group (torch.distributed.ProcessGroup): Process group for data parallel communication.
+        cp_group (torch.distributed.ProcessGroup): Process group for context parallel communication.
         tp_group (torch.distributed.ProcessGroup): Process group for tensor parallel communication.
         norm_type (Union[int, float]): Type of the used p-norm. Can be ``'inf'`` for
             infinity norm.
@@ -589,6 +591,11 @@ def get_grad_norm(
         torch.distributed.all_reduce(
             total_norm_cuda, op=torch.distributed.ReduceOp.MAX, group=dp_group
         )
+
+        torch.distributed.all_reduce(
+            total_norm_cuda, op=torch.distributed.ReduceOp.MAX, group=cp_group
+        )
+
         torch.distributed.all_reduce(
             total_norm_cuda, op=torch.distributed.ReduceOp.MAX, group=tp_group
         )
@@ -604,6 +611,11 @@ def get_grad_norm(
         torch.distributed.all_reduce(
             total_norm, op=torch.distributed.ReduceOp.SUM, group=dp_group
         )
+
+        torch.distributed.all_reduce(
+            total_norm, op=torch.distributed.ReduceOp.SUM, group=cp_group
+        )
+
         torch.distributed.all_reduce(
             total_norm, op=torch.distributed.ReduceOp.SUM, group=tp_group
         )

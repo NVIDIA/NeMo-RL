@@ -573,6 +573,7 @@ class DTensorPolicyWorker:
                         grad_norm = get_grad_norm(
                             self.model.parameters(),
                             dp_group=self.dp_mesh.get_group(),
+                            cp_group=self.cp_mesh.get_group(),
                             tp_group=self.tp_mesh.get_group(),
                             dtype=torch.float32,
                         )
