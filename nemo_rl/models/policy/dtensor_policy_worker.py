@@ -262,6 +262,12 @@ class DTensorPolicyWorker:
                 "No weights path provided. Starting from scratch (default policy init)"
             )
 
+    def init_collective(self, world_size: int) -> None:
+        """Initialize the collective communication."""
+        import ray.util.collective as collective
+
+        collective.init_collective_group(world_size=world_size, rank=0, backend="nccl", group_name="refit")
+
     def is_alive(self) -> bool:
         return True
 
@@ -752,6 +758,35 @@ class DTensorPolicyWorker:
             all_handles.append((key, handle))
 
         return {device_uuid: all_handles}
+
+    @torch.no_grad()
+    def prepare_info_for_collective(self) -> dict[str, Any]:
+        """Prepare the info for collective communication.
+
+        Returns:
+            dict: A dictionary containing the info for collective communication.
+        """
+        # Get state_dict
+        self.model = self.move_to_cuda(self.model)
+        state_dict = self.model.state_dict()
+
+        # Collect info for collective communication
+        state_dict_info = {}
+        for name, tensor in state_dict.items():
+            state_dict_info[name] = (tensor.shape, self.dtype)
+
+        return state_dict_info
+
+    @torch.no_grad()
+    def broadcast_weights_for_collective(self) -> None:
+        """Broadcast the weights for collective communication."""
+        import ray.util.collective as collective
+
+        for _, tensor in self.model.state_dict().items():
+            if isinstance(tensor, DTensor):
+                tensor = tensor.full_tensor()
+            tensor = tensor.to(self.dtype, non_blocking=True)
+            collective.broadcast(tensor.data, 0, group_name="refit")
 
     def prepare_for_lp_inference(self) -> None:
         if not self.cpu_offload:

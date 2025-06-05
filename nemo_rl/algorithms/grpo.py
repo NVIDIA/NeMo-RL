@@ -212,7 +212,9 @@ def setup(
     #          Cluster
     # ==========================
     print("\n▶ Setting up compute cluster...")
-    colocated_inference = generation_config["backend"] != "hf"
+    colocated_inference = generation_config["colocated"]
+    if generation_config["backend"] == "hf":
+        colocated_inference = False
     cluster = RayVirtualCluster(
         name="grpo_policy_cluster",
         bundle_ct_per_node_list=[cluster_config["gpus_per_node"]]
@@ -258,6 +260,11 @@ def setup(
         init_optimizer=True,
     )
 
+    if generation_config["colocated"]:
+        world_size = cluster_config["num_nodes"] * cluster_config["gpus_per_node"]
+        policy.init_collective(world_size)
+        policy_generation.init_collective(world_size)
+
     loss_fn = ClippedPGLossFn(loss_config)
 
     print("\n" + "=" * 60)
@@ -286,6 +293,7 @@ def setup(
 def refit_policy_generation(
     policy: ColocatablePolicyInterface,
     policy_generation: GenerationInterface,
+    is_colocated: bool = True,
     _refit_buffer_size_gb: Optional[int] = None,
 ) -> None:
     """Refit the policy generation interface with the latest policy weights.
@@ -299,20 +307,34 @@ def refit_policy_generation(
     """
     policy.offload_before_refit()
     policy_generation.prepare_for_generation(tags=["weights"])
-    # get model param keys, which is grouped by size
-    grouped_param_keys = policy.prepare_weights_for_ipc(
-        _refit_buffer_size_gb=_refit_buffer_size_gb
-    )
-    # do update
-    for keys in grouped_param_keys:
-        ipc_handles = policy.get_weights_ipc_handles(keys)
-        if not policy_generation.update_weights(ipc_handles):
+
+    # update weights
+    if is_colocated:
+        # get model param keys, which is grouped by size
+        grouped_param_keys = policy.prepare_weights_for_ipc(
+            _refit_buffer_size_gb=_refit_buffer_size_gb
+        )
+        # do update
+        for keys in grouped_param_keys:
+            ipc_handles = policy.get_weights_ipc_handles(keys)
+            if not policy_generation.update_weights(ipc_handles):
+                error_message = (
+                    "❌ Error: Updating weights for the generation policy failed during refit.\n"
+                    "This often indicates an issue with cuda-ipc or "
+                    "a problem within the generation backend (e.g., vLLM worker).\n"
+                )
+                raise RuntimeError(error_message)
+    else:
+        state_dict_info = policy.prepare_info_for_collective()
+        policy.broadcast_weights_for_collective()
+        if not policy_generation.update_weights_from_collective(state_dict_info):
             error_message = (
                 "❌ Error: Updating weights for the generation policy failed during refit.\n"
-                "This often indicates an issue with cuda-ipc or "
+                "This often indicates an issue with nccl or "
                 "a problem within the generation backend (e.g., vLLM worker).\n"
             )
             raise RuntimeError(error_message)
+
     policy.offload_after_refit()
     policy_generation.prepare_for_generation(tags=["kv_cache"])
 

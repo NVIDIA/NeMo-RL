@@ -119,6 +119,10 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
 
         self.cfg = config
 
+    def init_collective(self, world_size: int) -> None:
+        """Initialize the collective communication."""
+        self.worker_group.run_all_workers_single_data("init_collective", world_size=world_size)
+
     def get_logprobs(
         self, data: BatchedDataDict[GenerationDatumSpec]
     ) -> BatchedDataDict[LogprobOutputSpec]:
@@ -401,6 +405,25 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
             all_handles.update(handle)
 
         return all_handles
+
+    def prepare_info_for_collective(self) -> dict[str, Any]:
+        """Prepare the info for collective communication.
+
+        Returns:
+            dict: A dictionary containing the info for collective communication.
+        """
+        futures = self.worker_group.run_all_workers_single_data(
+            "prepare_info_for_collective"
+        )
+        results = ray.get(futures)
+        # Only get the first worker's info since all workers will have the same result
+        return results[0]
+
+    def broadcast_weights_for_collective(self) -> None:
+        """Broadcast the weights for collective communication."""
+        self.worker_group.run_all_workers_single_data(
+            "broadcast_weights_for_collective"
+        )
 
     def offload_before_refit(self) -> None:
         """Offload the optimizer and buffers to the CPU."""

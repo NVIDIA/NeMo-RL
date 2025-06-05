@@ -33,6 +33,7 @@ model_name = "Qwen/Qwen3-0.6B"
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
+    "colocated": True,
     "model_name": model_name,
     "tokenizer": {
         "name": model_name,
@@ -1040,7 +1041,7 @@ def test_vllm_non_divisible_batch_handling(policy):
     )
 
 
-def test_vllm_refit_non_collocated_handles_update_failure(
+def test_vllm_refit_non_collocated_handles_update(
     policy_cluster_separate,
     generation_cluster_separate,
     tokenizer,
@@ -1055,6 +1056,7 @@ def test_vllm_refit_non_collocated_handles_update_failure(
         )
 
     # Create HfPolicy on its own cluster
+    os.environ["NCCL_CUMEM_ENABLE"] = "0"
     hf_config = get_basic_hf_test_config(enable_dtensor=True)
     hf_config["dtensor_cfg"]["tensor_parallel_size"] = 1
     hf_policy = HfPolicy(policy_cluster_separate, hf_config, tokenizer)
@@ -1063,45 +1065,23 @@ def test_vllm_refit_non_collocated_handles_update_failure(
     vllm_config = deepcopy(basic_vllm_test_config)
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
     vllm_config["vllm_cfg"]["tensor_parallel_size"] = 1
-    vllm_policy = VllmGeneration(generation_cluster_separate, vllm_config)
+    vllm_generation = VllmGeneration(generation_cluster_separate, vllm_config)
 
-    hf_policy_instance = None
-    vllm_policy_instance = None
+    hf_policy.init_collective(2)
+    vllm_generation.init_collective(2)
 
-    try:
-        hf_policy_instance = hf_policy
-        vllm_policy_instance = vllm_policy
-        ray.get(
-            [
-                worker._add_noise_to_weights.remote()
-                for worker in hf_policy_instance.worker_group.workers
-            ]
-        )
-        print("Refitting vLLM policy from HF policy (non-collocated)")
-        with mock.patch.object(
-            vllm_policy_instance, "update_weights", return_value=False
-        ):
-            with pytest.raises(RuntimeError):
-                refit_policy_generation(
-                    hf_policy_instance,
-                    vllm_policy_instance,
-                )
-        print("RuntimeError during refit correctly caught.")
+    print("refitting vllm policy...")
+    refit_policy_generation(hf_policy, vllm_generation, is_colocated=False)
 
-    finally:
-        print("Cleaning up non-collocated test resources...")
-        if hf_policy_instance:
-            try:
-                hf_policy_instance.shutdown()
-            except Exception as e:
-                print(f"Error during HfPolicy cleanup: {e}")
-        if vllm_policy_instance:
-            try:
-                vllm_policy_instance.shutdown()
-            except Exception as e:
-                print(f"Error during VllmPolicy cleanup: {e}")
-        # Force garbage collection
-        import gc
+    # test generate
+    outputs = vllm_generation.generate(test_input_data, greedy=True)
+    output_ids = outputs["output_ids"]
+    generated_texts = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+    assert generated_texts == [
+        "Hello, my name is Lina. I'm",
+        "The capital of France is Paris. The capital of",
+    ], "Output should be the same as the expected output"
 
-        gc.collect()
-        torch.cuda.empty_cache()
+    # Clean up
+    vllm_generation.shutdown()
+    hf_policy.shutdown()
