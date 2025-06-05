@@ -11,7 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 import os
+import time
+from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, TypedDict
 
@@ -57,9 +61,37 @@ from nemo_rl.utils.logger import (
 )
 from nemo_rl.utils.timer import Timer
 
+
 # ===============================================================================
 # Configuration
 # ===============================================================================
+@dataclass
+class TimeLimitTimer:
+    """Timer to tell us when the time limit is reached"""
+
+    duration: Optional[str]
+
+    def __post_init__(self):
+        self._duration = float("inf")
+
+        if self.duration is not None:
+            days, hours, mins, seconds = map(int, self.duration.strip().split(":"))
+            self._duration = timedelta(
+                days=days, hours=hours, minutes=mins, seconds=seconds
+            ).total_seconds()
+
+    def start_time(self):
+        self._start_time = time.monotonic()
+
+    def get_time_elapsed(self):
+        return time.monotonic() - self._start_time
+
+    def get_time_remaining(self):
+        return self._duration - self.get_time_elapsed()
+
+    def is_finished(self):
+        time_left = self.get_time_remaining()
+        return time_left <= 0
 
 
 class GRPOConfig(TypedDict):
@@ -347,6 +379,9 @@ def grpo_train(
 ):
     """Run GRPO training algorithm."""
     timer = Timer()
+    time_limit_timer = TimeLimitTimer(duration=master_config["grpo"]["time_limit"])
+    time_limit_timer.start_time()
+
     NEED_REFIT = True
     # If policy_generation is None, use the policy as the generation interface (hf framework backend)
     if policy_generation is None:
@@ -374,7 +409,7 @@ def grpo_train(
             POLICY_GENERATION_STALE = False
         else:
             policy_generation.prepare_for_generation()
-        val_metrics, validation_timings = validate(
+        val_metrics, validation_timings, _ = validate(
             policy_generation,
             val_dataloader,
             tokenizer,
@@ -580,10 +615,28 @@ def grpo_train(
             with timer.time("policy_training"):
                 list_of_train_metrics = policy.train(train_data, loss_fn)
 
-            is_last_step = step + 1 == min(max_num_steps, len(dataloader))
+            for i, m in enumerate(list_of_train_metrics):
+                to_log = optim_step + i
 
+                grad_sparsity_dict = m.pop("grad_sparsity_dict")
+                log_dir = master_config["logger"]["log_dir"]
+                sparsity_file_path = os.path.join(
+                    log_dir, f"optim_step_{to_log}_grad_sparsity.json"
+                )
+
+                with open(sparsity_file_path, "w") as f:
+                    json.dump(grad_sparsity_dict, f, indent=2)
+
+                print(f"Saved grad sparsity to {sparsity_file_path}")
+
+            time_limit_reached = time_limit_timer.is_finished()
+            is_last_step = step + 1 == min(max_num_steps, len(dataloader))
             # Run validation if it's a validation step
-            if is_last_step or (val_period > 0 and (step + 1) % val_period == 0):
+            if (
+                is_last_step
+                or (val_period > 0 and (step + 1) % val_period == 0)
+                or time_limit_reached
+            ):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
                     refit_policy_generation(
                         policy,
@@ -593,7 +646,7 @@ def grpo_train(
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
-                val_metrics, validation_timings = validate(
+                val_metrics, validation_timings, _ = validate(
                     policy_generation,
                     val_dataloader,
                     tokenizer,
@@ -613,6 +666,7 @@ def grpo_train(
             if master_config["checkpointing"]["enabled"] and (
                 is_last_step
                 or (step + 1) % master_config["checkpointing"]["save_period"] == 0
+                or time_limit_reached
             ):  # +1 because step is 0-indexed
                 policy.prepare_for_training()
 
@@ -693,6 +747,12 @@ def grpo_train(
         if step >= max_num_steps:
             break
 
+        if time_limit_reached:
+            print(
+                f"Time limit reached of {master_config['grpo']['time_limit']}, stopping training"
+            )
+            break
+
 
 def validate(
     policy_generation: GenerationInterface,
@@ -701,7 +761,9 @@ def validate(
     val_task_to_env: Dict[str, EnvironmentInterface],
     step: int,
     master_config: MasterConfig,
-    logger: Logger,
+    logger: Optional[Logger] = None,
+    num_repeats: int = 1,
+    return_data_for_saving: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Run validation on the validation dataset."""
     if val_dataloader is None:
@@ -720,44 +782,72 @@ def validate(
             master_config["grpo"]["max_val_samples"]
             // master_config["grpo"]["val_batch_size"]
         )
-        for batch_idx, val_batch in enumerate(val_dataloader):
-            if batch_idx >= max_batches:
-                break
+        data_for_saving = []
 
-            # Generate responses (updates the LLMMessageLogType in batch_with_msg_logs)
-            val_batch, gen_metrics = run_multi_turn_rollout(
-                policy_generation,
-                val_batch,
-                tokenizer,
-                val_task_to_env,
-                max_seq_len=master_config["policy"]["max_total_sequence_length"],
-                max_rollout_turns=master_config["grpo"]["max_rollout_turns"],
-                greedy=False,
-            )
-            rewards = val_batch["total_reward"]
+        for repeat_idx in range(num_repeats):
+            for batch_idx, val_batch in enumerate(val_dataloader):
+                if batch_idx >= max_batches:
+                    break
 
-            total_rewards.extend(rewards.tolist())
-            total_lengths.append(gen_metrics["mean_gen_tokens_per_sample"])
-
-            # Collect message logs for later display
-            to_env = get_keys_from_message_log(
-                val_batch["message_log"], ["role", "content"]
-            )
-            all_message_logs.extend(to_env)
-
-            if batch_idx == 0:
-                for interaction in val_batch["message_log"][0]:
-                    if interaction["role"] == "user":
-                        prompt = interaction["content"]
-                    elif interaction["role"] == "assistant":
-                        response = interaction["content"]
-                    else:
-                        environment = interaction["content"]
-
-                reward = val_batch["total_reward"][0].item()
-                table = logger.log_table_contents(
-                    step, prompt, response, environment, reward, "validation"
+                # Generate responses (updates the LLMMessageLogType in batch_with_msg_logs)
+                val_batch, gen_metrics = run_multi_turn_rollout(
+                    policy_generation,
+                    val_batch,
+                    tokenizer,
+                    val_task_to_env,
+                    max_seq_len=master_config["policy"]["max_total_sequence_length"],
+                    max_rollout_turns=master_config["grpo"]["max_rollout_turns"],
+                    greedy=False,
                 )
+
+                rewards = val_batch["total_reward"]
+
+                total_rewards.extend(rewards.tolist())
+                total_lengths.append(gen_metrics["mean_gen_tokens_per_sample"])
+
+                # Collect message logs for later display
+                to_env = [
+                    get_keys_from_message_log(
+                        val_batch["message_log"][i], ["role", "content"]
+                    )
+                    for i in range(len(val_batch["message_log"]))
+                ]
+                all_message_logs.extend(to_env)
+
+                if return_data_for_saving:
+                    # Transpose val_batch from batch-first to sample-first
+                    batch_size = val_batch.size
+                    for i in range(batch_size):
+                        sample_dict = {}
+                        for k, v in val_batch.items():
+                            # hack to use the env stuff
+                            if k == "message_log":
+                                v = to_env
+
+                            val = v[i]
+                            if torch.is_tensor(val):
+                                val = val.item()
+                            sample_dict[k] = val
+
+                        sample_dict["eval_idx"] = f"{sample_dict['idx']}_{repeat_idx}"
+                        data_for_saving.append(sample_dict)
+
+                if batch_idx == 0:
+                    for interaction in val_batch["message_log"][0]:
+                        if interaction["role"] == "user":
+                            prompt = interaction["content"]
+                        elif interaction["role"] == "assistant":
+                            response = interaction["content"]
+                        else:
+                            environment = interaction["content"]
+
+                    reward = val_batch["total_reward"][0].item()
+
+                    table = None
+                    if logger is not None:
+                        table = logger.log_table_contents(
+                            step, prompt, response, environment, reward, "validation"
+                        )
 
         # Calculate validation metrics
         accuracy = sum(total_rewards) / len(total_rewards)
@@ -802,4 +892,4 @@ def validate(
     # Make sure to reset the timer after validation
     timer.reset()
 
-    return val_metrics, timing_metrics
+    return val_metrics, timing_metrics, data_for_saving

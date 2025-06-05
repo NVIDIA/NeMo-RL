@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Union
+from typing import List, Tuple, Union
 
 import torch
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -444,6 +444,53 @@ def clip_grad_by_total_norm_(
     if clip_coeff < 1.0:
         for g in grads:
             g.mul_(clip_coeff)
+
+
+def get_grad_sparsity(
+    named_parameters: Union[
+        List[Tuple[str, Union[torch.Tensor, DTensor]]],
+        Tuple[str, Union[torch.Tensor, DTensor]],
+    ],
+    dp_group: torch.distributed.ProcessGroup,
+    tp_group: torch.distributed.ProcessGroup,
+) -> float:
+    """NOTE: This function is somewhat incorrect if the grads are not all reduced across the data parallel GPUs.
+        * this is because the zeros might not be all in the same place across DP ranks
+
+    Args:
+        parameters (Union[List[Union[torch.Tensor, DTensor]], Union[torch.Tensor, DTensor]]):
+            An iterable of Tensors or DTensors, or a single Tensor or DTensor
+            that will have gradient norm calculated.
+        dp_group (torch.distributed.ProcessGroup): Process group for data parallel communication.
+        tp_group (torch.distributed.ProcessGroup): Process group for tensor parallel communication.
+        norm_type (Union[int, float]): Type of the used p-norm. Can be ``'inf'`` for
+            infinity norm.
+
+    Returns:
+        float: Total norm of the gradients (viewed as a single vector)
+    """
+    grad_sparsity_dict = {}
+    grads_dict = {
+        name: to_local_if_dtensor(p.grad.detach())
+        for name, p in sorted(named_parameters)
+        if p.grad is not None
+    }
+
+    total_num_zeros, total_num_elements = 0, 0
+    for name, grad in grads_dict.items():
+        num_zeros = grad.numel() - grad.count_nonzero()
+        num_elements = grad.numel()
+
+        to_reduce = torch.tensor(
+            [num_zeros, num_elements], dtype=torch.float32, device="cuda"
+        )
+        torch.distributed.all_reduce(to_reduce, group=dp_group)
+        torch.distributed.all_reduce(to_reduce, group=tp_group)
+        grad_sparsity_dict[name] = (to_reduce[0] / to_reduce[1]).item()
+        total_num_zeros += to_reduce[0]
+        total_num_elements += to_reduce[1]
+
+    return (total_num_zeros / total_num_elements).item(), grad_sparsity_dict
 
 
 def get_grad_norm(

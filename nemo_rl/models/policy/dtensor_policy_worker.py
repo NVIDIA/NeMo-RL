@@ -39,6 +39,7 @@ from nemo_rl.models.dtensor.parallelize import (
     _parallelize_model,
     clip_grad_by_total_norm_,
     get_grad_norm,
+    get_grad_sparsity,
     get_logprobs_from_vocab_parallel_logits,
     to_local_if_dtensor,
 )
@@ -436,6 +437,15 @@ class DTensorPolicyWorker:
                             tp_group=self.tp_mesh.get_group(),
                             dtype=torch.float32,
                         )
+
+                        # TODO: I think this is actually synced DP wise already from the
+                        # bprop hooks?
+                        grad_sparsity, grad_sparsity_dict = get_grad_sparsity(
+                            self.model.named_parameters(),
+                            dp_group=self.dp_mesh.get_group(),
+                            tp_group=self.tp_mesh.get_group(),
+                        )
+
                         if self.max_grad_norm is not None:
                             clip_grad_by_total_norm_(
                                 self.model.parameters(),
@@ -455,6 +465,8 @@ class DTensorPolicyWorker:
                         "global_valid_seqs": global_valid_seqs.item(),
                         "global_valid_toks": global_valid_toks.item(),
                         "grad_norm": grad_norm.item(),
+                        "grad_sparsity": grad_sparsity,
+                        "grad_sparsity_dict": grad_sparsity_dict,
                     }
                 )
 
@@ -475,12 +487,37 @@ class DTensorPolicyWorker:
                     )
 
                     torch.distributed.all_reduce(values, group=self.dp_mesh.get_group())
-                    synced_train_step_metrics.append(
-                        {k: v.cpu().item() for k, v in zip(keys, values)}
+
+                    metric_dict = {k: v.cpu().item() for k, v in zip(keys, values)}
+                    metric_dict["sequence_level_ratios"] = (
+                        metric_dict["sequence_level_ratios"]
+                        / metric_dict["num_valid_samples"]
                     )
 
+                    metric_dict["clamped_min_ratios"] = (
+                        metric_dict["clamped_min_ratios"]
+                        / metric_dict["tokens_min_clipped"]
+                        if metric_dict["tokens_min_clipped"] > 0
+                        else 1
+                    )
+                    metric_dict["clamped_max_ratios"] = (
+                        metric_dict["clamped_max_ratios"]
+                        / metric_dict["tokens_max_clipped"]
+                        if metric_dict["tokens_max_clipped"] > 0
+                        else 1
+                    )
+
+                    synced_train_step_metrics.append(metric_dict)
                 for i, metric in enumerate(train_step_metrics_no_accumulation):
                     synced_train_step_metrics[i].update(metric)
+
+                for metric in synced_train_step_metrics:
+                    metric["percent_max_clipped"] = (
+                        metric["tokens_max_clipped"] / metric["global_valid_toks"]
+                    )
+                    metric["percent_min_clipped"] = (
+                        metric["tokens_min_clipped"] / metric["global_valid_toks"]
+                    )
 
             return synced_train_step_metrics
 
