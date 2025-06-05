@@ -100,7 +100,7 @@ def init_ray(log_dir: Optional[str] = None) -> None:
         cluster_res = ray.cluster_resources()
 
         # Check reusability for NeMo-RL managed local clusters
-        if cvd_tag_prefix in cluster_res:
+        if any(k.startswith(cvd_tag_prefix) for k in cluster_res):
             # Reuse if the driver's cvd_tag matches a tag in the cluster.
             # This is for reusing a previously self-started local cluster.
             if cvd_tag in cluster_res:
