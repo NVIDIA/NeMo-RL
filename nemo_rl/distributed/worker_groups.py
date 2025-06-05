@@ -426,9 +426,7 @@ class RayWorkerGroup:
 
             for local_rank, bundle_idx in enumerate(local_bundle_indices):
                 # Set up basic distributed environment variables
-                env_vars = dict(
-                    os.environ
-                )  # Pass thru all user environment variables (at the lowest precendence)
+                env_vars = dict(os.environ)
                 env_vars.update(
                     {
                         "RANK": str(global_rank),
@@ -437,10 +435,9 @@ class RayWorkerGroup:
                         "MASTER_ADDR": self.master_address,
                         "MASTER_PORT": str(self.master_port),
                         "NODE_RANK": str(pg_idx),
-                        "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
-                        "CUDA_VISIBLE_DEVICES": str(bundle_idx),
                     }
                 )
+                env_vars.pop("RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES", None)
 
                 # Only the first worker in each group gets bundle_indices
                 # This ensures only one worker per group is the model owner
@@ -455,13 +452,12 @@ class RayWorkerGroup:
                     else f"{self.name_prefix}-{pg_idx}-{bundle_idx}"
                 )
 
-                # Set this to 0 to manually control placement group allotment
-                # We manually manage GPU allocation instead of relying on Ray's automatic GPU assignment
-                # because on some clusters (particularly KubeRay), Ray fails to correctly set
-                # CUDA_VISIBLE_DEVICES, leading to multiple workers using the same GPU and causing conflicts.
-                # By setting num_gpus=0 and explicitly setting CUDA_VISIBLE_DEVICES in the environment variables
-                # above, we ensure each worker gets exclusive access to its assigned GPU.
-                num_gpus = 0
+                # Calculate GPU resources
+                num_gpus = (
+                    1 / self.cluster.max_colocated_worker_groups
+                    if self.cluster.use_gpus
+                    else 0
+                )
 
                 # Pass these options to the remote_worker_builder
                 runtime_env = {"env_vars": env_vars, "py_executable": py_executable}

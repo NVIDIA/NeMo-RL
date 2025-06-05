@@ -77,8 +77,10 @@ def init_ray(log_dir: Optional[str] = None) -> None:
     Otherwise, we will detach and start a fresh local cluster.
     """
     # Set up runtime environment
+    env_vars = dict(os.environ)
+    env_vars.pop("RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES", None)
     runtime_env = {
-        "env_vars": dict(os.environ),  # Pass thru all user environment variables
+        "env_vars": env_vars,  # Pass thru all user environment variables
     }
 
     cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "ALL")
