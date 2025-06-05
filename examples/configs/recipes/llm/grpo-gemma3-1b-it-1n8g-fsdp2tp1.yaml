@@ -40,6 +40,7 @@ policy:
   dtensor_cfg:
     enabled: true
     cpu_offload: false
+    torch_compile: false
     sequence_parallel: false
     activation_checkpointing: false
     tensor_parallel_size: 1
