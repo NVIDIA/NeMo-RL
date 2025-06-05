@@ -15,7 +15,6 @@
 from typing import Any
 
 import torch
-from torch.nn import functional as F
 
 
 @torch.no_grad()
@@ -120,19 +119,6 @@ class DistributedLogprob(torch.autograd.Function):
         return grad_input, None, None, None, None, None, None
 
 
-# For torch.Tensor inputs
-def from_logits_to_logprobs(
-    logits: torch.Tensor, labels: torch.Tensor, shift_and_slice: bool = True
-):
-    if shift_and_slice:
-        labels = labels[:, 1:]
-        logits = logits[:, :-1]
-
-    log_probs = F.log_softmax(logits, dim=-1)
-    return log_probs.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(-1)
-
-
-# For DTensor inputs
 def from_parallel_logits_to_logprobs(
     vocab_parallel_logits: torch.Tensor,
     target: torch.Tensor,
@@ -140,7 +126,6 @@ def from_parallel_logits_to_logprobs(
     vocab_end_index: int,
     group: torch.distributed.ProcessGroup,
     inference_only: bool = False,
-    shift_and_slice: bool = True,
 ) -> torch.Tensor:
     """Get log probabilities from TP sharded vocab logits.
 
@@ -153,7 +138,6 @@ def from_parallel_logits_to_logprobs(
         vocab_end_index (int): Ending vocabulary index for this worker's partition.
         group (torch.distributed.ProcessGroup): Process group for distributed communication.
         inference_only (bool, optional): If True, tensors won't be saved for backward pass. Defaults to False.
-        shift_and_slice (bool, optional): If True, the target will be shifted and sliced. Defaults to True.
 
     Returns:
         torch.Tensor: Log probabilities tensor with shape [batch_size, seq_len-1].
@@ -161,14 +145,7 @@ def from_parallel_logits_to_logprobs(
 
     Taken from: https://github.com/NVIDIA/NeMo-Aligner/blob/9faab404f21994a7eb1d6ed5890b76152b941636/nemo_aligner/utils/distributed.py#L354
     """
-    seq_dim = 1
-    assert target.shape[seq_dim] == vocab_parallel_logits.shape[seq_dim], (
-        f"target.shape: {target.shape}, vocab_parallel_logits.shape: {vocab_parallel_logits.shape} mismatched"
-    )
-
-    if shift_and_slice:
-        target = target.roll(shifts=-1, dims=-1)
-
+    target = target.roll(shifts=-1, dims=-1)
     probs: torch.Tensor = DistributedLogprob.apply(  # type: ignore
         vocab_parallel_logits,
         target,
@@ -177,8 +154,4 @@ def from_parallel_logits_to_logprobs(
         group,
         inference_only,
     ).contiguous()
-
-    if shift_and_slice:
-        return probs[:, :-1]
-    else:
-        return probs
+    return probs[:, :-1]

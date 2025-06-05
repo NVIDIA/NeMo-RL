@@ -25,10 +25,9 @@ from torch import nn
 from torch.distributed.fsdp import (
     FSDPModule,
 )
-from torch.distributed.tensor import DTensor
+from torch.distributed.tensor import DTensor, Shard
 from torch.distributed.tensor.experimental import context_parallel
 from torch.distributed.tensor.experimental._attention import (
-    context_parallel_unshard,
     set_rotate_method,
 )
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -177,7 +176,6 @@ class DTensorPolicyWorker:
 
         tp_size = self.cfg["dtensor_cfg"]["tensor_parallel_size"]
         cp_size = self.cfg["dtensor_cfg"]["context_parallel_size"]
-        print(f"tp_size: {tp_size}, cp_size: {cp_size}, world_size: {world_size}")
         dp_size = world_size // tp_size // cp_size
         assert world_size == dp_size * tp_size * cp_size, (
             f"World size({world_size}) must equal to dp_size({dp_size}) * tp_size({tp_size}) * cp_size({cp_size}) to use DTensor"
@@ -288,7 +286,7 @@ class DTensorPolicyWorker:
         cp_buffers: List[torch.Tensor],
         cp_seq_dims: List[int],
         cp_no_restore_buffers: Set[torch.Tensor],
-        cp_rotate_method: str,
+        cp_rotate_method: Optional[str] = None,
     ):
         """Create a context parallel context.
 
@@ -299,7 +297,9 @@ class DTensorPolicyWorker:
             cp_no_restore_buffers (Set[torch.Tensor]): The no restore buffers for context parallel.
             cp_rotate_method (str): The rotation method for context parallel, such as "allgather" or "addtoall".
         """
-        set_rotate_method(cp_rotate_method)
+        if cp_rotate_method is not None:
+            set_rotate_method(cp_rotate_method)
+
         return context_parallel(
             cp_mesh,
             buffers=cp_buffers,
@@ -462,14 +462,13 @@ class DTensorPolicyWorker:
                             seq_len, device=input_ids.device
                         ).repeat(batch_size, 1)
 
-                    cp_buffers = [input_ids, position_ids] if self.cp_size > 1 else []
-
-                    print(
-                        "Out train input ids:",
-                        mb["input_ids"].shape,
-                        id(input_ids),
-                        id(mb["input_ids"]),
+                    seq_index = torch.arange(seq_len, device=input_ids.device).repeat(
+                        1, 1
                     )
+                    cp_buffers = (
+                        [input_ids, position_ids, seq_index] if self.cp_size > 1 else []
+                    )
+
                     # Create context parallel context
                     context_parallel_ctx = (
                         self.create_context_parallel_ctx(
@@ -477,19 +476,12 @@ class DTensorPolicyWorker:
                             cp_buffers=cp_buffers,
                             cp_seq_dims=[sequence_dim] * len(cp_buffers),
                             cp_no_restore_buffers=set(cp_buffers),
-                            cp_rotate_method="allgather",
                         )
                         if self.cp_size > 1
                         else None
                     )
 
                     with self.get_train_context()(context_parallel_ctx):
-                        print(
-                            "In train input ids:",
-                            input_ids.shape,
-                            id(input_ids),
-                            id(mb["input_ids"]),
-                        )
                         with torch.autocast(device_type="cuda", dtype=self.dtype):
                             outputs = self.model(
                                 input_ids=input_ids,
@@ -511,37 +503,45 @@ class DTensorPolicyWorker:
                         ):
                             logits.div_(self.cfg["generation"]["temperature"])
 
-                        print("Before train input ids:", mb["input_ids"].shape)
-
                         if self.cp_size > 1:
-                            # Unshard tensors, if we only use token level loss, we don't need to unshard the logits someday.
+                            seq_index_dtensor = (
+                                DTensor.from_local(
+                                    seq_index,
+                                    device_mesh=self.cp_mesh,
+                                    placements=[Shard(1)],
+                                )
+                                .full_tensor()
+                                .squeeze(0)
+                            )
+                            _, sorted_indices = torch.sort(seq_index_dtensor)
+
                             for tensor_name in mb:
-                                tensor = mb[tensor_name]
+                                current_tensor = mb[tensor_name]
                                 for buffer in cp_buffers:
-                                    if tensor is buffer:
-                                        print(f"Converting {tensor_name} to DTensor:")
-                                        mb[tensor_name] = context_parallel_unshard(
-                                            self.cp_mesh, [tensor], [sequence_dim]
-                                        )[0]
+                                    if current_tensor is buffer:
+                                        assert type(current_tensor) == torch.Tensor, (
+                                            f"tensor {tensor_name} is not a tensor"
+                                        )
+                                        mb[tensor_name] = DTensor.from_local(
+                                            current_tensor,
+                                            device_mesh=self.cp_mesh,
+                                            placements=[Shard(sequence_dim)],
+                                        ).full_tensor()[:, sorted_indices]
                                         break
 
-                            logits = context_parallel_unshard(
-                                self.cp_mesh, [logits], [sequence_dim]
-                            )[0]
-                            print("logits.shape:", logits.shape, "type:", type(logits))
+                            if isinstance(logits, DTensor):
+                                logits = logits.full_tensor()
 
-                        print("logits.shape:", logits.shape, "type:", type(logits))
-                        print(
-                            "DTensor train input ids:",
-                            mb["input_ids"].shape,
-                            type(mb["input_ids"]),
-                        )
+                            logits_dtensor = DTensor.from_local(
+                                logits,
+                                device_mesh=self.cp_mesh,
+                                placements=[Shard(sequence_dim)],
+                            )
+                            logits = logits_dtensor.full_tensor()[:, sorted_indices]
+
                         loss, loss_metrics = loss_fn(
                             logits, mb, global_valid_seqs, global_valid_toks
                         )
-
-                        print(f"loss: {loss.mean()}")
-                        assert loss < 5.0, f"Loss is {loss}"
 
                         ## scale by the number of global batches so we get the correct
                         ## value when summing metrics across all microbatches

@@ -22,7 +22,7 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
 )
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import CPUOffloadPolicy, MixedPrecisionPolicy, fully_shard
-from torch.distributed.tensor import DTensor, distribute_tensor
+from torch.distributed.tensor import DTensor
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
     ParallelStyle,
@@ -41,10 +41,7 @@ from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
 from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM
 
-from nemo_rl.distributed.model_utils import (
-    from_logits_to_logprobs,
-    from_parallel_logits_to_logprobs,
-)
+from nemo_rl.distributed.model_utils import from_parallel_logits_to_logprobs
 from nemo_rl.models.policy.utils import import_class_from_path
 
 
@@ -632,56 +629,16 @@ def get_logprobs_from_vocab_parallel_logits(
     Returns:
         torch.Tensor: Log probabilities for the given input IDs.
     """
-    tp_dim = vocab_parallel_logits.device_mesh.mesh_dim_names.index("tp")
-    tp_size = int(vocab_parallel_logits.device_mesh.mesh.shape[tp_dim])
-    cp_dim = vocab_parallel_logits.device_mesh.mesh_dim_names.index("cp")
-    cp_size = int(vocab_parallel_logits.device_mesh.mesh.shape[cp_dim])
-    device_mesh = vocab_parallel_logits.device_mesh
+    tp_mesh = vocab_parallel_logits.device_mesh
+    tp_rank: int = tp_mesh.get_local_rank()
 
-    if cp_size > 1:
-        input_ids_full = input_ids.full_tensor().roll(shifts=-1, dims=-1)
-        input_ids = distribute_tensor(
-            input_ids_full, input_ids.device_mesh, placements=input_ids.placements
-        )
+    vocab_interval_per_rank = vocab_parallel_logits.shape[-1] // tp_mesh.size()
 
-        if tp_size == 1:
-            probs = from_logits_to_logprobs(
-                vocab_parallel_logits.to_local(),
-                input_ids.to_local(),
-                shift_and_slice=False,
-            )
-        else:
-            vocab_stride = vocab_parallel_logits.shape[-1] // tp_size
-
-            probs = from_parallel_logits_to_logprobs(
-                vocab_parallel_logits.to_local(),
-                input_ids.to_local(),
-                vocab_start_index=vocab_stride * device_mesh.get_local_rank("tp"),
-                vocab_end_index=vocab_stride * (device_mesh.get_local_rank("tp") + 1),
-                group=vocab_parallel_logits.device_mesh.get_group("tp"),
-                shift_and_slice=False,
-            )
-
-        probs = DTensor.from_local(
-            probs, input_ids.device_mesh, placements=input_ids.placements
-        ).full_tensor()
-
-        probs = probs[:, :-1]
-    else:
-        if tp_size == 1:
-            probs = from_logits_to_logprobs(
-                vocab_parallel_logits.to_local(), input_ids.to_local()
-            )
-        else:
-            vocab_stride = vocab_parallel_logits.shape[-1] // tp_size
-
-            probs = from_parallel_logits_to_logprobs(
-                vocab_parallel_logits.to_local(),
-                input_ids.to_local(),
-                vocab_start_index=vocab_stride * device_mesh.get_local_rank("tp"),
-                vocab_end_index=vocab_stride * (device_mesh.get_local_rank("tp") + 1),
-                group=vocab_parallel_logits.device_mesh.get_group("tp"),
-            )
-
-    assert isinstance(probs, torch.Tensor)
-    return probs
+    return from_parallel_logits_to_logprobs(
+        vocab_parallel_logits.to_local(),
+        input_ids,
+        vocab_interval_per_rank * tp_rank,
+        (tp_rank + 1) * vocab_interval_per_rank,
+        tp_mesh.get_group(),
+        inference_only=not torch.is_grad_enabled(),
+    )
