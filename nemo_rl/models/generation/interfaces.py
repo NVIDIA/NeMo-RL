@@ -102,7 +102,6 @@ class GenerationConfig(TypedDict):
     """Configuration for generation."""
 
     backend: str
-    colocated: bool
     max_new_tokens: int
     temperature: float
     top_p: float

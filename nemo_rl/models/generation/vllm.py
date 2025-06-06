@@ -254,8 +254,8 @@ class VllmGenerationWorker:
         else:
             self.llm = vllm.LLM(**llm_kwargs)
 
-    def init_collective(self, world_size: int) -> None:
-        self.llm.collective_rpc("init_collective", args=(world_size,))
+    def init_collective(self, rank_prefix: int, world_size: int) -> None:
+        self.llm.collective_rpc("init_collective", args=(rank_prefix, world_size,))
 
     def llm(self):
         return self.llm
@@ -1150,13 +1150,21 @@ class VllmGeneration(GenerationInterface):
 
     def init_collective(self, world_size: int) -> None:
         """Initialize the collective communication."""
+        if not self.worker_group or not self.worker_group.workers:
+            return False
+
+        # Prepare rank
+        total_workers = len(self.worker_group.workers)
+        workers_per_group = len(self.worker_group.tied_workers_groups[0])
+        rank_prefix_list = list(range(0, total_workers, workers_per_group))
+
         try:
-            # Use run_all_workers_single_data to send data to all workers
-            print("[init_collective] in vllm")
-            futures = self.worker_group.run_all_workers_single_data(
+            # Send world_size and rank for init collective to all workers
+            futures = self.worker_group.run_all_workers_multiple_data(
                 "init_collective",
-                world_size=world_size,
-                run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"]
+                data=rank_prefix_list,
+                run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"],
+                common_kwargs={"world_size": world_size},
             )
             # Wait for all futures to complete
             results = ray.get(futures)
