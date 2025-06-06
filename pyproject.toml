@@ -35,6 +35,7 @@ dependencies = [
     "torchdata",
     "nvidia-ml-py",
     "hydra-core",
+    "cupy-cuda12x",
 ]
 
 [project.optional-dependencies]

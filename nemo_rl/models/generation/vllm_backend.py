@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Any
+
 import torch
 
 try:
@@ -24,6 +26,17 @@ except ImportError:
 
 
 class VllmInternalWorkerExtension:
+    def init_collective(self, rank_prefix: int, world_size: int) -> None:
+        """Initialize the collective communication."""
+        import ray.util.collective as collective
+
+        local_rank = torch.distributed.get_rank()
+        rank = rank_prefix + local_rank + 1  # 1 is the head node of the train cluster
+
+        collective.init_collective_group(
+            world_size=world_size, rank=rank, backend="nccl", group_name="refit"
+        )
+
     def report_device_id(self) -> str:
         from nemo_rl.utils.nvml import get_device_uuid
 
@@ -63,3 +76,20 @@ class VllmInternalWorkerExtension:
                 f"Error in VllmInternalWorkerExtension.update_weights_from_ipc_handles: {e}"
             )
             return False
+
+    def update_weights_from_collective(self, info: dict[str, Any]) -> bool:
+        """Update the model weights from collective communication."""
+        import ray.util.collective as collective
+
+        try:
+            for name, (shape, dtype) in info.items():
+                weight = torch.empty(shape, dtype=dtype, device="cuda")
+                collective.broadcast(weight, 0, group_name="refit")
+                self.model_runner.model.load_weights(weights=[(name, weight)])
+        except Exception as e:
+            print(
+                f"Error in VllmInternalWorkerExtension.update_weights_from_collective: {e}"
+            )
+            return False
+
+        return True

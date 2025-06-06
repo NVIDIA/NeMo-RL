@@ -13,9 +13,10 @@
 # limitations under the License.
 import os
 from pathlib import Path
-from typing import Any, Optional, TypedDict, cast
+from typing import Any, Optional, Tuple, TypedDict, cast
 
 import numpy as np
+import ray
 import torch
 from torchdata.stateful_dataloader import StatefulDataLoader
 from transformers import PreTrainedTokenizerBase
@@ -119,7 +120,7 @@ def setup(
 ) -> tuple[
     ColocatablePolicyInterface,
     Optional[GenerationInterface],
-    RayVirtualCluster,
+    Tuple[RayVirtualCluster, RayVirtualCluster],
     StatefulDataLoader,
     Optional[StatefulDataLoader],
     ClippedPGLossFn,
@@ -137,7 +138,6 @@ def setup(
     policy_config = master_config["policy"]
     generation_config = master_config["policy"]["generation"]
     loss_config = master_config["loss_fn"]
-    data_config = master_config["data"]
     grpo_config = master_config["grpo"]
     logger_config = master_config["logger"]
     cluster_config = master_config["cluster"]
@@ -212,16 +212,74 @@ def setup(
     #          Cluster
     # ==========================
     print("\n▶ Setting up compute cluster...")
-    colocated_inference = generation_config["backend"] != "hf"
-    cluster = RayVirtualCluster(
-        name="grpo_policy_cluster",
-        bundle_ct_per_node_list=[cluster_config["gpus_per_node"]]
-        * cluster_config["num_nodes"],
-        use_gpus=True,
-        num_gpus_per_node=cluster_config["gpus_per_node"],
-        max_colocated_worker_groups=2 if colocated_inference else 1,
-    )
-    print(f"  ✓ Ray cluster initialized with {cluster_config['num_nodes']} nodes")
+    colocated_inference = generation_config["colocated"]["enabled"]
+
+    if colocated_inference:
+        cluster = RayVirtualCluster(
+            name="grpo_policy_cluster",
+            bundle_ct_per_node_list=[cluster_config["gpus_per_node"]]
+            * cluster_config["num_nodes"],
+            use_gpus=True,
+            num_gpus_per_node=cluster_config["gpus_per_node"],
+            max_colocated_worker_groups=1
+            if generation_config["backend"] == "hf"
+            else 2,
+        )
+        train_cluster = cluster
+        inference_cluster = cluster
+        print(f"  ✓ Ray cluster initialized with {cluster_config['num_nodes']} nodes")
+
+    else:
+        assert generation_config["backend"] != "hf", (
+            "Non-colocated inference is not supported for HF backend"
+        )
+
+        train_gpus_per_node = cluster_config["gpus_per_node"]
+        train_nodes = cluster_config["num_nodes"]
+        inference_gpus_per_node = generation_config["colocated"]["gpus_per_node"]
+        inference_nodes = generation_config["colocated"]["num_nodes"]
+
+        # validate and configure generation.colocated config
+        if cluster_config["num_nodes"] == 1:
+            assert inference_gpus_per_node > 0 and inference_nodes == -1, (
+                "policy.generation.colocated.gpus_per_node must be set "
+                "and policy.generation.colocated.num_nodes must be -1 "
+                "when cluster.num_nodes=1 and inference is not colocated"
+            )
+            inference_nodes = 1
+            train_gpus_per_node -= inference_gpus_per_node
+        else:
+            assert inference_gpus_per_node == -1 and inference_nodes > 0, (
+                "policy.generation.colocated.gpus_per_node must be -1 and "
+                "policy.generation.colocated.num_nodes must be set "
+                "when cluster.num_nodes > 1 and inference is not colocated"
+            )
+            inference_gpus_per_node = cluster_config["gpus_per_node"]
+            train_nodes -= inference_nodes
+
+        # initialize train cluster
+        train_cluster = RayVirtualCluster(
+            name="grpo_train_cluster",
+            bundle_ct_per_node_list=[train_gpus_per_node] * train_nodes,
+            use_gpus=True,
+            num_gpus_per_node=train_gpus_per_node,
+            max_colocated_worker_groups=1,
+        )
+        print(
+            f"  ✓ Ray train cluster initialized with {train_nodes} nodes with {train_gpus_per_node} GPUs per node"
+        )
+
+        # initialize inference cluster
+        inference_cluster = RayVirtualCluster(
+            name="grpo_inference_cluster",
+            bundle_ct_per_node_list=[inference_gpus_per_node] * inference_nodes,
+            use_gpus=True,
+            num_gpus_per_node=inference_gpus_per_node,
+            max_colocated_worker_groups=1,
+        )
+        print(
+            f"  ✓ Ray inference cluster initialized with {inference_nodes} nodes with {inference_gpus_per_node} GPUs per node"
+        )
 
     # ==========================
     #   Training and Inference
@@ -237,7 +295,9 @@ def setup(
         print(f"  ✓ Using HF backend for generation with {policy_config['model_name']}")
     elif backend == "vllm":
         generation_config = cast(VllmConfig, generation_config)
-        policy_generation = VllmGeneration(cluster=cluster, config=generation_config)
+        policy_generation = VllmGeneration(
+            cluster=inference_cluster, config=generation_config
+        )
         # Worker groups are not initialized until the first call to run something on workergroups.
         # vllm 0.8 fails in initialization if its called in the first training step since it has no clean view of the GPU memory (HF is sharing the same memory).
         policy_generation.finish_generation()
@@ -246,7 +306,7 @@ def setup(
         )
 
     policy = HfPolicy(
-        cluster=cluster,
+        cluster=train_cluster,
         config=policy_config,
         tokenizer=tokenizer,
         weights_path=Path(last_checkpoint_path) / "policy" / "weights"
@@ -258,6 +318,15 @@ def setup(
         init_optimizer=True,
     )
 
+    # if it is not colocated inference, initialize collective communication for update weights
+    if not colocated_inference:
+        world_size = (
+            inference_nodes * inference_gpus_per_node + 1
+        )  # inference cluster + head node of the train cluster
+        futures_train = policy.init_collective(world_size)
+        futures_inference = policy_generation.init_collective(world_size)  # type: ignore
+        ray.get(futures_train + futures_inference)
+
     loss_fn = ClippedPGLossFn(loss_config)
 
     print("\n" + "=" * 60)
@@ -267,7 +336,7 @@ def setup(
     return (
         policy,
         policy_generation,
-        cluster,
+        (train_cluster, inference_cluster),
         dataloader,
         val_dataloader,
         loss_fn,
@@ -286,6 +355,7 @@ def setup(
 def refit_policy_generation(
     policy: ColocatablePolicyInterface,
     policy_generation: GenerationInterface,
+    colocated_inference: bool,
     _refit_buffer_size_gb: Optional[int] = None,
 ) -> None:
     """Refit the policy generation interface with the latest policy weights.
@@ -297,24 +367,46 @@ def refit_policy_generation(
             If it is None, the buffer size will be computed by the remaining memory.
             This parameter is primarily used for testing.
     """
-    policy.offload_before_refit()
-    policy_generation.prepare_for_generation(tags=["weights"])
-    # get model param keys, which is grouped by size
-    grouped_param_keys = policy.prepare_weights_for_ipc(
-        _refit_buffer_size_gb=_refit_buffer_size_gb
-    )
-    # do update
-    for keys in grouped_param_keys:
-        ipc_handles = policy.get_weights_ipc_handles(keys)
-        if not policy_generation.update_weights(ipc_handles):
-            error_message = (
-                "❌ Error: Updating weights for the generation policy failed during refit.\n"
-                "This often indicates an issue with cuda-ipc or "
-                "a problem within the generation backend (e.g., vLLM worker).\n"
-            )
-            raise RuntimeError(error_message)
-    policy.offload_after_refit()
-    policy_generation.prepare_for_generation(tags=["kv_cache"])
+    if colocated_inference:
+        policy.offload_before_refit()
+        policy_generation.prepare_for_generation(tags=["weights"])
+
+    # update weights
+    update_success = False
+    if colocated_inference:
+        # get model param keys, which is grouped by size
+        grouped_param_keys = policy.prepare_weights_for_ipc(
+            _refit_buffer_size_gb=_refit_buffer_size_gb
+        )
+        # do update
+        for keys in grouped_param_keys:
+            ipc_handles = policy.get_weights_ipc_handles(keys)
+            update_success = policy_generation.update_weights(ipc_handles)
+            if not update_success:
+                break
+    else:
+        state_dict_info = policy.prepare_info_for_collective()
+        futures_train = policy.broadcast_weights_for_collective()
+        futures_inference = policy_generation.update_weights_from_collective(
+            state_dict_info
+        )
+        ray.get(futures_train)
+        results = ray.get(futures_inference)
+        update_success = all(result for result in results if result is not None)
+
+    # check if update is successful
+    if not update_success:
+        tag = "cuda-ipc" if colocated_inference else "nccl"
+        error_message = (
+            "❌ Error: Updating weights for the generation policy failed during refit.\n"
+            f"This often indicates an issue with {tag} or "
+            "a problem within the generation backend (e.g., vLLM worker).\n"
+        )
+        raise RuntimeError(error_message)
+
+    if colocated_inference:
+        policy.offload_after_refit()
+        policy_generation.prepare_for_generation(tags=["kv_cache"])
 
 
 # ===============================================================================
@@ -351,12 +443,13 @@ def grpo_train(
     consumed_samples = grpo_save_state["consumed_samples"]
     val_period = master_config["grpo"]["val_period"]
     val_at_start = master_config["grpo"]["val_at_start"]
+    colocated_inference = master_config["policy"]["generation"]["colocated"]["enabled"]
 
     # Run validation at the start if configured
     if val_at_start and step == 0:
         print("\n🔍 Running initial validation...")
         if NEED_REFIT and POLICY_GENERATION_STALE:
-            refit_policy_generation(policy, policy_generation)
+            refit_policy_generation(policy, policy_generation, colocated_inference)
             POLICY_GENERATION_STALE = False
         else:
             policy_generation.prepare_for_generation()
@@ -399,7 +492,9 @@ def grpo_train(
             print(f"▶ Generating responses for batch of size {repeated_batch.size}...")
             with timer.time("prepare_for_generation"):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(policy, policy_generation)
+                    refit_policy_generation(
+                        policy, policy_generation, colocated_inference
+                    )
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
@@ -511,7 +606,9 @@ def grpo_train(
             # Run validation if it's a validation step
             if is_last_step or (val_period > 0 and (step + 1) % val_period == 0):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(policy, policy_generation)
+                    refit_policy_generation(
+                        policy, policy_generation, colocated_inference
+                    )
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
