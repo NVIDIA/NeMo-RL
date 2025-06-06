@@ -345,7 +345,10 @@ class VllmGenerationWorker:
     def init_collective(self, rank_prefix: int, world_size: int) -> None:
         self.llm.collective_rpc(
             "init_collective",
-            args=(rank_prefix, world_size,),
+            args=(
+                rank_prefix,
+                world_size,
+            ),
         )
 
     def llm(self):
@@ -961,6 +964,12 @@ class VllmGenerationWorker:
             traceback.print_exc()
             return False
 
+    def reset_prefix_cache(self):
+        """Reset the prefix cache of vLLM engine."""
+        self.llm.llm_engine.reset_prefix_cache()
+        gc.collect()
+        torch.cuda.empty_cache()
+
     def sleep(self):
         """Put the vLLM engine to sleep."""
         assert self.llm is not None, (
@@ -1426,12 +1435,15 @@ class VllmGeneration(GenerationInterface):
             return False
 
     def finish_generation(self, *args: Any, **kwargs: Any) -> bool:
-        """Sleep workers."""
+        """Sleep workers and reset prefix cache."""
         try:
             # Choose the appropriate method based on async_engine setting
-            method_name = (
-                "sleep_async" if self.cfg["vllm_cfg"]["async_engine"] else "sleep"
-            )
+            if not self.cfg["colocated"]["enabled"]:
+                method_name = "reset_prefix_cache"
+            else:
+                method_name = (
+                    "sleep_async" if self.cfg["vllm_cfg"]["async_engine"] else "sleep"
+                )
             # Use run_all_workers_single_data for methods that don't need data
             futures = self.worker_group.run_all_workers_single_data(
                 method_name,

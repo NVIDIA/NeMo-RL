@@ -324,7 +324,7 @@ def setup(
             inference_nodes * inference_gpus_per_node + 1
         )  # inference cluster + head node of the train cluster
         futures_train = policy.init_collective(world_size)
-        futures_inference = policy_generation.init_collective(world_size) # type: ignore
+        futures_inference = policy_generation.init_collective(world_size)  # type: ignore
         ray.get(futures_train + futures_inference)
 
     loss_fn = ClippedPGLossFn(loss_config)
@@ -367,8 +367,9 @@ def refit_policy_generation(
             If it is None, the buffer size will be computed by the remaining memory.
             This parameter is primarily used for testing.
     """
-    policy.offload_before_refit()
-    policy_generation.prepare_for_generation(tags=["weights"])
+    if colocated_inference:
+        policy.offload_before_refit()
+        policy_generation.prepare_for_generation(tags=["weights"])
 
     # update weights
     update_success = False
@@ -403,8 +404,9 @@ def refit_policy_generation(
         )
         raise RuntimeError(error_message)
 
-    policy.offload_after_refit()
-    policy_generation.prepare_for_generation(tags=["kv_cache"])
+    if colocated_inference:
+        policy.offload_after_refit()
+        policy_generation.prepare_for_generation(tags=["kv_cache"])
 
 
 # ===============================================================================
