@@ -14,6 +14,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, NotRequired, Optional, TypedDict, Union
 
+import ray
 import torch
 
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
@@ -197,7 +198,7 @@ class GenerationInterface(ABC):
     """Abstract base class defining the interface for RL policies."""
 
     @abstractmethod
-    def init_collective(self, world_size: int) -> None:
+    def init_collective(self, world_size: int) -> list[ray.ObjectRef]:
         """Initialize the collective communication."""
         pass
 
@@ -219,6 +220,6 @@ class GenerationInterface(ABC):
         """Update the model weights from the given IPC handles."""
         raise NotImplementedError
 
-    def update_weights_from_collective(self, info: dict[str, Any]) -> bool:
+    def update_weights_from_collective(self, info: dict[str, Any]) -> list[ray.ObjectRef]:
         """Update the model weights from collective communication."""
         raise NotImplementedError

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Optional, Tuple, TypedDict, cast
 
 import numpy as np
+import ray
 import torch
 from torchdata.stateful_dataloader import StatefulDataLoader
 from transformers import PreTrainedTokenizerBase
@@ -312,8 +313,9 @@ def setup(
     # if it is not colocated inference, initialize collective communication for update weights
     if not colocated_inference:
         world_size = inference_nodes * inference_gpus_per_node + 1 # inference cluster + head node of the train cluster
-        policy.init_collective(world_size)
-        policy_generation.init_collective(world_size)
+        futures_train = policy.init_collective(world_size)
+        futures_inference = policy_generation.init_collective(world_size)
+        ray.get(futures_train + futures_inference)
 
     loss_fn = ClippedPGLossFn(loss_config)
 
@@ -359,6 +361,7 @@ def refit_policy_generation(
     policy_generation.prepare_for_generation(tags=["weights"])
 
     # update weights
+    update_success = False
     if colocated_inference:
         # get model param keys, which is grouped by size
         grouped_param_keys = policy.prepare_weights_for_ipc(
@@ -367,23 +370,26 @@ def refit_policy_generation(
         # do update
         for keys in grouped_param_keys:
             ipc_handles = policy.get_weights_ipc_handles(keys)
-            if not policy_generation.update_weights(ipc_handles):
-                error_message = (
-                    "❌ Error: Updating weights for the generation policy failed during refit.\n"
-                    "This often indicates an issue with cuda-ipc or "
-                    "a problem within the generation backend (e.g., vLLM worker).\n"
-                )
-                raise RuntimeError(error_message)
+            update_success = policy_generation.update_weights(ipc_handles)
+            if not update_success:
+                break
     else:
         state_dict_info = policy.prepare_info_for_collective()
-        policy.broadcast_weights_for_collective()
-        if not policy_generation.update_weights_from_collective(state_dict_info):
-            error_message = (
-                "❌ Error: Updating weights for the generation policy failed during refit.\n"
-                "This often indicates an issue with nccl or "
-                "a problem within the generation backend (e.g., vLLM worker).\n"
-            )
-            raise RuntimeError(error_message)
+        futures_train = policy.broadcast_weights_for_collective()
+        futures_inference = policy_generation.update_weights_from_collective(state_dict_info)
+        ray.get(futures_train)
+        results = ray.get(futures_inference)
+        update_success = all(result for result in results if result is not None)
+
+    # check if update is successful
+    if not update_success:
+        tag = "cuda-ipc" if colocated_inference else "nccl"
+        error_message = (
+            "❌ Error: Updating weights for the generation policy failed during refit.\n"
+            f"This often indicates an issue with {tag} or "
+            "a problem within the generation backend (e.g., vLLM worker).\n"
+        )
+        raise RuntimeError(error_message)
 
     policy.offload_after_refit()
     policy_generation.prepare_for_generation(tags=["kv_cache"])
