@@ -14,7 +14,6 @@
 
 import os
 from copy import deepcopy
-from unittest import mock
 
 import pytest
 import ray
@@ -316,7 +315,9 @@ async def test_vllm_policy_generation_async(
         print("creating hf policy...")
 
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
-        refit_policy_generation(hf_policy, async_policy, vllm_config["colocated"]["enabled"])
+        refit_policy_generation(
+            hf_policy, async_policy, vllm_config["colocated"]["enabled"]
+        )
 
         outputs = async_policy.generate_async(test_input_data)
         # Validate outputs format
@@ -567,7 +568,9 @@ def test_vllm_generation_with_hf_training(
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print("refitting vllm policy...")
-        refit_policy_generation(hf_policy, vllm_policy, vllm_config["colocated"]["enabled"])
+        refit_policy_generation(
+            hf_policy, vllm_policy, vllm_config["colocated"]["enabled"]
+        )
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
@@ -919,7 +922,12 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     # reset peak memory stats before refit
     workers = hf_policy.worker_group.workers
     ray.get([w.reset_peak_memory_stats.remote() for w in workers])
-    refit_policy_generation(hf_policy, vllm_policy, vllm_config["colocated"]["enabled"], _refit_buffer_size_gb=1)
+    refit_policy_generation(
+        hf_policy,
+        vllm_policy,
+        vllm_config["colocated"]["enabled"],
+        _refit_buffer_size_gb=1,
+    )
     gpu_infos = ray.get([w.get_gpu_info.remote() for w in workers])
 
     # Gather memory stats
@@ -986,7 +994,9 @@ def test_vllm_generation_with_stop(
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print("refitting vllm policy...")
-        refit_policy_generation(hf_policy, vllm_generation, vllm_config["colocated"]["enabled"])
+        refit_policy_generation(
+            hf_policy, vllm_generation, vllm_config["colocated"]["enabled"]
+        )
 
     # test generate
     outputs = vllm_generation.generate(test_input_data, greedy=True)
@@ -1075,7 +1085,9 @@ def test_vllm_refit_non_collocated_handles_update(
     vllm_generation.init_collective(2)
 
     print("refitting vllm policy...")
-    refit_policy_generation(hf_policy, vllm_generation, vllm_config["colocated"]["enabled"])
+    refit_policy_generation(
+        hf_policy, vllm_generation, vllm_config["colocated"]["enabled"]
+    )
 
     # test generate
     outputs = vllm_generation.generate(test_input_data, greedy=True)

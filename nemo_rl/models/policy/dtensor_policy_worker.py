@@ -268,11 +268,13 @@ class DTensorPolicyWorker:
 
         # keep the same behavior as vllm
         # see https://github.com/vllm-project/vllm/blob/v0.8.5/vllm/env_override.py#L25
-        if not os.path.exists('/dev/nvidia-caps-imex-channels'):
+        if not os.path.exists("/dev/nvidia-caps-imex-channels"):
             os.environ["NCCL_CUMEM_ENABLE"] = "0"
 
         if self.rank == 0:
-            collective.init_collective_group(world_size=world_size, rank=0, backend="nccl", group_name="refit")
+            collective.init_collective_group(
+                world_size=world_size, rank=0, backend="nccl", group_name="refit"
+            )
 
     def is_alive(self) -> bool:
         return True

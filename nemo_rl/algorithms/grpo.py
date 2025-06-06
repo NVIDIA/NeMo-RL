@@ -221,7 +221,9 @@ def setup(
             * cluster_config["num_nodes"],
             use_gpus=True,
             num_gpus_per_node=cluster_config["gpus_per_node"],
-            max_colocated_worker_groups=1 if generation_config["backend"] == "hf" else 2,
+            max_colocated_worker_groups=1
+            if generation_config["backend"] == "hf"
+            else 2,
         )
         train_cluster = cluster
         inference_cluster = cluster
@@ -263,7 +265,9 @@ def setup(
             num_gpus_per_node=train_gpus_per_node,
             max_colocated_worker_groups=1,
         )
-        print(f"  ✓ Ray train cluster initialized with {train_nodes} nodes with {train_gpus_per_node} GPUs per node")
+        print(
+            f"  ✓ Ray train cluster initialized with {train_nodes} nodes with {train_gpus_per_node} GPUs per node"
+        )
 
         # initialize inference cluster
         inference_cluster = RayVirtualCluster(
@@ -273,7 +277,9 @@ def setup(
             num_gpus_per_node=inference_gpus_per_node,
             max_colocated_worker_groups=1,
         )
-        print(f"  ✓ Ray inference cluster initialized with {inference_nodes} nodes with {inference_gpus_per_node} GPUs per node")
+        print(
+            f"  ✓ Ray inference cluster initialized with {inference_nodes} nodes with {inference_gpus_per_node} GPUs per node"
+        )
 
     # ==========================
     #   Training and Inference
@@ -289,7 +295,9 @@ def setup(
         print(f"  ✓ Using HF backend for generation with {policy_config['model_name']}")
     elif backend == "vllm":
         generation_config = cast(VllmConfig, generation_config)
-        policy_generation = VllmGeneration(cluster=inference_cluster, config=generation_config)
+        policy_generation = VllmGeneration(
+            cluster=inference_cluster, config=generation_config
+        )
         # Worker groups are not initialized until the first call to run something on workergroups.
         # vllm 0.8 fails in initialization if its called in the first training step since it has no clean view of the GPU memory (HF is sharing the same memory).
         policy_generation.finish_generation()
@@ -312,9 +320,11 @@ def setup(
 
     # if it is not colocated inference, initialize collective communication for update weights
     if not colocated_inference:
-        world_size = inference_nodes * inference_gpus_per_node + 1 # inference cluster + head node of the train cluster
+        world_size = (
+            inference_nodes * inference_gpus_per_node + 1
+        )  # inference cluster + head node of the train cluster
         futures_train = policy.init_collective(world_size)
-        futures_inference = policy_generation.init_collective(world_size)
+        futures_inference = policy_generation.init_collective(world_size) # type: ignore
         ray.get(futures_train + futures_inference)
 
     loss_fn = ClippedPGLossFn(loss_config)
@@ -376,7 +386,9 @@ def refit_policy_generation(
     else:
         state_dict_info = policy.prepare_info_for_collective()
         futures_train = policy.broadcast_weights_for_collective()
-        futures_inference = policy_generation.update_weights_from_collective(state_dict_info)
+        futures_inference = policy_generation.update_weights_from_collective(
+            state_dict_info
+        )
         ray.get(futures_train)
         results = ray.get(futures_inference)
         update_success = all(result for result in results if result is not None)
@@ -478,7 +490,9 @@ def grpo_train(
             print(f"▶ Generating responses for batch of size {repeated_batch.size}...")
             with timer.time("prepare_for_generation"):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(policy, policy_generation, colocated_inference)
+                    refit_policy_generation(
+                        policy, policy_generation, colocated_inference
+                    )
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
@@ -590,7 +604,9 @@ def grpo_train(
             # Run validation if it's a validation step
             if is_last_step or (val_period > 0 and (step + 1) % val_period == 0):
                 if NEED_REFIT and POLICY_GENERATION_STALE:
-                    refit_policy_generation(policy, policy_generation, colocated_inference)
+                    refit_policy_generation(
+                        policy, policy_generation, colocated_inference
+                    )
                     POLICY_GENERATION_STALE = False
                 else:
                     policy_generation.prepare_for_generation()
