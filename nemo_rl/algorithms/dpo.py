@@ -308,7 +308,7 @@ def validate(
 
             else:
                 for k, v in val_results["all_mb_metrics"].items():
-                    if k in {"lr", "global_valid_seqs", "global_valid_toks"}:
+                    if k in {"lr", "wd", "global_valid_seqs", "global_valid_toks"}:
                         val_metrics[k] += np.mean(v).item()
                     else:
                         val_metrics[k] += np.sum(v).item()
@@ -497,7 +497,7 @@ def dpo_train(
             }
             metrics.update(train_results["all_mb_metrics"])
             for k, v in metrics.items():
-                if k in {"lr", "global_valid_seqs", "global_valid_toks"}:
+                if k in {"lr", "wd", "global_valid_seqs", "global_valid_toks"}:
                     metrics[k] = np.mean(v).item()
                 else:
                     metrics[k] = np.sum(v).item()
