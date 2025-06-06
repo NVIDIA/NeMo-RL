@@ -63,6 +63,7 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
 
         node_bundle_indices = None
         tp_size = 1
+        cp_size = 1
 
         worker_builder_cls: str
         if config["dtensor_cfg"]["enabled"]:
@@ -70,6 +71,7 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
                 "nemo_rl.models.policy.dtensor_policy_worker.DTensorPolicyWorker"
             )
             tp_size = config["dtensor_cfg"]["tensor_parallel_size"]
+            cp_size = config["dtensor_cfg"]["context_parallel_size"]
         else:
             worker_builder_cls = (
                 "nemo_rl.models.policy.fsdp1_policy_worker.FSDP1PolicyWorker"
@@ -78,9 +80,10 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
         self.sharding_annotations = NamedSharding(
             layout=np.arange(cluster.world_size()).reshape(
                 -1,  # DP
+                cp_size,  # CP
                 tp_size,  # TP
             ),
-            names=["data_parallel", "tensor_parallel"],
+            names=["data_parallel", "context_parallel", "tensor_parallel"],
         )
 
         worker_builder = RayWorkerBuilder(
@@ -151,8 +154,8 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
             "get_logprobs",
             sharded_data,
             in_sharded_axes=["data_parallel"],
-            replicate_on_axes=["tensor_parallel"],
-            output_is_replicated=["tensor_parallel"],
+            replicate_on_axes=["context_parallel", "tensor_parallel"],
+            output_is_replicated=["context_parallel", "tensor_parallel"],
         )
         logprobs: BatchedDataDict[LogprobOutputSpec] = BatchedDataDict.from_batches(
             self.worker_group.get_all_worker_results(futures)
@@ -246,8 +249,8 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
             "train",
             sharded_data,
             in_sharded_axes=["data_parallel"],
-            replicate_on_axes=["tensor_parallel"],
-            output_is_replicated=["tensor_parallel"],
+            replicate_on_axes=["context_parallel", "tensor_parallel"],
+            output_is_replicated=["context_parallel", "tensor_parallel"],
             common_kwargs={
                 "loss_fn": loss_fn,
                 "eval_mode": eval_mode,
