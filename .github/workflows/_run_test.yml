@@ -80,7 +80,7 @@ jobs:
             nvidia-smi
             GITHUB_ACTION_DIR=$(dirname $GITHUB_STEP_SUMMARY)
             mkdir -p /mnt/datadrive/TestData/nemo-rl/terry-dbg-ray-logs
-            docker run --rm -u root -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all --shm-size=8g \
+            docker run --rm -u root -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all \
               --env TRANSFORMERS_OFFLINE=0 \
               --env HYDRA_FULL_ERROR=1 \
               --env HF_HOME=/home/TestData/nemo-rl/hf_home \
