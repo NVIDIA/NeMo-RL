@@ -54,7 +54,9 @@ def create_local_venv(py_executable: str, venv_name: str) -> str:
     #
     # You can override this location by setting the NEMO_RL_VENV_DIR environment variable
 
-    NEMO_RL_VENV_DIR = os.environ.get("NEMO_RL_VENV_DIR", DEFAULT_VENV_DIR)
+    NEMO_RL_VENV_DIR = os.path.normpath(
+        os.environ.get("NEMO_RL_VENV_DIR", DEFAULT_VENV_DIR)
+    )
     logger.info(f"NEMO_RL_VENV_DIR is set to {NEMO_RL_VENV_DIR}.")
 
     # Create the venv directory if it doesn't exist
@@ -96,7 +98,9 @@ def _env_builder(py_executable: str, venv_name: str, node_idx: int):
     time.sleep(1 * node_idx)
 
     # Check if another node is already building
-    NEMO_RL_VENV_DIR = os.environ.get("NEMO_RL_VENV_DIR", DEFAULT_VENV_DIR)
+    NEMO_RL_VENV_DIR = os.path.normpath(
+        os.environ.get("NEMO_RL_VENV_DIR", DEFAULT_VENV_DIR)
+    )
     venv_path = Path(NEMO_RL_VENV_DIR) / venv_name
     started_file = venv_path / "STARTED_ENV_BUILDER"
 
@@ -142,7 +146,11 @@ def create_local_venv_on_each_node(py_executable: str, venv_name: str):
     ]
     # ensure setup runs on each node
     paths = ray.get([actor for actor in actors])
-    assert len(set(paths)) == 1, "All nodes should have the same venv"
+    # Normalize paths to handle double slashes and other path inconsistencies
+    normalized_paths = [os.path.normpath(p) for p in paths]
+    assert len(set(normalized_paths)) == 1, (
+        f"All nodes should have the same venv, but got: {set(normalized_paths)}"
+    )
 
     # Clean up the placement group
     ray.util.remove_placement_group(pg)
