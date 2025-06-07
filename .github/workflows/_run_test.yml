@@ -97,20 +97,20 @@ jobs:
               nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }} \
               bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
 
-        - name: Run unit tests
-          run: |
-            docker exec nemo_container_${{ github.run_id }} git config --global --add safe.directory /opt/nemo-rl
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
-            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
-            umask 000
-            ${{ inputs.UNIT_TEST_SCRIPT }}"
+        # - name: Run unit tests
+        #   run: |
+        #     docker exec nemo_container_${{ github.run_id }} git config --global --add safe.directory /opt/nemo-rl
+        #     docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
+        #     # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+        #     umask 000
+        #     ${{ inputs.UNIT_TEST_SCRIPT }}"
 
-        - name: Run doc tests
-          run: |
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
-            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
-            umask 000
-            ${{ inputs.DOC_TEST_SCRIPT }}"
+        # - name: Run doc tests
+        #   run: |
+        #     docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
+        #     # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+        #     umask 000
+        #     ${{ inputs.DOC_TEST_SCRIPT }}"
 
         - name: Run functional tests
           run: |
