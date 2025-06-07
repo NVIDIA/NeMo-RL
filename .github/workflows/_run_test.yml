@@ -138,10 +138,14 @@ jobs:
         - name: final_script_external
           if: always() && inputs.FINAL_SCRIPT_EXTERNAL != ':'
           run: |
-            $DOCKER_RUN_CMD bash -eux -o pipefail -c "${{ inputs.FINAL_SCRIPT_EXTERNAL }}"
+            cmd=$(cat <<"RUN_TEST_EOF"
+            ${{ inputs.FINAL_SCRIPT_EXTERNAL }}
+            RUN_TEST_EOF
+            )
+            bash -eux -o pipefail -c "$cmd"
 
         - name: Container shutdown
           if: always()
           run: |
             # Ensure any added files in the mounted directory are owned by the runner user to allow it to clean up
-            $DOCKER_RUN_CMD bash -c "find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +"
+            docker run nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }} bash -c "find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +"
