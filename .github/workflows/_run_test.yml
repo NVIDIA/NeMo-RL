@@ -61,22 +61,6 @@ jobs:
     timeout-minutes: ${{ inputs.TIMEOUT }}
     env:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      DOCKER_RUN_CMD: >-
-        docker run -u root --runtime=nvidia --gpus all
-        --shm-size=128g
-        --env TRANSFORMERS_OFFLINE=0
-        --env HYDRA_FULL_ERROR=1
-        --env HF_HOME=/home/TestData/nemo-rl/hf_home
-        --env HF_DATASETS_CACHE=/home/TestData/nemo-rl/hf_datasets_cache
-        --env NEMO_RL_REPO_DIR=/opt/nemo-rl
-        --env HF_TOKEN
-        --volume $GITHUB_WORKSPACE:/opt/nemo-rl
-        --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR
-        --volume /mnt/datadrive/TestData/nemo-rl/datasets:/opt/nemo-rl/datasets:ro
-        --volume /mnt/datadrive/TestData/nemo-rl/checkpoints:/home/TestData/nemo-rl/checkpoints:ro
-        --volume /mnt/datadrive/TestData/nemo-rl/hf_home/hub:/home/TestData/nemo-rl/hf_home/hub
-        --volume /mnt/datadrive/TestData/nemo-rl/hf_datasets_cache:/home/TestData/nemo-rl/hf_datasets_cache
-        nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }}
     steps:
         - name: Docker system cleanup
           run: |
@@ -91,6 +75,27 @@ jobs:
           uses: actions/checkout@v4
           with:
             submodules: 'recursive'
+
+        - name: Setup docker run command
+          run: |
+            GITHUB_ACTION_DIR=$(dirname $GITHUB_STEP_SUMMARY)
+            cat >> $GITHUB_ENV << 'EOF'
+            DOCKER_RUN_CMD=docker run -u root --runtime=nvidia --gpus all
+            --shm-size=64g
+            --env TRANSFORMERS_OFFLINE=0
+            --env HYDRA_FULL_ERROR=1
+            --env HF_HOME=/home/TestData/nemo-rl/hf_home
+            --env HF_DATASETS_CACHE=/home/TestData/nemo-rl/hf_datasets_cache
+            --env NEMO_RL_REPO_DIR=/opt/nemo-rl
+            --env HF_TOKEN
+            --volume $GITHUB_WORKSPACE:/opt/nemo-rl
+            --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR
+            --volume /mnt/datadrive/TestData/nemo-rl/datasets:/opt/nemo-rl/datasets:ro
+            --volume /mnt/datadrive/TestData/nemo-rl/checkpoints:/home/TestData/nemo-rl/checkpoints:ro
+            --volume /mnt/datadrive/TestData/nemo-rl/hf_home/hub:/home/TestData/nemo-rl/hf_home/hub
+            --volume /mnt/datadrive/TestData/nemo-rl/hf_datasets_cache:/home/TestData/nemo-rl/hf_datasets_cache
+            nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }}
+            EOF
 
         - name: Run unit tests
           run: |
@@ -130,20 +135,15 @@ jobs:
         #   if: always() && inputs.AFTER_SCRIPT != ':'
         #   run: |
         #     # Run the after script
-        #     cmd=$(cat <<"RUN_TEST_EOF"
-        #     ${{ inputs.AFTER_SCRIPT }}
-        #     RUN_TEST_EOF
-        #     )
-        #     docker exec --env GITHUB_STEP_SUMMARY nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
+        #     docker run --env GITHUB_STEP_SUMMARY nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.AFTER_SCRIPT }}"
 
         - name: final_script_external
           if: always() && inputs.FINAL_SCRIPT_EXTERNAL != ':'
           run: |
-            $DOCKER_RUN_CMD bash -eux -o pipefail -c "
-            ${{ inputs.FINAL_SCRIPT_EXTERNAL }}"
+            $DOCKER_RUN_CMD bash -eux -o pipefail -c "${{ inputs.FINAL_SCRIPT_EXTERNAL }}"
 
         - name: Container shutdown
           if: always()
           run: |
             # Ensure any added files in the mounted directory are owned by the runner user to allow it to clean up
-            $DOCKER_RUN_CMD bash -eux -o pipefail -c "find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +"
+            $DOCKER_RUN_CMD bash -c "find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +"
