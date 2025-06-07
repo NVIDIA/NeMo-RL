@@ -69,7 +69,6 @@ jobs:
         - name: Docker pull image
           run: |
             docker pull nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }}
-            export GITHUB_ACTION_DIR=$(dirname $GITHUB_STEP_SUMMARY)
 
         - name: Checkout repository
           uses: actions/checkout@v4
