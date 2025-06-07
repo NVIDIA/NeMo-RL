@@ -172,21 +172,19 @@ jobs:
       RUNNER: self-hosted-azure
       TIMEOUT: 75
       UNIT_TEST_SCRIPT: |
-        echo skip
-        #cd /opt/nemo-rl
-        #if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
-        #  uv run --no-sync bash -x ./tests/run_unit.sh --cov=nemo_rl --cov-report=term --cov-report=json
-        #else
-        #  echo Skipping unit tests for docs-only level
-        #fi
+        cd /opt/nemo-rl
+        if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
+         uv run --no-sync bash -x ./tests/run_unit.sh --cov=nemo_rl --cov-report=term --cov-report=json
+        else
+         echo Skipping unit tests for docs-only level
+        fi
       DOC_TEST_SCRIPT: |
-        echo skip
-        #cd /opt/nemo-rl/docs
-        #if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(docs|L0|L1|L2)$ ]]; then
-        #  uv run --no-sync sphinx-build -b doctest . _build/doctest
-        #else
-        #  echo Skipping doc tests for level ${{ needs.pre-flight.outputs.test_level }}
-        #fi
+        cd /opt/nemo-rl/docs
+        if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(docs|L0|L1|L2)$ ]]; then
+         uv run --no-sync sphinx-build -b doctest . _build/doctest
+        else
+         echo Skipping doc tests for level ${{ needs.pre-flight.outputs.test_level }}
+        fi
       FUNCTIONAL_TEST_SCRIPT: |
         cd /opt/nemo-rl
         uv run tools/find_available_port_ranges.py
