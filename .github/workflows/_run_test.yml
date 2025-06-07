@@ -61,6 +61,22 @@ jobs:
     timeout-minutes: ${{ inputs.TIMEOUT }}
     env:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      DOCKER_RUN_CMD: >-
+        docker run -u root --runtime=nvidia --gpus all
+        --shm-size=128g
+        --env TRANSFORMERS_OFFLINE=0
+        --env HYDRA_FULL_ERROR=1
+        --env HF_HOME=/home/TestData/nemo-rl/hf_home
+        --env HF_DATASETS_CACHE=/home/TestData/nemo-rl/hf_datasets_cache
+        --env NEMO_RL_REPO_DIR=/opt/nemo-rl
+        --env HF_TOKEN
+        --volume $GITHUB_WORKSPACE:/opt/nemo-rl
+        --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR
+        --volume /mnt/datadrive/TestData/nemo-rl/datasets:/opt/nemo-rl/datasets:ro
+        --volume /mnt/datadrive/TestData/nemo-rl/checkpoints:/home/TestData/nemo-rl/checkpoints:ro
+        --volume /mnt/datadrive/TestData/nemo-rl/hf_home/hub:/home/TestData/nemo-rl/hf_home/hub
+        --volume /mnt/datadrive/TestData/nemo-rl/hf_datasets_cache:/home/TestData/nemo-rl/hf_datasets_cache
+        nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }}
     steps:
         - name: Docker system cleanup
           run: |
@@ -69,53 +85,36 @@ jobs:
         - name: Docker pull image
           run: |
             docker pull nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }}
+            export GITHUB_ACTION_DIR=$(dirname $GITHUB_STEP_SUMMARY)
 
         - name: Checkout repository
           uses: actions/checkout@v4
           with:
             submodules: 'recursive'
 
-        - name: Start container
+        - name: Run unit tests
           run: |
-            nvidia-smi
+            $DOCKER_RUN_CMD bash -eux -o pipefail -c "
+            git config --global --add safe.directory /opt/nemo-rl
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
+            ${{ inputs.UNIT_TEST_SCRIPT }}"
 
-        # - name: Run unit tests
-        #   run: |
-        #     docker exec nemo_container_${{ github.run_id }} git config --global --add safe.directory /opt/nemo-rl
-        #     docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
-        #     # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
-        #     umask 000
-        #     ${{ inputs.UNIT_TEST_SCRIPT }}"
-
-        # - name: Run doc tests
-        #   run: |
-        #     docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
-        #     # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
-        #     umask 000
-        #     ${{ inputs.DOC_TEST_SCRIPT }}"
+        - name: Run doc tests
+          run: |
+            $DOCKER_RUN_CMD bash -eux -o pipefail -c "
+            git config --global --add safe.directory /opt/nemo-rl
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
+            ${{ inputs.DOC_TEST_SCRIPT }}"
 
         - name: Run functional tests
           run: |
-            GITHUB_ACTION_DIR=$(dirname $GITHUB_STEP_SUMMARY)
-            docker run -u root --runtime=nvidia --gpus all --shm-size=128g \
-              --env TRANSFORMERS_OFFLINE=0 \
-              --env HYDRA_FULL_ERROR=1 \
-              --env HF_HOME=/home/TestData/nemo-rl/hf_home \
-              --env HF_DATASETS_CACHE=/home/TestData/nemo-rl/hf_datasets_cache \
-              --env NEMO_RL_REPO_DIR=/opt/nemo-rl \
-              --env HF_TOKEN \
-              --volume $GITHUB_WORKSPACE:/opt/nemo-rl \
-              --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR \
-              --volume /mnt/datadrive/TestData/nemo-rl/datasets:/opt/nemo-rl/datasets:ro \
-              --volume /mnt/datadrive/TestData/nemo-rl/checkpoints:/home/TestData/nemo-rl/checkpoints:ro \
-              --volume /mnt/datadrive/TestData/nemo-rl/hf_home/hub:/home/TestData/nemo-rl/hf_home/hub \
-              --volume /mnt/datadrive/TestData/nemo-rl/hf_datasets_cache:/home/TestData/nemo-rl/hf_datasets_cache \
-              nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }} \
-              bash -eux -o pipefail -c "
-              # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
-              umask 000
-              ${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
-              find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +
+            $DOCKER_RUN_CMD bash -eux -o pipefail -c "
+            git config --global --add safe.directory /opt/nemo-rl
+            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+            umask 000
+            ${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
 
         # - name: Upload coverage report
         #   uses: actions/upload-artifact@v4
@@ -140,16 +139,11 @@ jobs:
         - name: final_script_external
           if: always() && inputs.FINAL_SCRIPT_EXTERNAL != ':'
           run: |
-            cmd=$(cat <<"RUN_TEST_EOF"
-            ${{ inputs.FINAL_SCRIPT_EXTERNAL }}
-            RUN_TEST_EOF
-            )
-            bash -eux -o pipefail -c "$cmd"
+            $DOCKER_RUN_CMD bash -eux -o pipefail -c "
+            ${{ inputs.FINAL_SCRIPT_EXTERNAL }}"
 
         - name: Container shutdown
           if: always()
           run: |
             # Ensure any added files in the mounted directory are owned by the runner user to allow it to clean up
-            # docker exec nemo_container_${{ github.run_id }} bash -c "find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +"
-            docker container stop nemo_container_${{ github.run_id }} || true
-            docker container rm nemo_container_${{ github.run_id }} || true
+            $DOCKER_RUN_CMD bash -eux -o pipefail -c "find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +"
