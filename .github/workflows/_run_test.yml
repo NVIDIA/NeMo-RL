@@ -97,7 +97,7 @@ jobs:
         - name: Run functional tests
           run: |
             GITHUB_ACTION_DIR=$(dirname $GITHUB_STEP_SUMMARY)
-            docker run -u root --runtime=nvidia --gpus all \
+            docker run -u root --runtime=nvidia --gpus all --shm-size=128g \
               --env TRANSFORMERS_OFFLINE=0 \
               --env HYDRA_FULL_ERROR=1 \
               --env HF_HOME=/home/TestData/nemo-rl/hf_home \
