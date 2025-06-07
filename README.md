@@ -103,6 +103,11 @@ Install `uv`.
 # For faster setup and environment isolation, we use `uv`
 pip install uv
 
+# Initialize NeMo RL project virtual environment
+# NOTE: Please do not use -p/--python and instead allow uv venv to read it from .python-version
+#       This ensures that the version of python used is always what we prescribe.
+uv venv
+
 # If you cannot install at the system level, you can install for your user with
 # pip install --user uv
 
