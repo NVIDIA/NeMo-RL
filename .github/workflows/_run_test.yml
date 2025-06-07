@@ -133,7 +133,11 @@ jobs:
           if: always() && inputs.AFTER_SCRIPT != ':'
           run: |
             # Run the after script
-            docker run --env GITHUB_STEP_SUMMARY nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }} bash -eux -o pipefail -c "${{ inputs.AFTER_SCRIPT }}"
+            cmd=$(cat <<"RUN_TEST_EOF"
+            ${{ inputs.AFTER_SCRIPT }}
+            RUN_TEST_EOF
+            )
+            docker run --env GITHUB_STEP_SUMMARY nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
 
         - name: final_script_external
           if: always() && inputs.FINAL_SCRIPT_EXTERNAL != ':'
