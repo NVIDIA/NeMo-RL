@@ -1,15 +1,33 @@
-ARG BASE_IMAGE=nvcr.io/nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
+ARG BASE_IMAGE=nvcr.io/nvidia/cuda-dl-base:25.05-cuda12.9-devel-ubuntu24.04
 FROM ${BASE_IMAGE} AS base
 
 # It is more convenient for users to run as root
 USER root
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN <<"EOF" bash -exu -o pipefail
+export DEBIAN_FRONTEND=noninteractive
+export TZ=America/Los_Angeles
+
+apt-get update
+apt-get install -y --no-install-recommends \
     jq \
     curl \
     git \
-    && rm -rf /var/lib/apt/lists/* && \
-    apt-get clean
+    rsync \
+    less \
+    vim \
+
+# Nsight
+apt install -y --no-install-recommends gnupg
+echo "deb http://developer.download.nvidia.com/devtools/repos/ubuntu$(source /etc/lsb-release; echo "$DISTRIB_RELEASE" | tr -d .)/$(dpkg --print-architecture) /" | tee /etc/apt/sources.list.d/nvidia-devtools.list
+apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
+apt update
+apt install -y nsight-systems-cli
+
+
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+EOF
 
 # Install uv and python
 ARG UV_VERSION=0.7.2
@@ -32,8 +50,8 @@ COPY --link 3rdparty/ ./3rdparty/
 
 # Variables to control the build of TE. If there are issues with parallelization, consider
 # setting these to 1.
-ARG MAX_JOBS
-ARG NVTE_BUILD_THREADS_PER_JOB
+ARG MAX_JOBS=4
+ARG NVTE_BUILD_THREADS_PER_JOB=1
 
 ENV UV_PROJECT_ENVIRONMENT=/opt/nemo_rl_venv
 ENV UV_LINK_MODE=copy
@@ -48,8 +66,9 @@ uv venv ${UV_PROJECT_ENVIRONMENT}
 # Do everything in one layer to prevent large layers.
 
 # The venv is symlinked to avoid bloating the layer size
+uv sync --link-mode symlink --locked --no-install-project
 uv sync --link-mode symlink --locked --extra vllm --no-install-project
-uv sync --link-mode symlink --locked --extra mcore --no-install-project --no-build-isolation
+uv sync --link-mode symlink --locked --extra mcore --no-install-project
 uv sync --link-mode symlink --locked --all-groups --no-install-project
 EOF
 
