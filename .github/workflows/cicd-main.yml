@@ -210,8 +210,6 @@ jobs:
       #  fi
       AFTER_SCRIPT: |
         cd /opt/nemo-rl
-        LOG_DIR=/opt/terry-dbg-ray-logs
-        rsync -ahP /tmp/ray/session_* "$LOG_DIR/"
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Test Summary for level: ${{ needs.pre-flight.outputs.test_level }}
 
