@@ -114,10 +114,9 @@ jobs:
           submodules: 'recursive'
       - name: Check lint
         run: |
-          echo skip
-          #pip install pre-commit==3.6.0
-          #pre-commit install
-          #pre-commit run --all-files --show-diff-on-failure --color=always
+          pip install pre-commit==3.6.0
+          pre-commit install
+          pre-commit run --all-files --show-diff-on-failure --color=always
 
   mypy-check:
     name: Mypy check
