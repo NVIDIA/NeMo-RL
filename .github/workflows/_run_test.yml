@@ -78,24 +78,6 @@ jobs:
         - name: Start container
           run: |
             nvidia-smi
-            GITHUB_ACTION_DIR=$(dirname $GITHUB_STEP_SUMMARY)
-            mkdir -p /mnt/datadrive/TestData/nemo-rl/terry-dbg-ray-logs
-            docker run --rm -u root -d --name nemo_container_${{ github.run_id }} --runtime=nvidia --gpus all \
-              --env TRANSFORMERS_OFFLINE=0 \
-              --env HYDRA_FULL_ERROR=1 \
-              --env HF_HOME=/home/TestData/nemo-rl/hf_home \
-              --env HF_DATASETS_CACHE=/home/TestData/nemo-rl/hf_datasets_cache \
-              --env NEMO_RL_REPO_DIR=/opt/nemo-rl \
-              --env HF_TOKEN \
-              --volume $GITHUB_WORKSPACE:/opt/nemo-rl \
-              --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR \
-              --volume /mnt/datadrive/TestData/nemo-rl/terry-dbg-ray-logs:/opt/terry-dbg-ray-logs \
-              --volume /mnt/datadrive/TestData/nemo-rl/datasets:/opt/nemo-rl/datasets:ro \
-              --volume /mnt/datadrive/TestData/nemo-rl/checkpoints:/home/TestData/nemo-rl/checkpoints:ro \
-              --volume /mnt/datadrive/TestData/nemo-rl/hf_home/hub:/home/TestData/nemo-rl/hf_home/hub \
-              --volume /mnt/datadrive/TestData/nemo-rl/hf_datasets_cache:/home/TestData/nemo-rl/hf_datasets_cache \
-              nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }} \
-              bash -c "sleep $(( ${{ inputs.TIMEOUT }} * 60 + 60 ))"
 
         # - name: Run unit tests
         #   run: |
@@ -114,30 +96,46 @@ jobs:
 
         - name: Run functional tests
           run: |
-            docker exec nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "
-            # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
-            umask 000
-            ${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
+            GITHUB_ACTION_DIR=$(dirname $GITHUB_STEP_SUMMARY)
+            docker run -u root --runtime=nvidia --gpus all \
+              --env TRANSFORMERS_OFFLINE=0 \
+              --env HYDRA_FULL_ERROR=1 \
+              --env HF_HOME=/home/TestData/nemo-rl/hf_home \
+              --env HF_DATASETS_CACHE=/home/TestData/nemo-rl/hf_datasets_cache \
+              --env NEMO_RL_REPO_DIR=/opt/nemo-rl \
+              --env HF_TOKEN \
+              --volume $GITHUB_WORKSPACE:/opt/nemo-rl \
+              --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR \
+              --volume /mnt/datadrive/TestData/nemo-rl/datasets:/opt/nemo-rl/datasets:ro \
+              --volume /mnt/datadrive/TestData/nemo-rl/checkpoints:/home/TestData/nemo-rl/checkpoints:ro \
+              --volume /mnt/datadrive/TestData/nemo-rl/hf_home/hub:/home/TestData/nemo-rl/hf_home/hub \
+              --volume /mnt/datadrive/TestData/nemo-rl/hf_datasets_cache:/home/TestData/nemo-rl/hf_datasets_cache \
+              nemoci.azurecr.io/nemo_rl_container:${{ github.run_id }} \
+              bash -eux -o pipefail -c "
+              # This is needed since we create virtualenvs in the workspace, so this allows it to be cleaned up if necessary
+              umask 000
+              ${{ inputs.FUNCTIONAL_TEST_SCRIPT }}"
+              find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +
 
-        - name: Upload coverage report
-          uses: actions/upload-artifact@v4
-          with:
-            name: unit-test-coverage-report
-            path: ${{ github.workspace }}/tests/coverage.json
-            retention-days: 7
+        # - name: Upload coverage report
+        #   uses: actions/upload-artifact@v4
+        #   with:
+        #     name: unit-test-coverage-report
+        #     path: ${{ github.workspace }}/tests/coverage.json
+        #     retention-days: 7
 
         - uses: "NVIDIA/NeMo/.github/actions/cancel-workflow@main"
           if: failure()
 
-        - name: after_script
-          if: always() && inputs.AFTER_SCRIPT != ':'
-          run: |
-            # Run the after script
-            cmd=$(cat <<"RUN_TEST_EOF"
-            ${{ inputs.AFTER_SCRIPT }}
-            RUN_TEST_EOF
-            )
-            docker exec --env GITHUB_STEP_SUMMARY nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
+        # - name: after_script
+        #   if: always() && inputs.AFTER_SCRIPT != ':'
+        #   run: |
+        #     # Run the after script
+        #     cmd=$(cat <<"RUN_TEST_EOF"
+        #     ${{ inputs.AFTER_SCRIPT }}
+        #     RUN_TEST_EOF
+        #     )
+        #     docker exec --env GITHUB_STEP_SUMMARY nemo_container_${{ github.run_id }} bash -eux -o pipefail -c "$cmd"
 
         - name: final_script_external
           if: always() && inputs.FINAL_SCRIPT_EXTERNAL != ':'
@@ -152,6 +150,6 @@ jobs:
           if: always()
           run: |
             # Ensure any added files in the mounted directory are owned by the runner user to allow it to clean up
-            docker exec nemo_container_${{ github.run_id }} bash -c "find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +"
+            # docker exec nemo_container_${{ github.run_id }} bash -c "find /opt/nemo-rl -path '/opt/nemo-rl/datasets' -prune -o -exec chown $(id -u):$(id -g) {} +"
             docker container stop nemo_container_${{ github.run_id }} || true
             docker container rm nemo_container_${{ github.run_id }} || true
