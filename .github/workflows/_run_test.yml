@@ -86,7 +86,7 @@ jobs:
             --env HF_HOME=/home/TestData/nemo-rl/hf_home \
             --env HF_DATASETS_CACHE=/home/TestData/nemo-rl/hf_datasets_cache \
             --env NEMO_RL_REPO_DIR=/opt/nemo-rl \
-            --env HF_TOKEN=$HF_TOKEN \
+            --env HF_TOKEN \
             --volume $GITHUB_WORKSPACE:/opt/nemo-rl \
             --volume $GITHUB_ACTION_DIR:$GITHUB_ACTION_DIR \
             --volume /mnt/datadrive/TestData/nemo-rl/datasets:/opt/nemo-rl/datasets:ro \
