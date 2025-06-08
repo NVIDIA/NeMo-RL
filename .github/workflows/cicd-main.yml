@@ -189,7 +189,6 @@ jobs:
         #fi
       FUNCTIONAL_TEST_SCRIPT: |
         cd /opt/nemo-rl
-        uv run tools/find_available_port_ranges.py
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L1|L2)$ ]]; then
           time uv run --no-sync bash ./tests/functional/sft.sh
           time uv run --no-sync bash ./tests/functional/grpo.sh
