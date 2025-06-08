@@ -212,7 +212,13 @@ jobs:
       AFTER_SCRIPT: |
         cd /opt/nemo-rl
         LOG_DIR=/opt/terry-dbg-ray-logs
-        rsync -ahP /tmp/ray/session_* "$LOG_DIR/"
+        for session_dir in /tmp/ray/session_[0-9]*/; do
+          if [[ -d "\$session_dir/logs" ]]; then
+            session_name=\$(basename "\$session_dir")
+            mkdir -p "$LOG_DIR/ray/\$session_name"
+            rsync -ahP "\$session_dir/logs/" "$LOG_DIR/ray/\$session_name/logs/" 2>/dev/null || true
+          fi
+        done
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Test Summary for level: ${{ needs.pre-flight.outputs.test_level }}
 
