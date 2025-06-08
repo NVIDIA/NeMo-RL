@@ -114,10 +114,9 @@ jobs:
           submodules: 'recursive'
       - name: Check lint
         run: |
-          echo skip
-          #pip install pre-commit==3.6.0
-          #pre-commit install
-          #pre-commit run --all-files --show-diff-on-failure --color=always
+          pip install pre-commit==3.6.0
+          pre-commit install
+          pre-commit run --all-files --show-diff-on-failure --color=always
 
   mypy-check:
     name: Mypy check
@@ -128,9 +127,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Check mypy
         run: |
-          echo skip
-          #pip install uv
-          #uv run --group test mypy nemo_rl examples
+          pip install uv
+          uv run --group test mypy nemo_rl examples
 
   sphinx-build:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
@@ -144,10 +142,9 @@ jobs:
           submodules: 'recursive'
       - name: build docs
         run: |
-          echo skip
-          #pip install uv
-          #cd docs/
-          #uv run --group docs sphinx-build --fail-on-warning --builder html . _build/html
+          pip install uv
+          cd docs/
+          uv run --group docs sphinx-build --fail-on-warning --builder html . _build/html
 
   build-container:
     if: ${{ needs.pre-flight.outputs.test_level != 'none' }}
@@ -172,21 +169,19 @@ jobs:
       RUNNER: self-hosted-azure
       TIMEOUT: 75
       UNIT_TEST_SCRIPT: |
-        echo skip
-        #cd /opt/nemo-rl
-        #if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
-        #  uv run --no-sync bash -x ./tests/run_unit.sh --cov=nemo_rl --cov-report=term --cov-report=json
-        #else
-        #  echo Skipping unit tests for docs-only level
-        #fi
+        cd /opt/nemo-rl
+        if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L0|L1|L2)$ ]]; then
+          uv run --no-sync bash -x ./tests/run_unit.sh --cov=nemo_rl --cov-report=term --cov-report=json
+        else
+          echo Skipping unit tests for docs-only level
+        fi
       DOC_TEST_SCRIPT: |
-        echo skip
-        #cd /opt/nemo-rl/docs
-        #if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(docs|L0|L1|L2)$ ]]; then
-        #  uv run --no-sync sphinx-build -b doctest . _build/doctest
-        #else
-        #  echo Skipping doc tests for level ${{ needs.pre-flight.outputs.test_level }}
-        #fi
+        cd /opt/nemo-rl/docs
+        if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(docs|L0|L1|L2)$ ]]; then
+          uv run --no-sync sphinx-build -b doctest . _build/doctest
+        else
+          echo Skipping doc tests for level ${{ needs.pre-flight.outputs.test_level }}
+        fi
       FUNCTIONAL_TEST_SCRIPT: |
         cd /opt/nemo-rl
         if [[ "${{ needs.pre-flight.outputs.test_level }}" =~ ^(L1|L2)$ ]]; then
@@ -211,14 +206,6 @@ jobs:
       #  fi
       AFTER_SCRIPT: |
         cd /opt/nemo-rl
-        LOG_DIR=/opt/terry-dbg-ray-logs
-        for session_dir in /tmp/ray/session_[0-9]*/; do
-          if [[ -d "\$session_dir/logs" ]]; then
-            session_name=\$(basename "\$session_dir")
-            mkdir -p "$LOG_DIR/ray/\$session_name"
-            rsync -ahP "\$session_dir/logs/" "$LOG_DIR/ray/\$session_name/logs/" 2>/dev/null || true
-          fi
-        done
         cat <<EOF | tee -a $GITHUB_STEP_SUMMARY
         # Test Summary for level: ${{ needs.pre-flight.outputs.test_level }}
 
