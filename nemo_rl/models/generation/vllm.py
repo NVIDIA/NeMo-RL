@@ -592,11 +592,8 @@ class VllmGeneration(GenerationInterface):
             f"data must be a BatchedDataDict, got type: {type(data)}"
         )
 
-        # Get total batch size
-        batch_size = len(data["prompts"])
-
         # Shard the data across the tied worker groups
-        sharded_data = data.shard_by_batch_size(self.dp_size, batch_size=batch_size)
+        sharded_data = data.shard_by_batch_size(self.dp_size, allow_uneven_shards=True)
         future_bundle = self.worker_group.run_all_workers_multiple_data(
             "generate_text",
             sharded_data,
