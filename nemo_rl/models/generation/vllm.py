@@ -16,6 +16,7 @@ import asyncio
 import copy
 import gc
 import os
+import sys
 import uuid
 from collections import defaultdict
 from typing import (
@@ -169,6 +170,9 @@ class VllmGenerationWorker:
         self.fraction_of_gpus = fraction_of_gpus
         self.is_model_owner = bundle_indices is not None
 
+        # Store the Python executable being used by this worker
+        self.py_executable = sys.executable
+
         # Skip model loading if we're not the model owner
         if not self.is_model_owner:
             self.llm = None
@@ -228,6 +232,39 @@ class VllmGenerationWorker:
 
             vllm.utils._maybe_force_spawn = _patched_maybe_force_spawn
             logger.info("Successfully patched vllm.utils._maybe_force_spawn.")
+
+            def _patch_vllm_init_workers_ray():
+                # Patch the vLLM ray_distributed_executor.py file to pass custom runtime_env in _init_workers_ray call.
+                # This allows passing custom py_executable to worker initialization.
+
+                try:
+                    import vllm.executor.ray_distributed_executor as ray_executor_module
+
+                    file_to_patch = ray_executor_module.__file__
+
+                    with open(file_to_patch, "r") as f:
+                        content = f.read()
+
+                    old_line = "self._init_workers_ray(placement_group)"
+                    new_line = f'self._init_workers_ray(placement_group, runtime_env={{"py_executable": "{self.py_executable}"}})'
+
+                    if new_line in content:
+                        return
+
+                    if old_line not in content:
+                        return
+
+                    patched_content = content.replace(old_line, new_line)
+
+                    # Write back the patched content
+                    with open(file_to_patch, "w") as f:
+                        f.write(patched_content)
+
+                except (ImportError, FileNotFoundError, PermissionError):
+                    # Allow failures gracefully
+                    pass
+
+            _patch_vllm_init_workers_ray()
 
         except (ImportError, AttributeError):
             # vllm not installed or has a different structure, skipping patch.
