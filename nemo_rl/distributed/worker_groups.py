@@ -449,7 +449,11 @@ class RayWorkerGroup:
         for group_idx, (pg_idx, local_bundle_indices) in enumerate(bundle_indices_list):
             current_group = []
 
-            pg = placement_groups[pg_idx]
+            if len(placement_groups) == 1:
+                pg = placement_groups[0]
+            else:
+                pg = placement_groups[pg_idx]
+
             is_parallel_group = len(local_bundle_indices) > 1
 
             for local_rank, bundle_idx in enumerate(local_bundle_indices):

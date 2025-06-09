@@ -182,6 +182,57 @@ class VllmGenerationWorker:
         self.rank = 0
         self.world_size = 1
 
+        # Monkey patch for vLLM to ensure RAY_ADDRESS is set in Ray actors.
+        try:
+            import vllm.utils
+            from vllm.logger import init_logger
+            from vllm.utils import cuda_is_initialized, is_in_ray_actor
+
+            logger = init_logger("vllm_patch")
+
+            def _patched_maybe_force_spawn():
+                """Patched version of vllm.utils._maybe_force_spawn.
+
+                This patch changes an `elif is_in_ray_actor()` to an `if` statement.
+                This ensures that `os.environ["RAY_ADDRESS"]` is set when running
+                within a Ray actor, even if CUDA has already been initialized.
+                This is crucial for vLLM workers to connect back to the Ray cluster.
+                """
+                if os.environ.get("VLLM_WORKER_MULTIPROC_METHOD") == "spawn":
+                    return
+
+                reason = None
+                if cuda_is_initialized():
+                    reason = "CUDA is initialized"
+
+                if is_in_ray_actor():
+                    # even if we choose to spawn, we need to pass the ray address
+                    # to the subprocess so that it knows how to connect to the ray cluster.
+                    # env vars are inherited by subprocesses, even if we use spawn.
+                    import ray
+
+                    os.environ["RAY_ADDRESS"] = ray.get_runtime_context().gcs_address
+                    if reason is None:
+                        reason = "In a Ray actor and can only be spawned"
+
+                if reason is not None:
+                    logger.warning(
+                        "We must use the `spawn` multiprocessing start method. "
+                        "Overriding VLLM_WORKER_MULTIPROC_METHOD to 'spawn'. "
+                        "See https://docs.vllm.ai/en/latest/getting_started/"
+                        "troubleshooting.html#python-multiprocessing "
+                        "for more information. Reason: %s",
+                        reason,
+                    )
+                    os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+            vllm.utils._maybe_force_spawn = _patched_maybe_force_spawn
+            logger.info("Successfully patched vllm.utils._maybe_force_spawn.")
+
+        except (ImportError, AttributeError):
+            # vllm not installed or has a different structure, skipping patch.
+            pass
+
         try:
             import vllm
 
@@ -220,6 +271,7 @@ class VllmGenerationWorker:
             vllm_kwargs["distributed_executor_backend"] = None
 
         os.environ["VLLM_USE_V1"] = "1"
+        os.environ["VLLM_ALLOW_INSECURE_SERIALIZATION"] = "1"
 
         load_format = self.cfg["vllm_cfg"]["load_format"]
         if ModelFlag.VLLM_LOAD_FORMAT_AUTO.matches(self.model_name):
