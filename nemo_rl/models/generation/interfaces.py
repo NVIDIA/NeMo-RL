@@ -198,7 +198,9 @@ class GenerationInterface(ABC):
     """Abstract base class defining the interface for RL policies."""
 
     @abstractmethod
-    def init_collective(self, world_size: int) -> list[ray.ObjectRef]:
+    def init_collective(
+        self, ip: str, port: int, world_size: int
+    ) -> list[ray.ObjectRef]:
         """Initialize the collective communication."""
         pass
 

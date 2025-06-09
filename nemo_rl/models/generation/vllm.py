@@ -342,11 +342,15 @@ class VllmGenerationWorker:
         else:
             self.llm = vllm.LLM(**llm_kwargs)
 
-    def init_collective(self, rank_prefix: int, world_size: int) -> None:
+    def init_collective(
+        self, rank_prefix: int, ip: str, port: int, world_size: int
+    ) -> None:
         self.llm.collective_rpc(
             "init_collective",
             args=(
                 rank_prefix,
+                ip,
+                port,
                 world_size,
             ),
         )
@@ -1251,7 +1255,9 @@ class VllmGeneration(GenerationInterface):
         results = ray.get(futures)
         return results
 
-    def init_collective(self, world_size: int) -> list[ray.ObjectRef]:
+    def init_collective(
+        self, ip: str, port: int, world_size: int
+    ) -> list[ray.ObjectRef]:
         """Initialize the collective communication."""
         if not self.worker_group or not self.worker_group.workers:
             raise RuntimeError("Worker group is not initialized")
@@ -1266,7 +1272,7 @@ class VllmGeneration(GenerationInterface):
             "init_collective",
             data=rank_prefix_list,
             run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"],
-            common_kwargs={"world_size": world_size},
+            common_kwargs={"ip": ip, "port": port, "world_size": world_size},
         )
 
         # this function should co-work with hf_policy, so we should wait for all futures to complete outside
@@ -1415,7 +1421,11 @@ class VllmGeneration(GenerationInterface):
         return combined
 
     def prepare_for_generation(self, *args: Any, **kwargs: Any) -> bool:
-        """Wake workers up."""
+        """Wake workers up for colocated inference."""
+        # non-colocated no need to wake up
+        if not self.cfg["colocated"]["enabled"]:
+            return True
+
         try:
             # Choose the appropriate method based on async_engine setting
             method_name = (
@@ -1437,7 +1447,8 @@ class VllmGeneration(GenerationInterface):
     def finish_generation(self, *args: Any, **kwargs: Any) -> bool:
         """Sleep workers and reset prefix cache."""
         try:
-            # Choose the appropriate method based on async_engine setting
+            # Choose the appropriate method based on setting
+            # non-colocated only needs reset prefix cache, no need to sleep.
             if not self.cfg["colocated"]["enabled"]:
                 method_name = "reset_prefix_cache"
             else:

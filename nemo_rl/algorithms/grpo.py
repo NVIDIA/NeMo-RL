@@ -38,7 +38,10 @@ from nemo_rl.data.llm_message_utils import (
     get_keys_from_message_log,
 )
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
-from nemo_rl.distributed.virtual_cluster import ClusterConfig, RayVirtualCluster
+from nemo_rl.distributed.virtual_cluster import (
+    ClusterConfig,
+    RayVirtualCluster,
+)
 from nemo_rl.environments.interfaces import (
     EnvironmentInterface,
 )
@@ -320,11 +323,14 @@ def setup(
 
     # if it is not colocated inference, initialize collective communication for update weights
     if not colocated_inference:
-        world_size = (
-            inference_nodes * inference_gpus_per_node + 1
-        )  # inference cluster + head node of the train cluster
-        futures_train = policy.init_collective(world_size)
-        futures_inference = policy_generation.init_collective(world_size)  # type: ignore
+        ip, port = train_cluster.get_master_address_and_port()
+        print(f"Using ip: {ip}, port: {port} for collective communication")
+        # inference cluster + head node of the train cluster
+        world_size = inference_nodes * inference_gpus_per_node + 1
+        # init collective
+        futures_train = policy.init_collective(ip, port, world_size)
+        futures_inference = policy_generation.init_collective(ip, port, world_size)  # type: ignore
+        # wait for all futures to complete
         ray.get(futures_train + futures_inference)
 
     loss_fn = ClippedPGLossFn(loss_config)
@@ -385,21 +391,24 @@ def refit_policy_generation(
             if not update_success:
                 break
     else:
+        # prepare info for update weights
         state_dict_info = policy.prepare_info_for_collective()
+        # update weights through nccl
         futures_train = policy.broadcast_weights_for_collective()
         futures_inference = policy_generation.update_weights_from_collective(
             state_dict_info
         )
+        # wait for all futures to complete
         ray.get(futures_train)
         results = ray.get(futures_inference)
         update_success = all(result for result in results if result is not None)
 
     # check if update is successful
     if not update_success:
-        tag = "cuda-ipc" if colocated_inference else "nccl"
+        error_tag = "cuda-ipc" if colocated_inference else "nccl"
         error_message = (
             "❌ Error: Updating weights for the generation policy failed during refit.\n"
-            f"This often indicates an issue with {tag} or "
+            f"This often indicates an issue with {error_tag} or "
             "a problem within the generation backend (e.g., vLLM worker).\n"
         )
         raise RuntimeError(error_message)
