@@ -416,7 +416,7 @@ class VllmGenerationWorker:
             response_length = sequence_length + len(generated_tokens)
             generation_lengths.append(len(generated_tokens))
             unpadded_sequence_lengths.append(response_length)
-            assert response_length != self.llm.llm_engine.model_config.max_model_len, (
+            assert response_length <= self.llm.llm_engine.model_config.max_model_len, (
                 f"response_length={response_length} > max_model_len={self.llm.llm_engine.model_config.max_model_len}, which should not happen. Please check this behavior in isolation by running `uv run --extra vllm tools/model_diagnostics/1.max_model_len_respected.py {self.llm.llm_engine.model_config.model}` and raise this issue with the vllm team."
             )
         # Create return data conforming to GenerationOutputSpec
