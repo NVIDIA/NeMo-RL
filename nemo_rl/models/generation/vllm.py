@@ -42,10 +42,10 @@ from nemo_rl.distributed.named_sharding import NamedSharding
 from nemo_rl.distributed.virtual_cluster import (
     RayVirtualCluster,
 )
+from nemo_rl.distributed.worker_group_utils import get_nsight_config_if_pattern_matches
 from nemo_rl.distributed.worker_groups import (
     RayWorkerBuilder,
     RayWorkerGroup,
-    get_nsight_config_if_pattern_matches,
 )
 from nemo_rl.models.generation.interfaces import (
     GenerationConfig,
