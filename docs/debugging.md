@@ -176,7 +176,7 @@ context.py_executable = " ".join(self.nsight_cmd) + f" {context.py_executable}"
 
 #### Where We Apply the Patch
 
-We apply this patch in two locations to cover different deployment scenarios:
+We applied this patch in two locations to cover different deployment scenarios:
 
 1. **In `ray.sub` (SLURM clusters)**: The patch is applied before Ray's control plane starts up on both head and worker nodes:
    ```bash
