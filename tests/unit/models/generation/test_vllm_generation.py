@@ -58,8 +58,10 @@ basic_vllm_test_config: VllmConfig = {
     },
     "colocated": {
         "enabled": True,
-        "gpus_for_inference": -1,
-        "nodes_for_inference": -1,
+        "resources": {
+            "gpus_per_node": None,
+            "num_nodes": None,
+        },
     },
     "vllm_kwargs": {},
 }
@@ -107,9 +109,7 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
         },
         "max_grad_norm": 1.0,
         "make_sequence_length_divisible_by": 1,
-        "generation": {
-            "temperature": 0.8,
-        },
+        "generation": basic_vllm_test_config,
     }
 
 
@@ -1075,6 +1075,7 @@ def test_vllm_refit_non_collocated_handles_update(
     # Create HfPolicy on its own cluster
     hf_config = get_basic_hf_test_config(enable_dtensor=True)
     hf_config["dtensor_cfg"]["tensor_parallel_size"] = 1
+    hf_config["generation"]["colocated"]["enabled"] = False
     hf_policy = HfPolicy(policy_cluster_separate, hf_config, tokenizer)
 
     # Create VllmGeneration policy on its own cluster

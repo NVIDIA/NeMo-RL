@@ -107,11 +107,13 @@ policy:
       gpu_memory_utilization: 0.6
       max_model_len: ${policy.max_total_sequence_length}
     colocated:
+      # true: generation shares training GPUs
+      # false: uses dedicated generation resources
       enabled: true
-      # decides how many GPUs to use for inference
-      # used when train and inference is not colocated
-      gpus_per_node: -1 # used when cluster.num_nodes is 1
-      num_nodes: -1 # used when cluster.num_nodes > 1
+      # only relevant when enabled is false
+      resources:
+        gpus_per_node: null # used when cluster.num_nodes is 1
+        num_nodes: null # used when cluster.num_nodes > 1
 
 data:
   max_input_seq_length: ${policy.max_total_sequence_length} # upper bound, real truncation occurs at vllm.max_model_len

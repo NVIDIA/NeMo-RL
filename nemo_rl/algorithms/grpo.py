@@ -237,25 +237,33 @@ def setup(
             "Non-colocated inference is not supported for HF backend"
         )
 
+        # train resources will be updated through overall and inference resources below
         train_gpus_per_node = cluster_config["gpus_per_node"]
         train_nodes = cluster_config["num_nodes"]
-        inference_gpus_per_node = generation_config["colocated"]["gpus_per_node"]
-        inference_nodes = generation_config["colocated"]["num_nodes"]
 
-        # validate and configure generation.colocated config
+        inference_resources = generation_config["colocated"]["resources"]
+        inference_gpus_per_node = inference_resources["gpus_per_node"]
+        inference_nodes = inference_resources["num_nodes"]
+
+        # validate and configure resources
         if cluster_config["num_nodes"] == 1:
-            assert inference_gpus_per_node > 0 and inference_nodes == -1, (
-                "policy.generation.colocated.gpus_per_node must be set "
-                "and policy.generation.colocated.num_nodes must be -1 "
-                "when cluster.num_nodes=1 and inference is not colocated"
+            assert inference_gpus_per_node > 0 and (
+                inference_nodes is None or inference_nodes == 1
+            ), (
+                "policy.generation.colocated.resources.gpus_per_node must be set and "
+                "policy.generation.colocated.resources.num_nodes must be 1 or set to null "
+                "when cluster.num_nodes = 1 and inference is non-colocated"
             )
             inference_nodes = 1
             train_gpus_per_node -= inference_gpus_per_node
         else:
-            assert inference_gpus_per_node == -1 and inference_nodes > 0, (
-                "policy.generation.colocated.gpus_per_node must be -1 and "
-                "policy.generation.colocated.num_nodes must be set "
-                "when cluster.num_nodes > 1 and inference is not colocated"
+            assert inference_nodes > 0 and (
+                inference_gpus_per_node is None
+                or inference_gpus_per_node == cluster_config["gpus_per_node"]
+            ), (
+                "policy.generation.colocated.resources.num_nodes must be set and "
+                "policy.generation.colocated.resources.gpus_per_node must be equal to cluster.gpus_per_node or set to null "
+                "when cluster.num_nodes > 1 and inference is non-colocated"
             )
             inference_gpus_per_node = cluster_config["gpus_per_node"]
             train_nodes -= inference_nodes
