@@ -595,7 +595,7 @@ def grpo_train(
                     "token_mask": train_data["token_mask"],
                     "sample_mask": train_data["sample_mask"],
                 },
-                step,
+                step + 1,
                 name="train/token_mult_prob_error_plot_sample",
             )
 
