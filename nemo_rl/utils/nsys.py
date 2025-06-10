@@ -16,7 +16,7 @@ class ProfilablePolicy(Protocol):
 
 def maybe_gpu_profile_step(policy: ProfilablePolicy, step: int):
     assert not (bool(NRL_NSYS_WORKER_PATTERNS) ^ bool(NRL_NSYS_PROFILE_STEP_RANGE)), (
-        "Either both NRL_NSYS_WORKER_PATTERNS and NRL_NSYS_PROFILE_STEP_RANGE must be set, or neither. See https://github.com/NVIDIA/NeMo-RL/tree/main/docs/nsys_profiling.md for more details."
+        "Either both NRL_NSYS_WORKER_PATTERNS and NRL_NSYS_PROFILE_STEP_RANGE must be set, or neither. See https://github.com/NVIDIA/NeMo-RL/tree/main/docs/nsys-profiling.md for more details."
     )
 
     if not NRL_NSYS_WORKER_PATTERNS:
@@ -30,7 +30,7 @@ def maybe_gpu_profile_step(policy: ProfilablePolicy, step: int):
         raise ValueError(
             f"Error parsing NRL_NSYS_PROFILE_STEP_RANGE: {str(e)}. "
             "Please ensure the format is 'start:stop' where both values are integers. "
-            "See https://github.com/NVIDIA/NeMo-RL/tree/main/docs/nsys_profiling.md for more details."
+            "See https://github.com/NVIDIA/NeMo-RL/tree/main/docs/nsys-profiling.md for more details."
         ) from e
 
     assert NSYS_START_STEP < NSYS_STOP_STEP, (

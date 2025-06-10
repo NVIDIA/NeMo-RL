@@ -43,7 +43,7 @@ def get_nsight_config_if_pattern_matches(worker_name: str) -> dict[str, Any]:
         Dictionary containing {"nsight": config} if pattern matches, empty dict otherwise
     """
     assert not (bool(NRL_NSYS_WORKER_PATTERNS) ^ bool(NRL_NSYS_PROFILE_STEP_RANGE)), (
-        "Either both NRL_NSYS_WORKER_PATTERNS and NRL_NSYS_PROFILE_STEP_RANGE must be set, or neither. See https://github.com/NVIDIA/NeMo-RL/tree/main/docs/nsys_profiling.md for more details."
+        "Either both NRL_NSYS_WORKER_PATTERNS and NRL_NSYS_PROFILE_STEP_RANGE must be set, or neither. See https://github.com/NVIDIA/NeMo-RL/tree/main/docs/nsys-profiling.md for more details."
     )
 
     patterns_env = NRL_NSYS_WORKER_PATTERNS
