@@ -191,4 +191,4 @@ We apply this patch in two locations to cover different deployment scenarios:
 
 - **`__init__.py`**: Required for local clusters and development environments where users start Ray clusters directly. The patch is applied when `nemo_rl` is imported, ensuring the fix is in place before any Ray processes are spawned.
 
-This dual approach ensures that nsight profiling works correctly regardless of how the Ray cluster is deployed.
+This dual approach ensures that Nsight profiling works correctly regardless of how the Ray cluster is deployed.
