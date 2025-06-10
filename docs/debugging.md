@@ -154,7 +154,7 @@ To analyze the generated profile files, load the `.nsys-rep` files into the NVID
 
 ### How we patched nsight support in ray
 
-Ray's nsight profiling support had a bug where it hardcoded the Python executable path instead of using the actual Python executable from the runtime environment. This caused issues when using virtual environments or custom Python installations (`py_executables`).
+Ray's Nsight profiling support had a bug where it hardcoded the Python executable path instead of using the actual Python executable from the runtime environment. This caused issues when using virtual environments or custom Python installations (`py_executables`).
 
 #### The Problem
 
