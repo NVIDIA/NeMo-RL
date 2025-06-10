@@ -131,7 +131,7 @@ NRL_NSYS_WORKER_PATTERNS="dtensor_policy_worker,vllm_generation_worker" uv run e
 
 ### Profile Output
 
-When profiling is enabled:
+When profiling is enabled, it generates the following logs and files:
 
 1. **Logging**: You'll see log messages indicating which workers have profiling enabled:
    ```
@@ -152,7 +152,7 @@ When profiling is enabled:
 
 To analyze the generated profile files, load the `.nsys-rep` files into the NVIDIA Nsight Systems desktop application, which you can download from the [NVIDIA Nsight Systems Get Started page](https://developer.nvidia.com/nsight-systems/get-started).
 
-### How we patched nsight support in ray
+### How We Patched Nsight Support in Ray
 
 Ray's Nsight profiling support had a bug where it hardcoded the Python executable path instead of using the actual Python executable from the runtime environment. This caused issues when using virtual environments or custom Python installations (`py_executables`).
 
@@ -164,17 +164,17 @@ In Ray's `nsight.py` file, the original code was:
 context.py_executable = " ".join(self.nsight_cmd) + " python"
 ```
 
-This hardcoded `" python"` instead of preserving the actual Python executable path that should be used.
+This hardcoded `" python"` instead of correctly preserving the intended Python executable path.
 
 #### The Fix
 
-We patch this line to preserve the original `context.py_executable`:
+To fix this problem, we patched the following line to preserve the original `context.py_executable`:
 
 ```python
 context.py_executable = " ".join(self.nsight_cmd) + f" {context.py_executable}"
 ```
 
-#### Where We Apply the Patch
+#### Where We Applied the Patch
 
 We applied this patch in two locations to cover different deployment scenarios:
 
@@ -185,7 +185,7 @@ We applied this patch in two locations to cover different deployment scenarios:
 
 2. **In `nemo_rl/__init__.py` (Local clusters)**: The patch is applied automatically when NeMo RL is imported, making it work seamlessly for local development and testing environments.
 
-#### Why Both Locations?
+#### Why We Needed Both Locations
 
 - **`ray.sub`**: Required for SLURM-managed clusters where Ray processes start in containers before Python imports happen. The patch must be applied at the filesystem level before Ray's control plane initializes.
 
