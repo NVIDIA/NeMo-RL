@@ -19,3 +19,12 @@ Gemma-3 models have a specific issue with vLLM dummy weight initialization due t
 **Special Handling:**
 - We automatically use `load_format="auto"` for Gemma-3 models when initializing vLLM.
 - This avoids issues with dummy weight initialization, where the dummy weights for this buffer would never get overwritten during refit.
+
+### vLLM V1 runtime
+
+NeMo-RL uses the vLLM V1 runtime for both synchronous and asynchronous inference. The V1 runtime provides improved performance and stability for inference.
+
+**Special Handling:**
+- Both sync and async inference modes use the V1 runtime by default.
+- Users can override to the V0 runtime by setting the environment variable `NRL_VLLM_USE_V1=0`.
+- **Important**: The async implementation always uses the V1 runtime. Users who need to use the V0 runtime must switch to synchronous inference by setting `policy.generation.vllm_cfg.async_engine=False`.
