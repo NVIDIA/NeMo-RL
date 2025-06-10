@@ -130,7 +130,7 @@ we have encountered before.
 
 ## [1.max_model_len_respected.py](https://github.com/NVIDIA/NeMo-RL/blob/main/tools/model_diagnostics/1.max_model_len_respected.py)
 
-Tests if a new model respects the `max_model_len` passed to vllm
+Test if a new model respects the `max_model_len` passed to vllm:
 
 ```sh
 # Run that is expected to pass
