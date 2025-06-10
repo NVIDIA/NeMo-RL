@@ -1,5 +1,17 @@
 # Add New Models
 
+- [Add New Models](#add-new-models)
+  - [Importance of Log Probability Consistency in Training and Inference](#importance-of-log-probability-consistency-in-training-and-inference)
+  - [Understand Discrepancies Between Backends](#understand-discrepancies-between-backends)
+  - [1. Hugging Face–Based Models](#1-hugging-facebased-models)
+    - [Validation Workflow](#validation-workflow)
+  - [2. Megatron Models](#2-megatron-models)
+    - [Additional Validation](#additional-validation)
+  - [3. Expected Error Threshold](#3-expected-error-threshold)
+- [Model Diagnostics](#model-diagnostics)
+  - [1.max\_model\_len\_respected.py](#1max_model_len_respectedpy)
+
+
 This guide outlines how to integrate and validate a new model within NeMo RL. Each new model must pass a standard set of compatibility tests before being considered ready to be used in RL pipelines.
 
 ## Importance of Log Probability Consistency in Training and Inference
@@ -121,3 +133,23 @@ When validating your model, you should analyze the results across different conf
 ---
 
 By following these validation steps and ensuring your model's outputs remain consistent across backends, you can confirm that your new model meets the requirements of NeMo RL.
+
+
+# Model Diagnostics
+
+We also maintain a set of standalone scripts that can be used to diagnose issues related to correctness that
+we have encountered before.
+
+## [1.max_model_len_respected.py](../tools/model_diagnostics/1.max_model_len_respected.py)
+
+Tests if a new model respects the `max_model_len` passed to vllm
+
+```sh
+# Run that is expected to pass
+uv run --extra vllm tools/model_diagnostics/1.max_model_len_respected.py Qwen/Qwen2.5-1.5B
+# ...
+# Prompt tokens: 8
+# Generated tokens: 12
+# Total tokens: 20
+# [Qwen/Qwen2.5-1.5B] ALL GOOD!
+```
