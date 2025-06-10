@@ -74,6 +74,7 @@ uv sync --link-mode symlink --locked --all-groups --no-install-project
 EOF
 
 ENV PATH="/opt/nemo_rl_venv/bin:$PATH"
+ENV NEMO_RL_VENV_DIR=/opt/ray_venvs
 
 # Prefetch all virtual environments
 # Copy entire source to temp location, run prefetch, then clean up
@@ -95,6 +96,8 @@ ENV NVIDIA_BUILD_ID=${NVIDIA_BUILD_ID:-<unknown>}
 ENV NVIDIA_BUILD_REF=${NVIDIA_BUILD_REF:-<unknown>}
 LABEL com.nvidia.build.id="${NVIDIA_BUILD_ID}"
 LABEL com.nvidia.build.ref="${NVIDIA_BUILD_REF}"
+
+ENV NEMO_RL_VENV_DIR=/opt/ray_venvs
 
 COPY . /opt/nemo-rl
 

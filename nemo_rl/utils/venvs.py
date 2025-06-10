@@ -24,7 +24,7 @@ from ray.util import placement_group
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
 git_root = os.path.abspath(os.path.join(dir_path, "../.."))
-DEFAULT_VENV_DIR = "/opt/ray_venvs"
+DEFAULT_VENV_DIR = os.path.join(git_root, "venvs")
 
 logger = logging.getLogger(__name__)
 
