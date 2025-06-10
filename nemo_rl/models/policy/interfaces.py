@@ -14,6 +14,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, TypedDict
 
+import ray
 import torch
 
 from nemo_rl.algorithms.interfaces import LossFunction
@@ -94,7 +95,7 @@ class PolicyInterface(ABC):
 
 class ColocatablePolicyInterface(PolicyInterface):
     @abstractmethod
-    def init_collective(self, world_size: int) -> None:
+    def init_collective(self, world_size: int) -> list[ray.ObjectRef]:
         pass
 
     @abstractmethod
@@ -118,5 +119,5 @@ class ColocatablePolicyInterface(PolicyInterface):
         pass
 
     @abstractmethod
-    def broadcast_weights_for_collective(self) -> None:
+    def broadcast_weights_for_collective(self) -> list[ray.ObjectRef]:
         pass

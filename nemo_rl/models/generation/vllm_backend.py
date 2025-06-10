@@ -11,8 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
 from typing import Any
+
+import torch
 
 try:
     import vllm  # noqa: F401
@@ -25,11 +26,16 @@ except ImportError:
 
 
 class VllmInternalWorkerExtension:
-    def init_collective(self, world_size: int) -> None:
+    def init_collective(self, rank_prefix: int, world_size: int) -> None:
         """Initialize the collective communication."""
         import ray.util.collective as collective
 
-        collective.init_collective_group(world_size=world_size, rank=1, backend="nccl", group_name="refit")
+        local_rank = torch.distributed.get_rank()
+        rank = rank_prefix + local_rank + 1  # 1 is the head node of the train cluster
+
+        collective.init_collective_group(
+            world_size=world_size, rank=rank, backend="nccl", group_name="refit"
+        )
 
     def report_device_id(self) -> str:
         from nemo_rl.utils.nvml import get_device_uuid
@@ -71,7 +77,7 @@ class VllmInternalWorkerExtension:
             )
             return False
 
-    def update_weights_from_collective(self, info: dict[str, Any]) -> None:
+    def update_weights_from_collective(self, info: dict[str, Any]) -> bool:
         """Update the model weights from collective communication."""
         import ray.util.collective as collective
 

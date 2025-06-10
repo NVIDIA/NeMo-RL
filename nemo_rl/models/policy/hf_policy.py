@@ -119,9 +119,13 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
 
         self.cfg = config
 
-    def init_collective(self, world_size: int) -> None:
+    def init_collective(self, world_size: int) -> list[ray.ObjectRef]:
         """Initialize the collective communication."""
-        self.worker_group.run_all_workers_single_data("init_collective", world_size=world_size)
+        futures = self.worker_group.run_all_workers_single_data(
+            "init_collective", world_size=world_size
+        )
+        # this function should co-work with vllm, so we should wait for all futures to complete outside
+        return futures
 
     def get_logprobs(
         self, data: BatchedDataDict[GenerationDatumSpec]
@@ -419,11 +423,13 @@ class HfPolicy(ColocatablePolicyInterface, GenerationInterface):
         # Only get the first worker's info since all workers will have the same result
         return results[0]
 
-    def broadcast_weights_for_collective(self) -> None:
+    def broadcast_weights_for_collective(self) -> list[ray.ObjectRef]:
         """Broadcast the weights for collective communication."""
-        self.worker_group.run_all_workers_single_data(
+        futures = self.worker_group.run_all_workers_single_data(
             "broadcast_weights_for_collective"
         )
+        # this function should co-work with vllm, so we should wait for all futures to complete outside
+        return futures
 
     def offload_before_refit(self) -> None:
         """Offload the optimizer and buffers to the CPU."""

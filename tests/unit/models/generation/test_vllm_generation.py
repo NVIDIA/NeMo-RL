@@ -14,7 +14,6 @@
 
 import os
 from copy import deepcopy
-from unittest import mock
 
 import pytest
 import ray
@@ -33,7 +32,6 @@ model_name = "Qwen/Qwen3-0.6B"
 # Define basic vLLM test config
 basic_vllm_test_config: VllmConfig = {
     "backend": "vllm",
-    "colocated": True,
     "model_name": model_name,
     "tokenizer": {
         "name": model_name,
@@ -54,6 +52,11 @@ basic_vllm_test_config: VllmConfig = {
         "async_engine": False,  # Default to False for synchronous tests
         "skip_tokenizer_init": False,
         "load_format": "auto",
+    },
+    "colocated": {
+        "enabled": True,
+        "gpus_for_inference": -1,
+        "nodes_for_inference": -1,
     },
     "vllm_kwargs": {},
 }
@@ -312,7 +315,9 @@ async def test_vllm_policy_generation_async(
         print("creating hf policy...")
 
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
-        refit_policy_generation(hf_policy, async_policy)
+        refit_policy_generation(
+            hf_policy, async_policy, vllm_config["colocated"]["enabled"]
+        )
 
         outputs = async_policy.generate_async(test_input_data)
         # Validate outputs format
@@ -407,7 +412,7 @@ def test_vllm_worker_seed_behavior(cluster, tokenizer):
     hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
     print("refitting vllm policy...")
-    refit_policy_generation(hf_policy, policy)
+    refit_policy_generation(hf_policy, policy, vllm_config["colocated"]["enabled"])
 
     try:
         # Generate with duplicated prompts
@@ -563,7 +568,9 @@ def test_vllm_generation_with_hf_training(
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print("refitting vllm policy...")
-        refit_policy_generation(hf_policy, vllm_policy)
+        refit_policy_generation(
+            hf_policy, vllm_policy, vllm_config["colocated"]["enabled"]
+        )
 
         # Step 1: Use vLLM for generation
         print("Using vLLM policy for fast generation...")
@@ -915,7 +922,12 @@ def test_vllm_weight_update_memory(cluster, tokenizer, enable_dtensor):
     # reset peak memory stats before refit
     workers = hf_policy.worker_group.workers
     ray.get([w.reset_peak_memory_stats.remote() for w in workers])
-    refit_policy_generation(hf_policy, vllm_policy, _refit_buffer_size_gb=1)
+    refit_policy_generation(
+        hf_policy,
+        vllm_policy,
+        vllm_config["colocated"]["enabled"],
+        _refit_buffer_size_gb=1,
+    )
     gpu_infos = ray.get([w.get_gpu_info.remote() for w in workers])
 
     # Gather memory stats
@@ -982,7 +994,9 @@ def test_vllm_generation_with_stop(
         hf_policy = HfPolicy(cluster, hf_config, tokenizer)
 
         print("refitting vllm policy...")
-        refit_policy_generation(hf_policy, vllm_generation)
+        refit_policy_generation(
+            hf_policy, vllm_generation, vllm_config["colocated"]["enabled"]
+        )
 
     # test generate
     outputs = vllm_generation.generate(test_input_data, greedy=True)
@@ -1056,7 +1070,6 @@ def test_vllm_refit_non_collocated_handles_update(
         )
 
     # Create HfPolicy on its own cluster
-    os.environ["NCCL_CUMEM_ENABLE"] = "0"
     hf_config = get_basic_hf_test_config(enable_dtensor=True)
     hf_config["dtensor_cfg"]["tensor_parallel_size"] = 1
     hf_policy = HfPolicy(policy_cluster_separate, hf_config, tokenizer)
@@ -1065,13 +1078,16 @@ def test_vllm_refit_non_collocated_handles_update(
     vllm_config = deepcopy(basic_vllm_test_config)
     vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=True)
     vllm_config["vllm_cfg"]["tensor_parallel_size"] = 1
+    vllm_config["colocated"]["enabled"] = False
     vllm_generation = VllmGeneration(generation_cluster_separate, vllm_config)
 
     hf_policy.init_collective(2)
     vllm_generation.init_collective(2)
 
     print("refitting vllm policy...")
-    refit_policy_generation(hf_policy, vllm_generation, is_colocated=False)
+    refit_policy_generation(
+        hf_policy, vllm_generation, vllm_config["colocated"]["enabled"]
+    )
 
     # test generate
     outputs = vllm_generation.generate(test_input_data, greedy=True)

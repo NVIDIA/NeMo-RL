@@ -106,6 +106,12 @@ policy:
       pipeline_parallel_size: 1
       gpu_memory_utilization: 0.6
       max_model_len: ${policy.max_total_sequence_length}
+    colocated:
+      enabled: true
+      # decides how many GPUs to use for inference
+      # used when train and inference is not colocated
+      gpus_per_node: -1 # used when cluster.num_nodes is 1
+      num_nodes: -1 # used when cluster.num_nodes > 1
 
 data:
   max_input_seq_length: ${policy.max_total_sequence_length} # upper bound, real truncation occurs at vllm.max_model_len
