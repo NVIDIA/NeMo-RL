@@ -12,7 +12,6 @@ to properly jump to the breakpoint on each worker.
 * Install [Ray Debugger VS Code/Cursor extension](https://docs.ray.io/en/latest/ray-observability/ray-distributed-debugger.html).
 * Launch the [interactive cluster](./cluster.md#interactive-launching) with `ray.sub`.
 * Launch VS Code/Cursor on the SLURM login node (where `squeue`/`sbatch` is available).
-* Add `debugpy` to the top level dependencies in pyproject.toml `[dependencies]` section ([example](https://github.com/NVIDIA/NeMo-RL/blob/fca424f58a35a8b9958edbdda8848df80133efaf/pyproject.toml#L23)) before `uv run` invocations.
 * Add `breakpoint()` in your code under actors & tasks (i.e. classes or functions decorated with `@ray.remote`).
 * **Ensure** `RAY_DEBUG=legacy` is not set since this debugging requires the default distributed debugger.
 

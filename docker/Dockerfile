@@ -14,6 +14,7 @@ apt-get install -y --no-install-recommends \
     curl \
     git \
     rsync \
+    wget \
     less \
     vim \
 
@@ -73,6 +74,19 @@ uv sync --link-mode symlink --locked --all-groups --no-install-project
 EOF
 
 ENV PATH="/opt/nemo_rl_venv/bin:$PATH"
+
+# Prefetch all virtual environments
+# Copy entire source to temp location, run prefetch, then clean up
+COPY . /tmp/nemo-rl-prefetch
+RUN cd /tmp/nemo-rl-prefetch && \
+    export ORIGINAL_UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT}" && \
+    export UV_PROJECT_ENVIRONMENT="/tmp/nemo-rl-prefetch/.venv" && \
+    uv run nemo_rl/utils/prefetch_venvs.py && \
+    export UV_PROJECT_ENVIRONMENT="${ORIGINAL_UV_PROJECT_ENVIRONMENT}" && \
+    cd / && \
+    rm -rf /tmp/nemo-rl-prefetch
+
+WORKDIR /opt/nemo-rl
 
 FROM hermetic AS release
 
