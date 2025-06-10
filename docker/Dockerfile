@@ -79,10 +79,7 @@ ENV PATH="/opt/nemo_rl_venv/bin:$PATH"
 # Copy entire source to temp location, run prefetch, then clean up
 COPY . /tmp/nemo-rl-prefetch
 RUN cd /tmp/nemo-rl-prefetch && \
-    export ORIGINAL_UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT}" && \
-    export UV_PROJECT_ENVIRONMENT="/tmp/nemo-rl-prefetch/.venv" && \
-    uv run nemo_rl/utils/prefetch_venvs.py && \
-    export UV_PROJECT_ENVIRONMENT="${ORIGINAL_UV_PROJECT_ENVIRONMENT}" && \
+    UV_PROJECT_ENVIRONMENT="/tmp/nemo-rl-prefetch/.venv" uv run nemo_rl/utils/prefetch_venvs.py && \
     cd / && \
     rm -rf /tmp/nemo-rl-prefetch
 
