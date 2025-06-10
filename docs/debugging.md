@@ -79,7 +79,7 @@ By default, setting breakpoints in the driver script (outside of  `@ray.remote`)
 RAY_DEBUG=legacy uv run ....
 ```
 
-## Nsight Profiling (nsys)
+## Profile GPU with Nsys
 
 NeMo RL supports Nsight profiling for Ray workers through environment variable pattern matching. This allows you to selectively profile specific worker types without modifying code or affecting the performance of workers that don't need profiling.
 
@@ -87,7 +87,9 @@ NeMo RL supports Nsight profiling for Ray workers through environment variable p
 
 ### Prerequisites
 
-* Install NVIDIA Nsight Systems (`nsys`) on the compute nodes where workers will run. For Ubuntu installation instructions, see the [NVIDIA Nsight Systems Installation Guide](https://docs.nvidia.com/nsight-systems/InstallationGuide/index.html#:~:text=Ubuntu%20(minimal%20setup%20for%20containers)). **Note: If you're using NeMo RL containers, `nsys` is already installed.**
+* Install NVIDIA Nsight Systems (`nsys`) on the compute nodes where workers will run. For Ubuntu installation instructions, see the [NVIDIA Nsight Systems Installation Guide](https://docs.nvidia.com/nsight-systems/InstallationGuide/index.html#:~:text=Ubuntu%20(minimal%20setup%20for%20containers)).
+
+**Note: If you're using NeMo RL containers, `nsys` is already installed.**
 * Ensure the workers you want to profile have GPU access
 
 ### Configure the Environment Variables
@@ -108,7 +110,7 @@ export NRL_NSYS_WORKER_PATTERNS="*policy*,*vllm*"
 
 #### Supported Workers
 
-Currently supported worker types:
+The supported worker types are:
 - **DTensorPolicyWorker**: Pattern matched against `"dtensor_policy_worker"`
 - **VllmGenerationWorker**: Pattern matched against `"vllm_generation_worker"`
 
