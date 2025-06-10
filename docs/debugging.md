@@ -98,6 +98,14 @@ Set the `NRL_NSYS_WORKER_PATTERNS` environment variable with a comma-separated l
 export NRL_NSYS_WORKER_PATTERNS="*policy*,*vllm*"
 ```
 
+Set the `NRL_NSYS_PROFILE_STEP_RANGE` environment variable to colon separated integers representing `start:stop`, where
+`start` is inclusive and `stop` is exclusive (same as slice syntax `arr[start:stop]`). Note that the `start` is 1-index
+for the examples under `examples/`
+
+```bash
+export NRL_NSYS_PROFILE_STEP_RANGE=3:5
+```
+
 #### Pattern Format
 
 - Use shell-style wildcards (`*`, `?`, `[seq]`, `[!seq]`)
@@ -116,17 +124,17 @@ The supported worker types are:
 
 #### Profile Only Policy Workers
 ```bash
-NRL_NSYS_WORKER_PATTERNS="*policy*" uv run examples/run_grpo_math.py grpo.max_num_steps=10
+NRL_NSYS_PROFILE_STEP_RANGE=2:3 NRL_NSYS_WORKER_PATTERNS="*policy*" uv run examples/run_grpo_math.py grpo.max_num_steps=5
 ```
 
 #### Profile Multiple Worker Types
 ```bash
-NRL_NSYS_WORKER_PATTERNS="*policy*,*vllm*" uv run examples/run_grpo_math.py grpo.max_num_steps=10
+NRL_NSYS_PROFILE_STEP_RANGE=1:2 NRL_NSYS_WORKER_PATTERNS="*policy*,*vllm*" uv run examples/run_grpo_math.py grpo.max_num_steps=5
 ```
 
 #### Profile Workers with Exact Names
 ```bash
-NRL_NSYS_WORKER_PATTERNS="dtensor_policy_worker,vllm_generation_worker" uv run examples/run_grpo_math.py grpo.max_num_steps=10
+NRL_NSYS_PROFILE_STEP_RANGE=3:10 NRL_NSYS_WORKER_PATTERNS="dtensor_policy_worker,vllm_generation_worker" uv run examples/run_grpo_math.py grpo.max_num_steps=5
 ```
 
 ### Profile Output
@@ -140,8 +148,8 @@ When profiling is enabled, it generates the following logs and files:
 
 2. **Profile Files**: Each profiled worker generates a `.nsys-rep` file with naming pattern:
    ```
-   dtensor_policy_worker_<PID>.nsys-rep
-   vllm_generation_worker_<PID>.nsys-rep
+   dtensor_policy_worker_<NRL_NSYS_PROFILE_STEP_RANGE>_<PID>.nsys-rep
+   vllm_generation_worker_<NRL_NSYS_PROFILE_STEP_RANGE>_<PID>.nsys-rep
    ```
 
 3. **File Location**: Profile files are saved in `/tmp/ray/session*/logs/nsight/` directory on each worker node.

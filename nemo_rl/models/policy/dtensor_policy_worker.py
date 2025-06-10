@@ -890,3 +890,11 @@ class DTensorPolicyWorker:
 
     def shutdown(self) -> None:
         """Shutdown the policy."""
+
+    def start_gpu_profiling(self) -> None:
+        """Start GPU profiling."""
+        torch.cuda.profiler.start()
+
+    def stop_gpu_profiling(self) -> None:
+        """Stop GPU profiling."""
+        torch.cuda.profiler.stop()

@@ -1002,6 +1002,14 @@ class VllmGenerationWorker:
 
         await self.llm.wake_up(**wake_up_args)
 
+    def start_gpu_profiling(self) -> None:
+        """Start GPU profiling."""
+        torch.cuda.profiler.start()
+
+    def stop_gpu_profiling(self) -> None:
+        """Stop GPU profiling."""
+        torch.cuda.profiler.stop()
+
 
 class VllmGeneration(GenerationInterface):
     def __init__(
@@ -1442,6 +1450,16 @@ class VllmGeneration(GenerationInterface):
         except Exception as e:
             print(f"Error updating weights: {e}")
             return False
+
+    def start_gpu_profiling(self) -> None:
+        """Start GPU profiling."""
+        futures = self.worker_group.run_all_workers_single_data("start_gpu_profiling")
+        ray.get(futures)
+
+    def stop_gpu_profiling(self) -> None:
+        """Stop GPU profiling."""
+        futures = self.worker_group.run_all_workers_single_data("stop_gpu_profiling")
+        ray.get(futures)
 
     def __del__(self) -> None:
         """Shuts down the worker groups when the object is deleted or is garbage collected.

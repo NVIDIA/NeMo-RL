@@ -13,6 +13,7 @@
 # limitations under the License.
 import fnmatch
 import importlib
+import logging
 import os
 from copy import deepcopy
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from nemo_rl.distributed.ray_actor_environment_registry import (
     get_actor_python_env,
 )
 from nemo_rl.distributed.virtual_cluster import RayVirtualCluster
+from nemo_rl.utils.nsys import NRL_NSYS_PROFILE_STEP_RANGE, NRL_NSYS_WORKER_PATTERNS
 from nemo_rl.utils.venvs import create_local_venv
 
 
@@ -40,9 +42,11 @@ def get_nsight_config_if_pattern_matches(worker_name: str) -> dict[str, Any]:
     Returns:
         Dictionary containing {"nsight": config} if pattern matches, empty dict otherwise
     """
-    import logging
+    assert not (bool(NRL_NSYS_WORKER_PATTERNS) ^ bool(NRL_NSYS_PROFILE_STEP_RANGE)), (
+        "Either both NRL_NSYS_WORKER_PATTERNS and NRL_NSYS_PROFILE_STEP_RANGE must be set, or neither. See https://github.com/NVIDIA/NeMo-RL/tree/main/docs/nsys_profiling.md for more details."
+    )
 
-    patterns_env = os.environ.get("NRL_NSYS_WORKER_PATTERNS")
+    patterns_env = NRL_NSYS_WORKER_PATTERNS
     if not patterns_env:
         return {}
 
@@ -60,8 +64,12 @@ def get_nsight_config_if_pattern_matches(worker_name: str) -> dict[str, Any]:
             return {
                 "nsight": {
                     "t": "cuda,cudnn,cublas,nvtx",
-                    "o": f"'{worker_name}_%p'",
+                    "o": f"'{worker_name}_{NRL_NSYS_PROFILE_STEP_RANGE}_%p'",
                     "stop-on-exit": "true",
+                    # Capture range is required to control the scope of the profile
+                    # Profile will only start/stop when torch.cuda.profiler.start()/stop() is called
+                    "capture-range": "cudaProfilerApi",
+                    "capture-range-end": "stop",
                 }
             }
 
