@@ -128,7 +128,7 @@ By following these validation steps and ensuring your model's outputs remain con
 We also maintain a set of standalone scripts that can be used to diagnose issues related to correctness that
 we have encountered before.
 
-## [1.max_model_len_respected.py](../tools/model_diagnostics/1.max_model_len_respected.py)
+## [1.max_model_len_respected.py](https://github.com/NVIDIA/NeMo-RL/blob/main/tools/model_diagnostics/1.max_model_len_respected.py)
 
 Tests if a new model respects the `max_model_len` passed to vllm
 
