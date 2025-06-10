@@ -102,6 +102,7 @@ class GenerationConfig(TypedDict):
     """Configuration for generation."""
 
     backend: str
+    colocated: bool
     max_new_tokens: int
     temperature: float
     top_p: float
@@ -197,6 +198,11 @@ class GenerationInterface(ABC):
     """Abstract base class defining the interface for RL policies."""
 
     @abstractmethod
+    def init_collective(self, world_size: int) -> None:
+        """Initialize the collective communication."""
+        pass
+
+    @abstractmethod
     def generate(
         self, data: BatchedDataDict["GenerationDatumSpec"], greedy: bool
     ) -> BatchedDataDict["GenerationOutputSpec"]:
@@ -212,4 +218,8 @@ class GenerationInterface(ABC):
 
     def update_weights(self, ipc_handles: dict[str, Any]) -> bool:
         """Update the model weights from the given IPC handles."""
+        raise NotImplementedError
+
+    def update_weights_from_collective(self, info: dict[str, Any]) -> bool:
+        """Update the model weights from collective communication."""
         raise NotImplementedError

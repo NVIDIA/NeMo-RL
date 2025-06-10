@@ -94,6 +94,10 @@ class PolicyInterface(ABC):
 
 class ColocatablePolicyInterface(PolicyInterface):
     @abstractmethod
+    def init_collective(self, world_size: int) -> None:
+        pass
+
+    @abstractmethod
     def offload_before_refit(self) -> None:
         pass
 
@@ -107,4 +111,12 @@ class ColocatablePolicyInterface(PolicyInterface):
 
     @abstractmethod
     def get_weights_ipc_handles(self, keys: list[str]) -> dict[str, Any]:
+        pass
+
+    @abstractmethod
+    def prepare_info_for_collective(self) -> dict[str, Any]:
+        pass
+
+    @abstractmethod
+    def broadcast_weights_for_collective(self) -> None:
         pass

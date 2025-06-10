@@ -342,6 +342,9 @@ class VllmGenerationWorker:
         else:
             self.llm = vllm.LLM(**llm_kwargs)
 
+    def init_collective(self, world_size: int) -> None:
+        self.llm.collective_rpc("init_collective", args=(world_size,))
+
     def llm(self):
         return self.llm
 
@@ -925,6 +928,34 @@ class VllmGenerationWorker:
             traceback.print_exc()
             return False
 
+    def update_weights_from_collective(self, info: dict[str, Any]) -> bool:
+        """Update the model weights from collective communication."""
+        try:
+            assert self.llm is not None, (
+                "Attempting to update weights with either an uninitialized vLLM or non-model-owner"
+            )
+
+            if self.cfg["vllm_cfg"]["async_engine"]:
+                raise RuntimeError(
+                    "update_weights_from_collective cannot be used with async_engine=True. Use update_weights_from_ipc_handles_async instead."
+                )
+
+            result_or_coro = self.llm.collective_rpc("update_weights_from_collective", args=(info,))
+            worker_result = result_or_coro[0]
+
+            if not worker_result:
+                print(
+                    f"Error: Worker failed to update weights. Result: {worker_result}"
+                )
+                return False
+            return True
+        except Exception as e:
+            print(f"Exception during collective_rpc for weight update: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return False
+
     def sleep(self):
         """Put the vLLM engine to sleep."""
         assert self.llm is not None, (
@@ -1206,6 +1237,23 @@ class VllmGeneration(GenerationInterface):
         results = ray.get(futures)
         return results
 
+    def init_collective(self, world_size: int) -> None:
+        """Initialize the collective communication."""
+        try:
+            # Use run_all_workers_single_data to send data to all workers
+            print("[init_collective] in vllm")
+            futures = self.worker_group.run_all_workers_single_data(
+                "init_collective",
+                world_size=world_size,
+                run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"]
+            )
+            # Wait for all futures to complete
+            results = ray.get(futures)
+            return all(result for result in results if result is not None)
+        except Exception as e:
+            print(f"Error during init collective: {e}")
+            return False
+
     def generate(
         self, data: BatchedDataDict[GenerationDatumSpec], greedy: bool = False
     ) -> BatchedDataDict[GenerationOutputSpec]:
@@ -1437,7 +1485,23 @@ class VllmGeneration(GenerationInterface):
             results = ray.get(futures)
             return all(result for result in results if result is not None)
         except Exception as e:
-            print(f"Error updating weights: {e}")
+            print(f"Error during update weights: {e}")
+            return False
+
+    def update_weights_from_collective(self, info: dict[str, Any]) -> bool:
+        """Update weights of the policy using collective communication."""
+        try:
+            # Use run_all_workers_single_data to send data to all workers
+            futures = self.worker_group.run_all_workers_single_data(
+                "update_weights_from_collective",
+                info=info,
+                run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"]
+            )
+            # Wait for all futures to complete
+            results = ray.get(futures)
+            return all(result for result in results if result is not None)
+        except Exception as e:
+            print(f"Error during update weights from collective: {e}")
             return False
 
     def __del__(self) -> None:
