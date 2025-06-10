@@ -1,18 +1,6 @@
 # Add New Models
 
-- [Add New Models](#add-new-models)
-  - [Importance of Log Probability Consistency in Training and Inference](#importance-of-log-probability-consistency-in-training-and-inference)
-  - [Understand Discrepancies Between Backends](#understand-discrepancies-between-backends)
-  - [1. Hugging Face–Based Models](#1-hugging-facebased-models)
-    - [Validation Workflow](#validation-workflow)
-  - [2. Megatron Models](#2-megatron-models)
-    - [Additional Validation](#additional-validation)
-  - [3. Expected Error Threshold](#3-expected-error-threshold)
-- [Model Diagnostics](#model-diagnostics)
-  - [1.max\_model\_len\_respected.py](#1max_model_len_respectedpy)
-
-
-This guide outlines how to integrate and validate a new model within NeMo RL. Each new model must pass a standard set of compatibility tests before being considered ready to be used in RL pipelines.
+This guide outlines how to integrate and validate a new model within NeMo RL. Each new model must pass a standard set of compatibility tests before being considered ready to be used in RL pipelines. The guide also details diagnostic scripts to help identify and resolve common issues during model integration.
 
 ## Importance of Log Probability Consistency in Training and Inference
 
