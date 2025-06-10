@@ -40,6 +40,8 @@ RUN curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh && \
 # Disable usage stats by default for users who are sensitive to sharing usage.
 # Users are encouraged to enable if the wish.
 ENV RAY_USAGE_STATS_ENABLED=0
+ENV NEMO_RL_VENV_DIR=/opt/ray_venvs
+
 
 FROM base AS hermetic
 
