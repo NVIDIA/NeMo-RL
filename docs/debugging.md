@@ -81,7 +81,7 @@ RAY_DEBUG=legacy uv run ....
 
 ## Nsight Profiling (nsys)
 
-NeMo RL supports nsight profiling for Ray workers through environment variable pattern matching. This allows you to selectively profile specific worker types without modifying code or affecting performance of workers that don't need profiling.
+NeMo RL supports Nsight profiling for Ray workers through environment variable pattern matching. This allows you to selectively profile specific worker types without modifying code or affecting the performance of workers that don't need profiling.
 
 **Note**: To prevent profile files from becoming too large, consider running for a small number of steps (e.g., 10 steps) when profiling.
 
