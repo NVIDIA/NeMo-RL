@@ -322,22 +322,16 @@ class DTensorPolicyWorker:
             with contextlib.ExitStack() as stack:
                 if cp_context is not None:
                     from torch.nn.attention import SDPBackend, sdpa_kernel
+                    # TODO (xilunwu): support cuDNN backend
 
-                    if torch.__version__ >= "2.7.0":
-                        stack.enter_context(
-                            sdpa_kernel(
-                                [SDPBackend.CUDNN_ATTENTION, SDPBackend.FLASH_ATTENTION]
-                            )
+                    stack.enter_context(
+                        sdpa_kernel(
+                            [
+                                SDPBackend.FLASH_ATTENTION,
+                                SDPBackend.EFFICIENT_ATTENTION,
+                            ]
                         )
-                    else:
-                        stack.enter_context(
-                            sdpa_kernel(
-                                [
-                                    SDPBackend.FLASH_ATTENTION,
-                                    SDPBackend.EFFICIENT_ATTENTION,
-                                ]
-                            )
-                        )
+                    )
 
                     stack.enter_context(cp_context)
 
