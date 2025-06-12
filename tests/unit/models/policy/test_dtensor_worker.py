@@ -140,9 +140,7 @@ def policy_setup(two_gpu_virtual_cluster):
     config["generation"] = configure_generation_config(config["generation"], tokenizer)
 
     print("Creating Policy...")
-    policy = Policy(
-        cluster=two_gpu_virtual_cluster, config=config, tokenizer=tokenizer
-    )
+    policy = Policy(cluster=two_gpu_virtual_cluster, config=config, tokenizer=tokenizer)
 
     yield policy
 
