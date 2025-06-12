@@ -364,7 +364,7 @@ def logprob_setup(request, two_gpu_virtual_cluster):
 
     try:
         config = create_test_config(
-            model_name, tp, cpu_offload, sequence_parallel, activation_checkpointing
+            model_name, tp, 1, cpu_offload, sequence_parallel, activation_checkpointing
         )
         tokenizer = get_tokenizer(config["tokenizer"])
         print(
