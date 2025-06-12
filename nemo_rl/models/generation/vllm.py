@@ -274,17 +274,27 @@ class VllmGenerationWorker:
 
         return list(stop_set) if stop_set else None
 
-    def _build_sampling_params(self, *, greedy: bool, stop_strings):
+    def _build_sampling_params(
+        self,
+        *,
+        greedy: bool,
+        stop_strings,
+        max_new_tokens: Optional[int] = None,
+    ):
         top_k_cfg = self.cfg["top_k"]
         top_k_val = 1 if greedy else (top_k_cfg if top_k_cfg is not None else -1)
 
         temperature = 0.0 if greedy else self.cfg["temperature"]
 
+        max_tokens = (
+            max_new_tokens if max_new_tokens is not None else self.cfg["max_new_tokens"]
+        )
+
         return self.SamplingParams(
             temperature=temperature,
             top_p=self.cfg["top_p"],
             top_k=top_k_val,
-            max_tokens=self.cfg["max_new_tokens"],
+            max_tokens=max_tokens,
             logprobs=0,
             stop_token_ids=self.cfg["stop_token_ids"],
             stop=stop_strings,
@@ -491,9 +501,15 @@ class VllmGenerationWorker:
                 [per_sample_stop_strings] if per_sample_stop_strings else None
             )
 
+            remaining_ctx = (
+                self.cfg["vllm_cfg"]["max_model_len"] - current_input_actual_length
+            )
+            allowed_new_tokens = max(0, min(self.cfg["max_new_tokens"], remaining_ctx))
+
             sampling_params_for_request = self._build_sampling_params(
                 greedy=greedy,
                 stop_strings=final_stop_strings_for_sample,
+                max_new_tokens=allowed_new_tokens,
             )
 
             request_id = str(uuid.uuid4())
@@ -516,16 +532,18 @@ class VllmGenerationWorker:
             request_id_to_context[request_id] = context_for_this_task
             task_futures.append(task)
 
-        for task_future_completed in asyncio.as_completed(task_futures):
-            try:
-                vllm_output_single = await task_future_completed
-            except Exception as e:
-                print(f"Error in a generation task: {e}")
-                import traceback
+        # Wait for all tasks to finish in the original request order to preserve deterministic
+        # alignment between inputs and outputs.
+        finished_task_results = await asyncio.gather(
+            *task_futures, return_exceptions=True
+        )
 
-                traceback.print_exc()
+        for i, task_result in enumerate(finished_task_results):
+            if isinstance(task_result, Exception):
+                print(f"Error in a generation task (index {i}): {task_result}")
                 continue
 
+            vllm_output_single = task_result
             request_id_from_output = vllm_output_single.request_id
             context = request_id_to_context[request_id_from_output]
             original_input_ids_single_row = context["original_input_ids_row"]
@@ -536,11 +554,8 @@ class VllmGenerationWorker:
             generated_token_ids = list(generation_details.token_ids)
             num_generated_tokens = len(generated_token_ids)
 
-            original_padded_len_of_this_input_row = original_input_ids_single_row.shape[
-                0
-            ]
             final_output_tensor_len = (
-                original_padded_len_of_this_input_row + num_generated_tokens
+                original_input_actual_length + num_generated_tokens
             )
 
             # Create output_ids tensor for this single item

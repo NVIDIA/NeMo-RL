@@ -17,16 +17,16 @@ dynamic = [
     "readme",
 ]
 description = "NeMo RL: A Scalable and Efficient Post-Training Library for Models Ranging from 1 GPU to 1000s, and from Tiny to >100B Parameters"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = {text = "Apache 2.0"}
 dependencies = [
-    "torch==2.6.0",
+    "torch==2.7.0",
     "colored==2.2.3",
-    "ray[default]==2.43.0",
+    "ray[default]==2.46.0",
     "transformers>=4.51.0",
     "wandb",
     "numpy",
-    "datasets",
+    "datasets>=3.6.0",
     "rich",
     "math-verify",
     "accelerate>=0.26",
@@ -39,7 +39,7 @@ dependencies = [
 
 [project.optional-dependencies]
 vllm = [
-    "vllm==0.8.5",
+    "vllm==0.9.0",
 ]
 mcore = [
     # also need cudnn (https://developer.nvidia.com/cudnn-downloads?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=20.04&target_type=deb_network)
@@ -47,7 +47,7 @@ mcore = [
     # sudo dpkg -i cuda-keyring_1.1-1_all.deb
     # sudo apt-get update
     # sudo apt-get install cudnn-cuda-12
-    "transformer-engine[pytorch]==1.13.0",
+    "transformer-engine[pytorch]==2.3.0",
     "megatron-core",
     "nemo-tron",
 ]
@@ -57,7 +57,7 @@ mcore = [
 # This is a default group so that we install these even with bare `uv sync`
 build = [
     # Build requirement for TE
-    "torch==2.6.0",
+    "torch==2.7.0",
     # Build requirement for TE
     "setuptools",
     "packaging",
@@ -104,7 +104,7 @@ members = [
 
 [tool.uv]
 # Currently, TE must be built with no build-isolation b/c it requires torch
-no-build-isolation-package = ["transformer-engine"]
+no-build-isolation-package = ["transformer-engine-torch", "transformer-engine"]
 # Always apply the build group since dependencies like TE/mcore/nemo-run require build dependencies
 # and this lets us assume they are implicitly installed with a simply `uv sync`. Ideally, we'd
 # avoid including these in the default dependency set, but for now it's required.

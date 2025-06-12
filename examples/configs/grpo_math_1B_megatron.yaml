@@ -93,6 +93,9 @@ policy:
 
       clip_grad: ${policy.max_grad_norm}
 
+      #overlap_grad_sync: false
+      #overlap_param_sync: false
+
     scheduler:
       start_weight_decay: ${policy.megatron_cfg.optimizer.weight_decay}
       end_weight_decay: ${policy.megatron_cfg.optimizer.weight_decay}

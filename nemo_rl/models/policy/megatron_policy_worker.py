@@ -327,11 +327,21 @@ class MegatronPolicyWorker:
             ),
             ddp_config=DistributedDataParallelConfig(
                 check_for_nan_in_grad=True,
-                grad_reduce_in_fp32=self.cfg["megatron_cfg"]["distributed_data_parallel_config"]["grad_reduce_in_fp32"],
-                overlap_grad_reduce=self.cfg["megatron_cfg"]["distributed_data_parallel_config"]["overlap_grad_reduce"],
-                overlap_param_gather=self.cfg["megatron_cfg"]["distributed_data_parallel_config"]["overlap_param_gather"],
-                average_in_collective=self.cfg["megatron_cfg"]["distributed_data_parallel_config"]["average_in_collective"],
-                use_distributed_optimizer=self.cfg["megatron_cfg"]["optimizer"]["use_distributed_optimizer"],
+                grad_reduce_in_fp32=self.cfg["megatron_cfg"][
+                    "distributed_data_parallel_config"
+                ]["grad_reduce_in_fp32"],
+                overlap_grad_reduce=self.cfg["megatron_cfg"][
+                    "distributed_data_parallel_config"
+                ]["overlap_grad_reduce"],
+                overlap_param_gather=self.cfg["megatron_cfg"][
+                    "distributed_data_parallel_config"
+                ]["overlap_param_gather"],
+                average_in_collective=self.cfg["megatron_cfg"][
+                    "distributed_data_parallel_config"
+                ]["average_in_collective"],
+                use_distributed_optimizer=self.cfg["megatron_cfg"]["optimizer"][
+                    "use_distributed_optimizer"
+                ],
             ),
             scheduler_config=SchedulerConfig(
                 **self.cfg["megatron_cfg"]["scheduler"],
@@ -413,7 +423,7 @@ class MegatronPolicyWorker:
         self.dp_size = worker_sharding_annotations.get_axis_size("data_parallel")
         self.converter_type = self.cfg["megatron_cfg"]["converter_type"]
         self._held_gather_buffer = None
-    
+
     def configure_worker(self, num_gpus: int, bundle_indices: Optional[tuple] = None):
         return None, {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}, None
 
@@ -510,7 +520,9 @@ class MegatronPolicyWorker:
                 batch = data.get_batch(batch_idx=gb_idx, batch_size=local_gbs)
                 if self.cfg["dynamic_batching"]["enabled"]:
                     data_iterator = batch.make_microbatch_iterator_with_dynamic_shapes()
-                    data_iterator_len = batch.get_microbatch_iterator_dynamic_shapes_len()
+                    data_iterator_len = (
+                        batch.get_microbatch_iterator_dynamic_shapes_len()
+                    )
                 else:
                     data_iterator = batch.make_microbatch_iterator(mbs)
                     data_iterator_len = num_microbatches
@@ -534,9 +546,9 @@ class MegatronPolicyWorker:
                         model=self.model,
                         num_microbatches=data_iterator_len,
                         seq_length=seq_dim_size,
-                        micro_batch_size=self.cfg["train_micro_batch_size"],
+                        micro_batch_size=mbs,
                         decoder_seq_length=seq_dim_size,
-                        forward_only=False,
+                        forward_only=eval_mode,
                     )
 
                 # Empty unused memory.
@@ -564,7 +576,7 @@ class MegatronPolicyWorker:
                 if update_successful:
                     increment = (
                         num_microbatches
-                        * self.cfg["train_micro_batch_size"]
+                        * mbs
                         * self.dp_size
                     )
                     self.scheduler.step(increment=increment)
@@ -707,7 +719,6 @@ class MegatronPolicyWorker:
         else:
             mb_iterator = data.make_microbatch_iterator(logprob_batch_size)
             data_iterator_len = max(1, data.size // logprob_batch_size)
-
 
         forward_backward_func = get_forward_backward_func()
         list_of_logprobs = forward_backward_func(

@@ -15,6 +15,7 @@ checkpointing:
   keep_top_k: 3
   save_period: 10
 policy:
+  training_backend: "hf"
   model_name: meta-llama/Llama-3.1-8B-Instruct
   tokenizer:
     name: meta-llama/Llama-3.1-8B-Instruct
@@ -52,6 +53,7 @@ data:
   dataset_name: squad
   add_bos: true
   add_eos: true
+  add_generation_prompt: false
 logger:
   log_dir: logs/sft-llama3.1-8b-instruct-1n8g-fsdp1
   wandb_enabled: true

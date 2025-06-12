@@ -306,6 +306,8 @@ class NLLLoss(LossFunction):
         data: BatchedDataDict[Any],
         global_valid_seqs: Tensor | None,
         global_valid_toks: Tensor,
+        vocab_parallel_rank: Optional[int] = None,
+        vocab_parallel_group: Optional[torch.distributed.ProcessGroup] = None,
         dpo_loss: bool = False,
         dpo_average_log_probs: bool = False,
     ) -> tuple[Tensor, dict[str, Any]]:
@@ -318,7 +320,16 @@ class NLLLoss(LossFunction):
         next_token_logits = next_token_logits.to(torch.float32)
 
         # Gather the logprobs for the actual next tokens
-        if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
+        if vocab_parallel_group is not None:
+            token_logprobs = from_parallel_logits_to_logprobs(
+                next_token_logits,
+                data["input_ids"],
+                vocab_start_index=vocab_parallel_rank * next_token_logits.shape[-1],
+                vocab_end_index=(vocab_parallel_rank + 1) * next_token_logits.shape[-1],
+                group=vocab_parallel_group,
+                inference_only=False,
+            )
+        elif isinstance(next_token_logits, torch.distributed.tensor.DTensor):
             token_logprobs = get_logprobs_from_vocab_parallel_logits(
                 next_token_logits, data["input_ids"]
             )
@@ -446,13 +457,24 @@ class DPOLossFn(LossFunction):
         next_token_logits: Tensor,
         data: BatchedDataDict[DPOLossDataDict],
         global_valid_seqs: Tensor,
+        vocab_parallel_rank: Optional[int] = None,
+        vocab_parallel_group: Optional[torch.distributed.ProcessGroup] = None,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         ## TODO(@ashors): there's some duplicate code here with the NLLLoss function. We should refactor
         token_mask = data["token_mask"][:, 1:]
         sample_mask = data["sample_mask"]
 
         next_token_logits = next_token_logits.to(torch.float32)
-        if isinstance(next_token_logits, torch.distributed.tensor.DTensor):
+        if vocab_parallel_group is not None:
+            token_logprobs = from_parallel_logits_to_logprobs(
+                next_token_logits,
+                data["input_ids"],
+                vocab_start_index=vocab_parallel_rank * next_token_logits.shape[-1],
+                vocab_end_index=(vocab_parallel_rank + 1) * next_token_logits.shape[-1],
+                group=vocab_parallel_group,
+                inference_only=False,
+            )
+        elif isinstance(next_token_logits, torch.distributed.tensor.DTensor):
             token_logprobs = get_logprobs_from_vocab_parallel_logits(
                 next_token_logits, data["input_ids"]
             )
@@ -514,6 +536,8 @@ class DPOLossFn(LossFunction):
         data: BatchedDataDict[DPOLossDataDict],
         global_valid_seqs: Tensor,
         global_valid_toks: Tensor | None,
+        vocab_parallel_rank: Optional[int] = None,
+        vocab_parallel_group: Optional[torch.distributed.ProcessGroup] = None,
     ) -> tuple[Tensor, dict[str, Any]]:
         sft_loss_chosen = torch.tensor(0.0)
         if self.sft_loss_weight > 0:
@@ -525,6 +549,8 @@ class DPOLossFn(LossFunction):
                 data,
                 global_valid_seqs=global_valid_seqs,
                 global_valid_toks=global_valid_toks,  ## unused because sft loss returned is at the sample level
+                vocab_parallel_rank=vocab_parallel_rank,
+                vocab_parallel_group=vocab_parallel_group,
                 dpo_loss=True,
                 dpo_average_log_probs=self.sft_average_log_probs,
             )
@@ -540,7 +566,13 @@ class DPOLossFn(LossFunction):
             accuracy,
             rewards_chosen_mean,
             rewards_rejected_mean,
-        ) = self._preference_loss(next_token_logits, data, global_valid_seqs)
+        ) = self._preference_loss(
+            next_token_logits,
+            data,
+            global_valid_seqs,
+            vocab_parallel_rank=vocab_parallel_rank,
+            vocab_parallel_group=vocab_parallel_group,
+        )
 
         dpo_loss = (
             self.sft_loss_weight * sft_loss_chosen
