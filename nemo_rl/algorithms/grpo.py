@@ -292,10 +292,22 @@ def refit_policy_generation(
     refit_buffer_size_gb: int,  # GB
 ) -> None:
     """Refit the policy generation interface with the latest policy weights."""
+    import time
+    st = time.time()
+
     policy.offload_before_refit()
     policy_generation.prepare_for_generation(tags=["weights"])
+
+    et = time.time()
+    print(f"[Refit] Total time taken to offload_before_refit and prepare for generation: {et - st}")
+    st = et
+
     # Streaming update weights to save memory
     state_dict_info: list[tuple[str, int]] = policy.prepare_weights_for_ipc()
+    et = time.time()
+    print(f"[Refit] Total time taken to prepare_weights_for_ipc: {et - st}")
+    st = et
+
     # group keys to save time
     available_bytes = refit_buffer_size_gb * (1024**3)
     split_keys: list[list[str]] = []
@@ -312,9 +324,21 @@ def refit_policy_generation(
 
     if len(keys) > 0:
         split_keys.append(keys)
+    
+    et = time.time()
+    print(f"[Refit] Total time taken to split keys: {et - st}")
+    st = et
+
     # do update
-    for keys in split_keys:
+    total_get_weight_ipc_handle_time = 0
+    total_update_weights_time = 0
+    for i, keys in enumerate(split_keys):
         ipc_handles = policy.get_weights_ipc_handles(keys)
+        et = time.time()
+        print(f"[Refit] Total time taken to get ipc handles for {i}th split: {et - st}")
+        total_get_weight_ipc_handle_time += et - st
+        st = et
+
         if not policy_generation.update_weights(ipc_handles):
             error_message = (
                 "❌ Error: Updating weights for the generation policy failed during refit.\n"
@@ -322,8 +346,21 @@ def refit_policy_generation(
                 "a problem within the generation backend (e.g., vLLM worker).\n"
             )
             raise RuntimeError(error_message)
+        
+        et = time.time()
+        print(f"[Refit] Total time taken to update weights for {i}th split: {et - st}")
+        total_update_weights_time += et - st
+        st = et
+    
+    print(f"[Refit] Total time taken to get ipc handles: {total_get_weight_ipc_handle_time}")
+    print(f"[Refit] Total time taken to update weights: {total_update_weights_time}")
+
     policy.offload_after_refit()
     policy_generation.prepare_for_generation(tags=["kv_cache"])
+
+    et = time.time()
+    print(f"[Refit] Total time taken to offload_after_refit and prepare for generation: {et - st}")
+    st = et
 
 
 # ===============================================================================
