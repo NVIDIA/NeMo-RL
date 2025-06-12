@@ -314,7 +314,7 @@ def training_setup(request, two_gpu_virtual_cluster):
         (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, 1, True, False, True),
         (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, 1, False, True, True),
         (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, 1, True, True, True),
-        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, 2, False, False, False),
+        # CP doesn't support gemma3 due to spda input has attent_mask != None.
     ],
     indirect=True,
 )
