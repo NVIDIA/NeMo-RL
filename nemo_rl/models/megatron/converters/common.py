@@ -30,6 +30,7 @@ from nemo.lightning.io.state import (
 )
 import nemo_rl.models.megatron.converters.qwen2 as qwen2_converter
 import nemo_rl.models.megatron.converters.llama as llama_converter
+import nemo_rl.models.megatron.converters.deepseek as deepseek_converter
 
 _GROUP_TO_RANKS_CACHE = {}
 
@@ -67,6 +68,15 @@ def get_local_layer_num(s):
     return number
 
 
+def get_local_expert_num(s):
+    """Assumes experts have 'experts.' in their name. Expert num succeeds '.weight'."""
+    segments = s.split(".")
+    if "experts" not in segments or segments[-1] == "_extra_state":
+        return None
+    number = int(segments[-1].strip("weight"))
+    return number
+
+
 def get_global_layer_num(s, cfg):
     """Assumes layer number is preceeded by 'layers.'.
 
@@ -101,6 +111,22 @@ def get_global_layer_num(s, cfg):
     return global_offset + local_layer_num
 
 
+def get_global_expert_num(s, cfg):
+    """Assumes experts have 'experts.' in their name. Expert num succeeds '.weight'.
+    Assumes expert model parallel size is set.
+    In the state dict, the expert number is the local expert number (expert local).
+    This function converts the local expert number to the global expert number.
+    """
+    local_expert_num = get_local_expert_num(s)
+    global_expert_num = (
+        parallel_state.get_expert_model_parallel_rank()
+        * cfg.num_moe_experts
+        // parallel_state.get_expert_model_parallel_world_size()
+        + local_expert_num
+    )
+    return global_expert_num
+
+
 def get_global_key_from_local_key(local_key, model_cfg):
     local_layer = get_local_layer_num(local_key)
     if local_layer is not None:
@@ -109,6 +135,11 @@ def get_global_key_from_local_key(local_key, model_cfg):
         global_key = re.sub(r"(?<=layers\.)\d+", str(global_layer), local_key, count=1)
     else:
         global_key = local_key
+    local_expert = get_local_expert_num(global_key)
+    if local_expert is not None:
+        global_expert = get_global_expert_num(global_key, model_cfg)
+        # Replace the last occurrence of the digits after "weight" with the global expert number.
+        global_key = re.sub(r"(?<=weight)\d+", str(global_expert), global_key)
     return global_key
 
 
@@ -235,7 +266,15 @@ class MegatronToHFConverter:
         )
         pp_gathered_global_keys = list({k for l in pp_gathered_global_keys for k in l})
 
-        global_keys = pp_gathered_global_keys
+        ep_group = parallel_state.get_expert_model_parallel_group()
+        ep_world_size = parallel_state.get_expert_model_parallel_world_size()
+        ep_gathered_global_keys = [None] * ep_world_size
+        torch.distributed.all_gather_object(
+            ep_gathered_global_keys, pp_gathered_global_keys, group=ep_group
+        )
+        ep_gathered_global_keys = list({k for l in ep_gathered_global_keys for k in l})
+
+        global_keys = ep_gathered_global_keys
         global_keys_map = {k: None for k in global_keys}
 
         if "qwen" in hf_model_name.lower():
@@ -250,6 +289,17 @@ class MegatronToHFConverter:
             self.get_source_fn = lambda source_state_dict, _: _ModelState(
                 source_state_dict
             )
+        elif (
+            "deepseek" in hf_model_name.lower()
+            or "Moonlight-16B-A3B" in hf_model_name
+            or hf_model_name in ("ByteDance-Seed/academic-ds-9B",)
+        ):
+            self.export_mapping = deepseek_converter.get_export_mapping(
+                source=global_keys_map,
+                source_config=megatron_model.config.__dict__,
+            )
+            self.export_transforms = deepseek_converter.get_export_transforms()
+            self.get_source_fn = deepseek_converter.get_source_fn
         else:
             raise ValueError(
                 f"No converter mapping and transforms found for {hf_model_name}"

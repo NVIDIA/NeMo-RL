@@ -103,6 +103,7 @@ from nemo_rl.models.generation.interfaces import (
 )
 from nemo_rl.models.megatron.converters.common import (
     get_all_rank_ids_in_group,
+    get_global_key_from_local_key,
     MegatronToHFConverter,
 )
 from nemo_rl.models.megatron.common import (
@@ -176,6 +177,16 @@ def setup_megatron_model(
 
     torch.distributed.barrier()
 
+    model_post_init_fns = []
+    if policy_cfg["megatron_cfg"]["freeze_moe_router"]:
+
+        def freeze_moe_router(model_module):
+            for layer in model_module.decoder.layers:
+                if hasattr(layer.mlp, "router"):
+                    layer.mlp.router.weight.requires_grad = False
+
+        model_post_init_fns.append(freeze_moe_router)
+
     # Model, optimizer, and learning rate.
     model = get_model_from_config(
         cfg.model_config,
@@ -183,6 +194,7 @@ def setup_megatron_model(
         use_torch_fsdp2=cfg.dist_config.use_torch_fsdp2,
         overlap_param_gather_with_optimizer_step=cfg.optimizer_config.overlap_param_gather_with_optimizer_step,
         data_parallel_random_init=cfg.rng_config.data_parallel_random_init,
+        model_post_init_fns=model_post_init_fns,
     )
     if load_optimizer:
         optimizer, scheduler = setup_optimizer(
@@ -310,6 +322,12 @@ class MegatronPolicyWorker:
         model_cfg.context_parallel_size = self.cfg["megatron_cfg"][
             "context_parallel_size"
         ]  # not supported right now
+        model_cfg.expert_tensor_parallel_size = self.cfg["megatron_cfg"][
+            "expert_tensor_parallel_size"
+        ]
+        model_cfg.expert_model_parallel_size = self.cfg["megatron_cfg"][
+            "expert_model_parallel_size"
+        ]
         model_cfg.sequence_parallel = self.cfg["megatron_cfg"]["sequence_parallel"]
         model_cfg.bf16 = self.dtype == torch.bfloat16
         model_cfg.fp16 = self.dtype == torch.float16
@@ -318,6 +336,14 @@ class MegatronPolicyWorker:
         ]  # FP32 for amp
         model_cfg.pipeline_dtype = dtype_map[self.cfg["megatron_cfg"]["pipeline_dtype"]]
         model_cfg.parallel_output = True
+        model_cfg.moe_router_dtype = "fp64"
+        model_cfg.moe_router_load_balancing_type = self.cfg["megatron_cfg"][
+            "moe_router_load_balancing_type"
+        ]
+        model_cfg.moe_router_bias_update_rate = self.cfg["megatron_cfg"][
+            "moe_router_bias_update_rate"
+        ]
+        model_cfg.disable_bf16_reduced_precision_matmul = True
         if self.cfg["megatron_cfg"]["activation_checkpointing"]:
             model_cfg.activations_checkpoint_granularity = "full"
             model_cfg.activations_checkpoint_method = "uniform"
@@ -1130,6 +1156,10 @@ class MegatronPolicyWorker:
         pp_world_size = torch.distributed.get_world_size(pp_group)
         pp_group_rank_ids = get_all_rank_ids_in_group(pp_group)
 
+        ep_group = parallel_state.get_expert_model_parallel_group()
+        ep_world_size = torch.distributed.get_world_size(ep_group)
+        ep_group_rank_ids = get_all_rank_ids_in_group(ep_group)
+
         # Collect parameter info
         param_info = []
 
@@ -1138,6 +1168,7 @@ class MegatronPolicyWorker:
 
         # Process each parameter in the model
         # state_dict includes parameters and persistent buffers
+        ep_pattern = re.compile(r"mlp\.experts.*\.weight\d*$")
         for name, param in self.model.state_dict().items():
             # Skip _extra_state entries (these are metadata, not actual weights)
             if "_extra_state" in name:
@@ -1146,12 +1177,19 @@ class MegatronPolicyWorker:
             shape = list(param.shape)
             tp_dim = get_tp_dim(self.model, name, named_modules_dict)
             if tp_dim is not None:
+                # TODO: take care of expert_tensor_parallel_size which may be different from tensor_model_parallel_size
                 tp_rank_ids = tuple(sorted(tp_group_rank_ids))
                 shape[tp_dim] *= len(tp_rank_ids)
             else:
                 tp_rank_ids = (torch.distributed.get_rank(),)
 
             pp_rank_ids = tuple(sorted(pp_group_rank_ids))
+            ep_rank_ids = tuple(sorted(ep_group_rank_ids))
+
+            if ep_pattern.search(name):
+                ep_rank_ids = tuple(sorted(ep_group_rank_ids))
+            else:
+                ep_rank_ids = (torch.distributed.get_rank(),)
 
             # Calculate size for this parameter
             prec_to_bytes = {
@@ -1165,6 +1203,7 @@ class MegatronPolicyWorker:
                 * param.numel()
                 * len(tp_rank_ids)
                 * len(pp_rank_ids)
+                * len(ep_rank_ids)
                 * scale
             )
             param_info.append(
@@ -1188,7 +1227,16 @@ class MegatronPolicyWorker:
         )
         pp_gathered_param_infos = [x for y in pp_gathered_param_infos for x in y]
 
-        all_param_infos = pp_gathered_param_infos
+        # Gather parameter info from all expert parallel ranks to ensure complete coverage
+        ep_group = parallel_state.get_expert_model_parallel_group()
+        ep_world_size = torch.distributed.get_world_size(ep_group)
+
+        # Gather all parameter info from all EP ranks
+        ep_gathered_param_infos = [None] * ep_world_size
+        torch.distributed.all_gather_object(
+            ep_gathered_param_infos, pp_gathered_param_infos, group=ep_group
+        )
+        all_param_infos = [x for y in ep_gathered_param_infos for x in y]
 
         # Merge all parameter infos, keeping only unique parameter names
         merged_param_info = []
