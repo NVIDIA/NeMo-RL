@@ -2,6 +2,8 @@
 
 set -eoux pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Default values
 DEFAULT_GIT_URL="https://github.com/vegaluisjose/vllm.git"
 DEFAULT_BRANCH="ssm-fp32-exp"
@@ -49,3 +51,10 @@ uv pip install -e .
 echo "Build completed successfully!"
 echo "The built vLLM is available in: $BUILD_DIR"
 echo "You can now update your pyproject.toml to use this local version."
+
+### DELETE THIS LATER
+echo "Copying script.py to $BUILD_DIR/script.py"
+cp $SCRIPT_DIR/script.py $BUILD_DIR/script.py
+
+echo "Test by running cd $BUILD_DIR && uv run script.py"
+### DELETE THIS LATER
