@@ -356,7 +356,7 @@ def test_dtensor_worker_training(training_setup):
 @pytest.fixture
 def logprob_setup(request, two_gpu_virtual_cluster):
     """Setup and teardown specifically for training tests."""
-    model_name, tp, cpu_offload, sequence_parallel, activation_checkpointing = (
+    model_name, tp, cp, cpu_offload, sequence_parallel, activation_checkpointing = (
         request.param
     )
     policy = None
@@ -364,7 +364,7 @@ def logprob_setup(request, two_gpu_virtual_cluster):
 
     try:
         config = create_test_config(
-            model_name, tp, 1, cpu_offload, sequence_parallel, activation_checkpointing
+            model_name, tp, cp, cpu_offload, sequence_parallel, activation_checkpointing
         )
         tokenizer = get_tokenizer(config["tokenizer"])
         print(
@@ -437,19 +437,30 @@ def logprob_setup(request, two_gpu_virtual_cluster):
 @pytest.mark.parametrize(
     "logprob_setup",
     [
-        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 2, False, True, False),
-        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 2, False, False, False),
-        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, False, False, False),
-        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, False, True, False),
-        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, False, True, True),
-        (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 2, False, True, False),
-        (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 2, False, False, False),
-        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 2, False, True, False),
-        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 2, False, False, False),
+        # TP=2, CP=1
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 2, 1, False, True, False),
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 2, 1, False, False, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, 1, False, False, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, 1, False, True, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 2, 1, False, True, True),
+        (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 2, 1, False, True, False),
+        (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 2, 1, False, False, False),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 2, 1, False, True, False),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 2, 1, False, False, False),
+        # TP=1, CP=2
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 1, 2, False, True, False),
+        (TEST_ASSETS.TINY_QWEN2_MODEL_PATH, 1, 2, False, False, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 1, 2, False, False, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 1, 2, False, True, False),
+        (TEST_ASSETS.TINY_LLAMA_MODEL_PATH, 1, 2, False, True, True),
+        (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 1, 2, False, True, False),
+        (TEST_ASSETS.TINY_QWEN3_MODEL_PATH, 1, 2, False, False, False),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, 2, False, True, False),
+        (TEST_ASSETS.TINY_GEMMA3_MODEL_PATH, 1, 2, False, False, False),
     ],
     indirect=True,
 )
-def test_dtensor_worker_logprob_tp2_matches_no_tp(logprob_setup):
+def test_dtensor_worker_logprob_tp2_or_cp2_matches_unsharded(logprob_setup):
     policy, data, logprobs = logprob_setup
 
     # Verify resources were created properly assert policy is not None, "Policy was not created properly"

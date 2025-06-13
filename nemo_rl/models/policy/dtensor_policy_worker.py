@@ -307,37 +307,27 @@ class DTensorPolicyWorker:
         )
 
     # Refer to nemo impl. Below is original comment.
-    # based on https://github.com/pytorch/torchtitan/blob/main/torchtitan/distributed/utils.py#L138
+    # based on https://github.com/pytorch/torchtitan/blob/cddd7dc809f36fe0ed51cdaaea0671c084d75442/torchtitan/distributed/utils.py#L178
     @staticmethod
-    def get_train_context():
-        """Create a train context.
+    @contextlib.contextmanager
+    def train_context(cp_context: Optional[Generator[None, None, None]] = None):
+        with contextlib.ExitStack() as stack:
+            if cp_context is not None:
+                from torch.nn.attention import SDPBackend, sdpa_kernel
+                # TODO (xilunwu): support cuDNN backend
 
-        Args:
-            enable_loss_parallel (bool): Whether to enable loss parallelism.
-            enable_compiled_autograd (bool): Whether to enable compiled autograd.
-        """
-
-        @contextlib.contextmanager
-        def context(cp_context: Optional[Generator[None, None, None]] = None):
-            with contextlib.ExitStack() as stack:
-                if cp_context is not None:
-                    from torch.nn.attention import SDPBackend, sdpa_kernel
-                    # TODO (xilunwu): support cuDNN backend
-
-                    stack.enter_context(
-                        sdpa_kernel(
-                            [
-                                SDPBackend.FLASH_ATTENTION,
-                                SDPBackend.EFFICIENT_ATTENTION,
-                            ]
-                        )
+                stack.enter_context(
+                    sdpa_kernel(
+                        [
+                            SDPBackend.FLASH_ATTENTION,
+                            SDPBackend.EFFICIENT_ATTENTION,
+                        ]
                     )
+                )
 
-                    stack.enter_context(cp_context)
+                stack.enter_context(cp_context)
 
-                yield
-
-        return context
+            yield
 
     def init_collective(self, ip: str, port: int, world_size: int) -> None:
         """Initialize the collective communication."""
@@ -481,26 +471,26 @@ class DTensorPolicyWorker:
                             seq_len, device=input_ids.device
                         ).repeat(batch_size, 1)
 
-                    seq_index = torch.arange(seq_len, device=input_ids.device).repeat(
-                        1, 1
-                    )
-                    cp_buffers = (
-                        [input_ids, position_ids, seq_index] if self.cp_size > 1 else []
-                    )
+                    context_parallel_ctx = None
+                    if self.cp_size > 1:
+                        seq_index = torch.arange(
+                            seq_len, device=input_ids.device
+                        ).repeat(1, 1)
+                        cp_buffers = (
+                            [input_ids, position_ids, seq_index]
+                            if self.cp_size > 1
+                            else []
+                        )
 
-                    # Create context parallel context
-                    context_parallel_ctx = (
-                        self.create_context_parallel_ctx(
+                        # Create context parallel context
+                        context_parallel_ctx = self.create_context_parallel_ctx(
                             cp_mesh=self.cp_mesh,
                             cp_buffers=cp_buffers,
                             cp_seq_dims=[sequence_dim] * len(cp_buffers),
                             cp_no_restore_buffers=set(cp_buffers),
                         )
-                        if self.cp_size > 1
-                        else None
-                    )
 
-                    with self.get_train_context()(context_parallel_ctx):
+                    with DTensorPolicyWorker.train_context(context_parallel_ctx):
                         with torch.autocast(device_type="cuda", dtype=self.dtype):
                             outputs = self.model(
                                 input_ids=input_ids,
