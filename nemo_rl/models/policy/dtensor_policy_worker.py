@@ -32,6 +32,7 @@ from torch.distributed.tensor.experimental._attention import (
 )
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.integrations.accelerate import find_tied_parameters
+from transformers.models.gemma3.modeling_gemma3 import Gemma3ForCausalLM
 
 from nemo_rl.algorithms.interfaces import LossFunction, LossType
 from nemo_rl.distributed.batched_data_dict import BatchedDataDict
@@ -180,6 +181,11 @@ class DTensorPolicyWorker:
         assert world_size == dp_size * tp_size * cp_size, (
             f"World size({world_size}) must equal to dp_size({dp_size}) * tp_size({tp_size}) * cp_size({cp_size}) to use DTensor"
         )
+
+        if cp_size > 1:
+            assert not isinstance(self.model, Gemma3ForCausalLM), (
+                "Context parallel is not supported for Gemma3ForCausalLM. Torch context parallel has many limitations."
+            )
 
         device_mesh = torch.distributed.device_mesh.init_device_mesh(
             "cuda", (dp_size, cp_size, tp_size), mesh_dim_names=("dp", "cp", "tp")
