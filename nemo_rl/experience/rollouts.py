@@ -581,7 +581,7 @@ async def async_generate_response_for_sample_turn(
     updated_message_log = updated_batch["message_log"][0]
     generated_tokens = generated_ids[0] if generated_ids else torch.empty(0)
 
-    return updated_message_log, generated_tokens, gen_metrics
+    return updated_message_log, generated_tokens, input_lengths, gen_metrics
 
 
 async def run_sample_multi_turn_rollout(
@@ -643,6 +643,7 @@ async def run_sample_multi_turn_rollout(
             (
                 updated_message_log,
                 generated_tokens,
+                input_lengths,
                 gen_metrics,
             ) = await async_generate_response_for_sample_turn(
                 policy_generation,
@@ -693,18 +694,13 @@ async def run_sample_multi_turn_rollout(
                 )["input_ids"][0]
 
                 # Check for sequence length overflow
-                current_length = (
-                    len(current_message_log[-1]["token_ids"])
-                    if current_message_log
-                    else 0
-                )
                 if (
-                    current_length + len(generated_tokens) + len(tokenized_obs)
+                    input_lengths + len(generated_tokens) + len(tokenized_obs)
                     >= max_seq_len
                 ):
                     # Truncate environment observation
                     max_env_tokens = (
-                        max_seq_len - current_length - len(generated_tokens)
+                        max_seq_len - input_lengths - len(generated_tokens)
                     )
                     if max_env_tokens > 0:
                         tokenized_obs = tokenized_obs[:max_env_tokens]
