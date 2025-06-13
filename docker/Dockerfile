@@ -70,6 +70,8 @@ uv venv ${UV_PROJECT_ENVIRONMENT}
 
 # The venv is symlinked to avoid bloating the layer size
 uv sync --link-mode symlink --locked --no-install-project
+uv pip install ninja  # to speed up flash-attn build
+uv sync --link-mode symlink --locked --extra fattn --no-install-project
 uv sync --link-mode symlink --locked --extra vllm --no-install-project
 uv sync --link-mode symlink --locked --extra mcore --no-install-project
 uv sync --link-mode symlink --locked --all-groups --no-install-project
