@@ -62,6 +62,8 @@ ENV UV_LINK_MODE=copy
 # Create and activate virtual environment
 RUN <<"EOF" bash -exu
 uv venv ${UV_PROJECT_ENVIRONMENT}
+# Install setuptools since uv venv --seed may not install it
+VIRTUAL_ENV=$UV_PROJECT_ENVIRONMENT uv pip install setuptools
 # uv sync has a more reliable resolver than simple uv pip install which can fail
 
 # Sync each training + inference backend one at a time (since they may conflict)
