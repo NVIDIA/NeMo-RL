@@ -509,8 +509,12 @@ def run_multi_turn_rollout(
         "truncation_rate": float(sample_truncated.float().mean().item()),
         "max_turns_reached_rate": float(sample_max_turns_reached.float().mean().item()),
         # Token usage metrics
-        "mean_total_tokens_per_sample": float(sample_token_counts.float().mean().item()),
-        "mean_gen_tokens_per_sample": float(sample_assistant_token_counts.float().mean().item()),
+        "mean_total_tokens_per_sample": float(
+            sample_token_counts.float().mean().item()
+        ),
+        "mean_gen_tokens_per_sample": float(
+            sample_assistant_token_counts.float().mean().item()
+        ),
         "mean_env_tokens_per_sample": float(
             sample_env_token_counts.float().mean().item()
         ),
@@ -700,9 +704,7 @@ async def run_sample_multi_turn_rollout(
                     >= max_seq_len
                 ):
                     # Truncate environment observation
-                    max_env_tokens = (
-                        max_seq_len - input_lengths - len(generated_tokens)
-                    )
+                    max_env_tokens = max_seq_len - input_lengths - len(generated_tokens)
                     if max_env_tokens > 0:
                         tokenized_obs = tokenized_obs[:max_env_tokens]
                     else:
