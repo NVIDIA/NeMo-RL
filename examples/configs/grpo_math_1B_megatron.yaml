@@ -19,6 +19,8 @@ loss_fn:
   # (default off) loss formulation improvements (docs/guides/grpo.md#loss)
   use_on_policy_kl_approximation: false
   use_importance_sampling_correction: false
+  token_level_loss: true
+  ratio_clip_c: null
 
 checkpointing:
   enabled: false
@@ -68,12 +70,15 @@ policy:
   megatron_cfg:
     enabled: true
     empty_unused_memory_level: 0
-    converter_type: "Qwen2ForCausalLM"
+    activation_checkpointing: false
     tensor_model_parallel_size: 1
     pipeline_model_parallel_size: 1
+    num_layers_in_first_pipeline_stage: null
+    num_layers_in_last_pipeline_stage: null
     context_parallel_size: 1
     pipeline_dtype: ${policy.precision}
-    
+    sequence_parallel: false
+
     sequence_packing:
       enabled: true
       train_mb_tokens: ${mul:${policy.max_total_sequence_length}, ${policy.train_micro_batch_size}}
