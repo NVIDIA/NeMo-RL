@@ -509,7 +509,8 @@ def run_multi_turn_rollout(
         "truncation_rate": float(sample_truncated.float().mean().item()),
         "max_turns_reached_rate": float(sample_max_turns_reached.float().mean().item()),
         # Token usage metrics
-        "mean_gen_tokens_per_sample": float(sample_token_counts.float().mean().item()),
+        "mean_total_tokens_per_sample": float(sample_token_counts.float().mean().item()),
+        "mean_gen_tokens_per_sample": float(sample_assistant_token_counts.float().mean().item()),
         "mean_env_tokens_per_sample": float(
             sample_env_token_counts.float().mean().item()
         ),
@@ -878,7 +879,7 @@ async def run_async_multi_turn_rollout(
             m["total_tokens"] for m in all_sample_metrics
         )
         / batch_size,
-        "mean_assistant_tokens_per_sample": sum(
+        "mean_gen_tokens_per_sample": sum(
             m["assistant_tokens"] for m in all_sample_metrics
         )
         / batch_size,
