@@ -356,6 +356,7 @@ def test_megatron_policy_training(training_setup):
         # Verify results
         assert "loss" in results, "Training results should contain 'loss'"
         loss_tensor = results["loss"]
+        print(f"Loss tensor: {loss_tensor}")
         verify_loss_tensor(loss_tensor)
         losses.append(loss_tensor[-1].item())
 
