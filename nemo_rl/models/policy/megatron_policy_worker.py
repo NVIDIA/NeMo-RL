@@ -218,14 +218,78 @@ def setup_megatron_model(
 
 
 def destroy_parallel_state():
+    """Safely destroy parallel state and reset async call tracking.
+
+    This function is called during initialization to clean up temporary distributed
+    state from model import operations. Resetting async call tracking ensures that
+    when the main Megatron distributed context is created, all ranks start with
+    consistent call_idx values for async checkpointing.
+    """
     if torch.distributed.is_initialized():
-        torch.distributed.barrier()
-        torch.distributed.destroy_process_group()
+        try:
+            torch.distributed.barrier()
+            torch.distributed.destroy_process_group()
+        except:
+            pass  # Ignore errors if already destroyed
     if hasattr(parallel_state, "destroy_model_parallel"):
         try:
             parallel_state.destroy_model_parallel()
         except:
             pass  # Ignore errors if already destroyed
+
+    # Reset async calls queue to prevent call_idx mismatches after distributed context recreation
+    try:
+        import nemo.tron.utils.async_utils as nemo_async_utils
+        from nemo.tron.utils.async_utils import AsyncCallsQueue
+
+        # Clean up any existing async callers first
+        old_call_idx = getattr(nemo_async_utils._async_calls_queue, "call_idx", None)
+        num_unfinalized = (
+            nemo_async_utils._async_calls_queue.get_num_unfinalized_calls()
+        )
+        if num_unfinalized > 0:
+            print(
+                f"[WARNING] Resetting async calls queue with {num_unfinalized} unfinalized calls"
+            )
+        try:
+            nemo_async_utils._async_calls_queue.close()
+        except:
+            pass  # Ignore errors during cleanup
+        # Reset the global async calls queue by creating a new instance
+        nemo_async_utils._async_calls_queue = AsyncCallsQueue()
+        print(f"[DEBUG] Reset NeMo async calls queue (old call_idx: {old_call_idx})")
+    except ImportError:
+        pass
+
+    # Also reset the Megatron async calls queue if it exists
+    try:
+        import megatron.training.async_utils as megatron_async_utils
+        from megatron.core.dist_checkpointing.strategies.async_utils import (
+            AsyncCallsQueue,
+        )
+
+        # Clean up any existing async callers first
+        old_call_idx = getattr(
+            megatron_async_utils._async_calls_queue, "call_idx", None
+        )
+        num_unfinalized = (
+            megatron_async_utils._async_calls_queue.get_num_unfinalized_calls()
+        )
+        if num_unfinalized > 0:
+            print(
+                f"[WARNING] Resetting Megatron async calls queue with {num_unfinalized} unfinalized calls"
+            )
+        try:
+            megatron_async_utils._async_calls_queue.close()
+        except:
+            pass  # Ignore errors during cleanup
+        # Reset the Megatron global async calls queue as well
+        megatron_async_utils._async_calls_queue = AsyncCallsQueue()
+        print(
+            f"[DEBUG] Reset Megatron async calls queue (old call_idx: {old_call_idx})"
+        )
+    except ImportError:
+        pass
 
 
 @ray.remote
@@ -316,7 +380,6 @@ class MegatronPolicyWorker:
         else:
             pre_init_communication_queue.get()
             pre_init_communication_queue.put(True)
-
         destroy_parallel_state()
 
         pretrained_run_config = os.path.join(
