@@ -676,6 +676,7 @@ class MegatronPolicyWorker:
 
             forward_step = partial(forward_step_arbitrary_loss, loss_fn=loss_fn)
             all_mb_metrics = []
+            losses = []
             for gb_idx in range(num_global_batches):
                 global_batch = data.get_batch(batch_idx=gb_idx, batch_size=local_gbs)
 
@@ -784,6 +785,7 @@ class MegatronPolicyWorker:
                 if parallel_state.is_pipeline_last_stage(ignore_virtual=True):
                     # keep all microbatch metrics to be normalized later
                     gb_loss_metrics = []
+                    mb_losses = []
                     for x in losses_reduced:
                         loss_metrics = {}
                         for k in x.keys():
@@ -794,6 +796,7 @@ class MegatronPolicyWorker:
                         loss_metrics["grad_norm"] = grad_norm
                         loss_metrics["global_valid_seqs"] = global_valid_seqs.item()
                         loss_metrics["global_valid_toks"] = global_valid_toks.item()
+                        mb_losses.append(loss_metrics["loss"])
 
                     torch.distributed.broadcast_object_list(
                         [gb_loss_metrics],
@@ -808,8 +811,10 @@ class MegatronPolicyWorker:
                         group=get_pipeline_model_parallel_group(),
                     )
                     gb_loss_metrics = loss_metrics[0]
+                    mb_losses = [x["loss"] for x in gb_loss_metrics]
 
                 all_mb_metrics.extend(gb_loss_metrics)
+                losses.append(torch.tensor(mb_losses).sum().item())
 
         # Aggregate metrics across all microbatches
         mb_metrics = defaultdict(list)
@@ -818,15 +823,15 @@ class MegatronPolicyWorker:
                 mb_metrics[k].append(v)
 
         with torch.no_grad():
-            loss = torch.tensor(
-                sum([gb_loss_metrics[i]["loss"] for i in range(len(gb_loss_metrics))])
-                / len(gb_loss_metrics),
-                device="cuda",
+            global_loss = torch.tensor(losses, device="cuda")
+            torch.distributed.all_reduce(
+                global_loss,
+                op=torch.distributed.ReduceOp.SUM,
+                group=parallel_state.get_data_parallel_group(),
             )
-            torch.distributed.all_reduce(loss, op=torch.distributed.ReduceOp.AVG)
 
         metrics = {
-            "global_loss": loss.cpu(),
+            "global_loss": global_loss.cpu(),
             "rank": torch.distributed.get_rank(),
             "all_mb_metrics": dict(mb_metrics),
             "grad_norm": torch.tensor(
