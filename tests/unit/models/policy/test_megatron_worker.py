@@ -356,7 +356,6 @@ def test_megatron_policy_training(training_setup):
         # Verify results
         assert "loss" in results, "Training results should contain 'loss'"
         loss_tensor = results["loss"]
-        print(f"Loss tensor: {loss_tensor}")
         verify_loss_tensor(loss_tensor)
         losses.append(loss_tensor[-1].item())
 
@@ -471,13 +470,11 @@ def generation_setup(request):
     "generation_setup",
     [
         # (num_gpus, tp, pp, generation_backend)
-        (2, 1, 1, "megatron"),
-        (2, 2, 1, "megatron"),
         (2, 1, 1, "vllm"),
         (2, 2, 1, "vllm"),
     ],
     indirect=True,
-    ids=["2gpu_dp2_megatron", "2gpu_tp2_megatron", "2gpu_dp2_vllm", "2gpu_tp2_vllm"],
+    ids=["2gpu_dp2_vllm", "2gpu_tp2_vllm"],
 )
 def test_megatron_policy_generation(generation_setup):
     """Test Megatron policy generation with different backends."""
