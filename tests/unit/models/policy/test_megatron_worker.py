@@ -465,16 +465,17 @@ def generation_setup(request):
             cluster.shutdown()
 
 
+@pytest.mark.skip(reason="Skipping megatorn generation tests for now")
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "generation_setup",
     [
         # (num_gpus, tp, pp, generation_backend)
-        (2, 1, 1, "vllm"),
-        (2, 2, 1, "vllm"),
+        (2, 1, 1, "megatron"),
+        (2, 2, 1, "megatron"),
     ],
     indirect=True,
-    ids=["2gpu_dp2_vllm", "2gpu_tp2_vllm"],
+    ids=["2gpu_dp2_megatron", "2gpu_tp2_megatron"],
 )
 def test_megatron_policy_generation(generation_setup):
     """Test Megatron policy generation with different backends."""

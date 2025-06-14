@@ -30,6 +30,7 @@ from nemo_rl.models.generation import configure_generation_config
 from nemo_rl.models.generation.vllm import VllmConfig, VllmGeneration
 from nemo_rl.models.policy import PolicyConfig
 from nemo_rl.models.policy.lm_policy import Policy
+from tests.unit.conftest import TEST_ASSETS
 
 model_name = "Qwen/Qwen3-0.6B"
 # Define basic vLLM test config
@@ -110,6 +111,91 @@ def get_basic_hf_test_config(enable_dtensor: bool = False) -> PolicyConfig:
         "max_grad_norm": 1.0,
         "make_sequence_length_divisible_by": 1,
         "generation": basic_vllm_test_config,
+    }
+
+
+def get_basic_megatron_test_config(
+    tp: int = 1,
+    pp: int = 1,
+    precision: str = "float32",
+    activation_checkpointing: bool = False,
+    sequence_parallel: bool = False,
+) -> PolicyConfig:
+    """Create a test config for Megatron policy worker."""
+    # Use a tiny model for testing
+    model_name = TEST_ASSETS.TINY_LLAMA_MODEL_PATH
+
+    return {
+        "model_name": model_name,
+        "tokenizer": {"name": model_name},
+        "generation_batch_size": 2,  # Small batch size for testing
+        "train_global_batch_size": 4,
+        "train_micro_batch_size": 2,
+        "learning_rate": 5e-6,
+        "logprob_batch_size": 2,
+        "precision": precision,
+        "generation": {
+            "backend": "megatron",
+            "temperature": 1.0,
+            "max_new_tokens": 16,  # Small number of tokens for testing
+            "top_p": 1.0,
+            "top_k": None,
+            "stop_token_ids": None,
+            "stop_strings": None,
+        },
+        "dtensor_cfg": {
+            "enabled": False,  # Disabled for Megatron tests
+        },
+        "dynamic_batching": {
+            "enabled": False,  # Start with simple batching
+        },
+        "megatron_cfg": {
+            "enabled": True,
+            "empty_unused_memory_level": 0,
+            "activation_checkpointing": activation_checkpointing,
+            "converter_type": "LlamaForCausalLM",
+            "tensor_model_parallel_size": tp,
+            "pipeline_model_parallel_size": pp,
+            "num_layers_in_first_pipeline_stage": None,
+            "num_layers_in_last_pipeline_stage": None,
+            "context_parallel_size": 1,
+            "pipeline_dtype": precision,
+            "sequence_parallel": sequence_parallel,
+            "optimizer": {
+                "optimizer": "adam",
+                "lr": 5.0e-6,
+                "min_lr": 5.0e-7,
+                "weight_decay": 0.01,
+                "bf16": precision == "bfloat16",
+                "fp16": precision == "float16",
+                "params_dtype": "float32",
+                "adam_beta1": 0.9,
+                "adam_beta2": 0.999,
+                "adam_eps": 1e-8,
+                "use_distributed_optimizer": True,
+                "use_precision_aware_optimizer": True,
+                "clip_grad": 1.0,
+            },
+            "scheduler": {
+                "start_weight_decay": 0.01,
+                "end_weight_decay": 0.01,
+                "weight_decay_incr_style": "constant",
+                "lr_decay_style": "constant",
+                "lr_decay_iters": None,
+                "lr_warmup_iters": 50,
+                "lr_warmup_init": 5.0e-7,
+            },
+            "distributed_data_parallel_config": {
+                "grad_reduce_in_fp32": False,
+                "overlap_grad_reduce": True,
+                "overlap_param_gather": True,
+                "average_in_collective": True,
+                "data_parallel_sharding_strategy": "optim_grads_params",
+            },
+        },
+        "optimizer": None,  # Remove default FSDP optimizer
+        "scheduler": None,  # Remove default scheduler
+        "max_grad_norm": 1.0,
     }
 
 
@@ -1108,3 +1194,292 @@ def test_vllm_refit_non_collocated_handles_update(
     # Clean up
     vllm_generation.shutdown()
     lm_policy.shutdown()
+
+
+@pytest.mark.timeout(180)
+@pytest.mark.parametrize("tensor_parallel_size", [1, 2])
+def test_vllm_generation_with_megatron_training(
+    cluster, tokenizer, tensor_parallel_size
+):
+    """Test that uses vLLM for generation and Megatron policy for training and logprob computation.
+
+    This test validates that vLLM and Megatron policies can work together.
+    """
+    from tests.unit.test_utils import SimpleNLLLoss
+
+    if cluster.num_gpus_per_node < tensor_parallel_size:
+        pytest.skip(f"Need at least {tensor_parallel_size} GPUs for this test")
+
+    # Create separate configs for each policy
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config["vllm_cfg"]["async_engine"] = False
+    vllm_config = configure_generation_config(vllm_config, tokenizer)
+
+    # Use tiny model for Megatron to ensure it works with limited resources
+    megatron_config = get_basic_megatron_test_config(
+        tp=tensor_parallel_size, pp=1, precision="float32"
+    )
+
+    vllm_policy = None
+    megatron_policy = None
+
+    try:
+        prompts = [
+            "Hello, how are you?",
+            "The capital of France is",
+            "Write a short story about",
+            "Explain quantum physics in simple terms:",
+        ]
+
+        # Tokenize the prompts
+        tokenized = tokenizer(
+            prompts,
+            padding=True,
+            truncation=True,
+            max_length=32,  # Smaller for faster testing
+            return_tensors="pt",
+            padding_side="right",
+        )
+        input_lengths = tokenized["attention_mask"].sum(dim=1).to(torch.int32)
+
+        test_input_data = BatchedDataDict(
+            {
+                "input_ids": tokenized["input_ids"],
+                "input_lengths": input_lengths,
+            }
+        )
+
+        # Create both policies
+        print("Creating vLLM policy...")
+        vllm_policy = VllmGeneration(cluster, vllm_config)
+        vllm_policy.finish_generation()
+
+        print("Creating Megatron policy...")
+        megatron_policy = Policy(cluster, megatron_config, tokenizer)
+
+        print("Refitting vLLM policy with Megatron weights...")
+        refit_policy_generation(
+            megatron_policy, vllm_policy, vllm_config["colocated"]["enabled"]
+        )
+
+        # Step 1: Use vLLM for generation
+        print("Using vLLM policy for fast generation...")
+        generation_results = vllm_policy.generate(test_input_data, greedy=True)
+        vllm_policy.finish_generation()
+
+        # Validate generation outputs
+        assert "output_ids" in generation_results, (
+            "output_ids not found in vLLM generation output"
+        )
+        assert "logprobs" in generation_results, (
+            "logprobs not found in vLLM generation output"
+        )
+
+        # Decode generations
+        generated_texts = tokenizer.batch_decode(
+            generation_results["output_ids"], skip_special_tokens=True
+        )
+        print(f"vLLM generated texts: {generated_texts}")
+
+        # Step 2: Prepare training data (smaller sequence for Megatron)
+        max_seq_len = min(32, generation_results["output_ids"].shape[1])
+        train_input_ids = generation_results["output_ids"][:, :max_seq_len]
+        token_loss_mask = torch.ones_like(train_input_ids)
+
+        # Only compute loss on generated tokens, not input
+        input_len = test_input_data.get("input_ids").size(1)
+        token_loss_mask[:, :input_len] = 0
+
+        # Clamp generation lengths to max_seq_len
+        clamped_lengths = torch.clamp(
+            generation_results["unpadded_sequence_lengths"], max=max_seq_len
+        )
+
+        for idx, length in enumerate(clamped_lengths):
+            token_loss_mask[idx, length:] = 0
+
+        train_data = BatchedDataDict(
+            {
+                "input_ids": train_input_ids,
+                "input_lengths": clamped_lengths,
+                "token_loss_mask": token_loss_mask,
+                "sample_mask": torch.ones(train_input_ids.shape[0]),
+            }
+        )
+
+        # Step 3: Train with Megatron policy
+        print("Training with Megatron policy...")
+        megatron_policy.prepare_for_training()
+
+        # Do one training step to verify it works
+        results = megatron_policy.train(train_data, SimpleNLLLoss())
+        print(f"Training loss: {results['loss']}")
+
+        megatron_policy.finish_training()
+        megatron_policy.offload_after_refit()
+
+        # Step 4: Use vLLM for generation again
+        print("Using vLLM for generation again...")
+        vllm_policy.prepare_for_generation()
+        final_generation = vllm_policy.generate(test_input_data)
+
+        assert "output_ids" in final_generation, (
+            "Final generation should contain output_ids"
+        )
+
+        print("Successfully demonstrated vLLM generation + Megatron training workflow!")
+
+    finally:
+        # Clean up resources
+        print("Cleaning up resources...")
+        if vllm_policy:
+            vllm_policy.shutdown()
+        if megatron_policy and hasattr(megatron_policy, "shutdown"):
+            megatron_policy.shutdown()
+
+
+@pytest.mark.timeout(180)
+def test_vllm_megatron_weight_update_memory(cluster, tokenizer):
+    """Test that vLLM streaming weight update with Megatron can save memory."""
+
+    if cluster.num_gpus_per_node < 2:
+        pytest.skip("Need at least 2 GPUs per node for this test")
+
+    # Create configs
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_generation_config(vllm_config, tokenizer, is_eval=False)
+
+    megatron_config = get_basic_megatron_test_config(tp=1, pp=1, precision="float32")
+
+    # Create policies
+    print("Creating vLLM policy...")
+    vllm_policy = VllmGeneration(cluster, vllm_config)
+    vllm_policy.finish_generation()
+
+    print("Creating Megatron policy...")
+    megatron_policy = Policy(cluster, megatron_config, tokenizer)
+
+    print("Refitting vLLM policy with Megatron...")
+    # Take it outside statistics to get clean peak memory during refit
+    megatron_policy.offload_before_refit()
+    # Reset peak memory stats before refit
+    workers = megatron_policy.worker_group.workers
+    ray.get([w.reset_peak_memory_stats.remote() for w in workers])
+
+    refit_policy_generation(
+        megatron_policy,
+        vllm_policy,
+        vllm_config["colocated"]["enabled"],
+        _refit_buffer_size_gb=1,
+    )
+
+    gpu_infos = ray.get([w.get_gpu_info.remote() for w in workers])
+
+    # Gather memory stats
+    current_allocated = 0.0
+    current_reserved = 0.0
+    peak_allocated = 0.0
+    peak_reserved = 0.0
+    for status in gpu_infos:
+        current_allocated = max(current_allocated, status["memory_allocated_mb"])
+        current_reserved = max(current_reserved, status["memory_reserved_mb"])
+        peak_allocated = max(peak_allocated, status["peak_memory_allocated_mb"])
+        peak_reserved = max(peak_reserved, status["peak_memory_reserved_mb"])
+
+    # Check memory stats - should be minimal after refit
+    assert current_allocated == 0.0, "Memory should be 0 after refit completed"
+    assert current_reserved == 0.0, "Memory should be 0 after refit completed"
+
+    # Memory thresholds for tiny model on 2 GPUs with Megatron
+    # These should be much lower than the full model thresholds
+    assert peak_allocated < 2000, (
+        f"Peak allocated memory should < 2000 MB, got {peak_allocated}"
+    )
+    assert peak_reserved < 2000, (
+        f"Peak reserved memory should < 2000 MB, got {peak_reserved}"
+    )
+
+    print(
+        f"Peak memory usage: {peak_allocated:.1f}MB allocated, {peak_reserved:.1f}MB reserved"
+    )
+
+    # Clean up
+    vllm_policy.shutdown()
+    megatron_policy.shutdown()
+
+
+@pytest.mark.timeout(120)
+def test_vllm_megatron_pipeline_parallel(cluster, tokenizer):
+    """Test vLLM generation with Megatron pipeline parallel training."""
+
+    if cluster.num_gpus_per_node < 2:
+        pytest.skip("Need at least 2 GPUs for pipeline parallel test")
+
+    # Create configs for pipeline parallel
+    vllm_config = basic_vllm_test_config.copy()
+    vllm_config = configure_generation_config(vllm_config, tokenizer)
+
+    megatron_config = get_basic_megatron_test_config(
+        tp=1,
+        pp=2,  # Pipeline parallel
+        precision="float32",
+    )
+
+    vllm_policy = None
+    megatron_policy = None
+
+    try:
+        # Create simple test data
+        prompts = ["Hello, world!", "How are you?"]
+        tokenized = tokenizer(
+            prompts,
+            padding=True,
+            truncation=True,
+            max_length=16,
+            return_tensors="pt",
+            padding_side="right",
+        )
+        test_input_data = BatchedDataDict(
+            {
+                "input_ids": tokenized["input_ids"],
+                "input_lengths": tokenized["attention_mask"].sum(dim=1).to(torch.int32),
+            }
+        )
+
+        print("Creating Megatron policy with PP=2...")
+        megatron_policy = Policy(cluster, megatron_config, tokenizer)
+
+        print("Creating vLLM policy...")
+        vllm_policy = VllmGeneration(cluster, vllm_config)
+        vllm_policy.finish_generation()
+
+        print("Refitting vLLM with Megatron PP=2 weights...")
+        refit_policy_generation(
+            megatron_policy, vllm_policy, vllm_config["colocated"]["enabled"]
+        )
+
+        # Test generation
+        print("Testing generation with PP=2 Megatron weights...")
+        outputs = vllm_policy.generate(test_input_data, greedy=True)
+
+        # Validate outputs
+        assert "output_ids" in outputs, "output_ids not found in generation output"
+        assert outputs["output_ids"].shape[0] == len(prompts), "Wrong batch size"
+
+        generated_texts = tokenizer.batch_decode(
+            outputs["output_ids"], skip_special_tokens=True
+        )
+        print(f"Generated texts with PP=2: {generated_texts}")
+
+        # All texts should be non-empty
+        assert all(len(text) > 0 for text in generated_texts), (
+            "Some generated texts are empty"
+        )
+
+        print("Pipeline parallel test successful!")
+
+    finally:
+        if vllm_policy:
+            vllm_policy.shutdown()
+        if megatron_policy:
+            megatron_policy.shutdown()
