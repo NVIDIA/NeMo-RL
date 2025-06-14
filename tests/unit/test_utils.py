@@ -34,6 +34,7 @@ class SimpleLoss:
         # Just return mean of logprobs as the loss for testing
         loss = next_token_logits.mean()
         metrics = {
+            "loss": loss.item(),
             "test_metric": loss.item() * 0.5,
             "num_valid_samples": 1,
         }
