@@ -893,13 +893,11 @@ class VllmGenerationWorker:
             traceback.print_exc()
             return False
 
-    async def update_weights_from_ipc_handles_async(
-        self, ipc_handles: dict[str, Any]
-    ) -> bool:
+    async def update_weights_from_ipc_handles_async(self, data: dict[str, Any]) -> bool:
         """Async version of update_weights_from_ipc_handles.
 
         Args:
-            ipc_handles (dict): Dictionary mapping device UUIDs (str) to parameter IPC handles.
+            data (dict): Dictionary mapping device UUIDs (str) to parameter IPC handles.
 
         Returns:
             bool: True if weights were successfully updated, False otherwise.
@@ -915,7 +913,7 @@ class VllmGenerationWorker:
                 )
 
             result_or_coro = await self.llm.collective_rpc(
-                "update_weights_from_ipc_handles", args=(ipc_handles,)
+                "update_weights_from_ipc_handles", args=(data,)
             )
 
             if asyncio.iscoroutine(result_or_coro):
@@ -938,7 +936,7 @@ class VllmGenerationWorker:
             traceback.print_exc()
             return False
 
-    def update_weights_from_collective(self, info: dict[str, Any]) -> bool:
+    def update_weights_from_collective(self, data: dict[str, Any]) -> bool:
         """Update the model weights from collective communication."""
         try:
             assert self.llm is not None, (
@@ -951,7 +949,7 @@ class VllmGenerationWorker:
                 )
 
             result_or_coro = self.llm.collective_rpc(
-                "update_weights_from_collective", args=(info,)
+                "update_weights_from_collective", args=(data,)
             )
             worker_result = result_or_coro[0]
 
