@@ -342,13 +342,11 @@ class VllmGenerationWorker:
         else:
             self.llm = vllm.LLM(**llm_kwargs)
 
-    def init_collective(
-        self, rank_prefix: int, ip: str, port: int, world_size: int
-    ) -> None:
+    def init_collective(self, data: int, ip: str, port: int, world_size: int) -> None:
         self.llm.collective_rpc(
             "init_collective",
             args=(
-                rank_prefix,
+                data,
                 ip,
                 port,
                 world_size,
