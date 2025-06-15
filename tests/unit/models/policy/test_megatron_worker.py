@@ -921,8 +921,8 @@ def test_megatron_checkpoint_save_kill_and_restore(num_gpus, tp, pp):
 
             # Create test data
             torch.manual_seed(42)
-            input_ids = torch.randint(0, 32000, (4, 32))
-            attention_mask = torch.ones(4, 32)
+            input_ids = torch.randint(0, 32000, (8, 32))
+            attention_mask = torch.ones(8, 32)
             input_lengths = attention_mask.sum(dim=1).to(torch.int32)
 
             data = BatchedDataDict(
@@ -930,8 +930,8 @@ def test_megatron_checkpoint_save_kill_and_restore(num_gpus, tp, pp):
                     "input_ids": input_ids,
                     "input_lengths": input_lengths,
                     "attention_mask": attention_mask,
-                    "labels": torch.randint(0, 32000, (4, 32)),
-                    "sample_mask": torch.ones(4),
+                    "labels": torch.randint(0, 32000, (8, 32)),
+                    "sample_mask": torch.ones(8),
                 }
             )
 
