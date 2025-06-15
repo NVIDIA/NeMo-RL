@@ -770,6 +770,9 @@ def test_megatron_reference_policy_functionality():
     )
 
     config = create_megatron_test_config()
+    config["megatron_cfg"]["optimizer"]["lr"] = 1e-3  # Increase from 5e-6 to 1e-3
+    config["megatron_cfg"]["optimizer"]["min_lr"] = 1e-4  # Increase min_lr as well
+
     tokenizer = get_tokenizer(config["tokenizer"])
     config["generation"] = configure_generation_config(config["generation"], tokenizer)
 
@@ -823,10 +826,21 @@ def test_megatron_reference_policy_functionality():
     loss_fn = SimpleLoss()
     policy.prepare_for_training()
 
-    for _ in range(3):
-        policy.train(train_data, loss_fn)
+    # Train for more steps and monitor loss to ensure training is working
+    losses = []
+    for step in range(10):  # Increased from 3 to 10 steps
+        results = policy.train(train_data, loss_fn)
+        loss_value = results["loss"].cpu().item()
+        losses.append(loss_value)
+        print(f"Training step {step}, loss: {loss_value}")
 
     policy.finish_training()
+
+    # Verify that loss actually decreased during training
+    print(f"Loss progression: {losses[0]:.6f} -> {losses[-1]:.6f}")
+    assert losses[0] > losses[-1], (
+        f"Loss should decrease during training: {losses[0]} -> {losses[-1]}"
+    )
 
     # Get logprobs after training
     policy.prepare_for_lp_inference()
@@ -840,10 +854,23 @@ def test_megatron_reference_policy_functionality():
         reference_logprobs, post_train_reference_logprobs, rtol=1e-4, atol=1e-4
     )
 
-    # Policy should have changed after training
-    assert not torch.allclose(
-        initial_logprobs, post_train_logprobs, rtol=1e-3, atol=1e-3
-    ), "Policy logprobs should change after training"
+    # Policy should have changed after training - check with more detailed metrics
+    max_diff = torch.max(torch.abs(initial_logprobs - post_train_logprobs)).item()
+    mean_diff = torch.mean(torch.abs(initial_logprobs - post_train_logprobs)).item()
+    print(
+        f"Logprob differences after training - Max: {max_diff:.6f}, Mean: {mean_diff:.6f}"
+    )
+
+    # Use a more lenient threshold since we increased learning rate
+    logprobs_changed = not torch.allclose(
+        initial_logprobs, post_train_logprobs, rtol=1e-2, atol=1e-2
+    )
+
+    assert logprobs_changed, (
+        f"Policy logprobs should change after training. "
+        f"Max diff: {max_diff:.6f}, Mean diff: {mean_diff:.6f}. "
+        f"Loss change: {losses[0]:.6f} -> {losses[-1]:.6f}"
+    )
 
     policy.shutdown()
     cluster.shutdown()
