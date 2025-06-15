@@ -1526,7 +1526,7 @@ class VllmGeneration(GenerationInterface):
         # Use run_all_workers_single_data to send data to all workers
         futures = self.worker_group.run_all_workers_single_data(
             "update_weights_from_collective",
-            info=info,
+            data=info,
             run_rank_0_only_axes=["tensor_parallel", "pipeline_parallel"],
         )
 

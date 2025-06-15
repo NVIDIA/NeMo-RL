@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple
 import torch
 from megatron.core import parallel_state
 from nemo.collections.llm.gpt.model.base import GPTConfig
+from torch.distributed import get_process_group_ranks
 
 import nemo_rl.models.megatron.converters as model_converters
 
@@ -57,7 +58,7 @@ def get_global_param_key_to_local_key_map(
     # Initialize pipeline parallel group information.
     pp_group = parallel_state.get_pipeline_model_parallel_group()
     pp_world_size = torch.distributed.get_world_size(pp_group)
-    pp_global_rank_ids = model_converters.get_all_rank_ids_in_group(pp_group)
+    pp_global_rank_ids = get_process_group_ranks(pp_group)
 
     # Build a mapping on each PP rank from a computed global key to the raw state dict key.
     # The global key is computed by replacing the local layer number (after "layers.")

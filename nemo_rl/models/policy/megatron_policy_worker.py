@@ -82,6 +82,7 @@ from nemo.tron.utils.train_utils import (
     reduce_max_stat_across_model_parallel_group,
 )
 from ray.util.queue import Queue
+from torch.distributed import get_process_group_ranks
 from transformers import AutoTokenizer
 
 from nemo_rl.algorithms.interfaces import LossFunction, LossType
@@ -100,7 +101,6 @@ from nemo_rl.models.megatron.common import (
 from nemo_rl.models.megatron.community_import import import_model_from_hf_name
 from nemo_rl.models.megatron.converters.common import (
     MegatronToHFConverter,
-    get_all_rank_ids_in_group,
 )
 from nemo_rl.models.megatron.refit_utils import (
     gather_params,
@@ -1176,11 +1176,11 @@ class MegatronPolicyWorker:
         # Get parallel info
         tp_group = parallel_state.get_tensor_model_parallel_group()
         tp_world_size = torch.distributed.get_world_size(tp_group)
-        tp_group_rank_ids = get_all_rank_ids_in_group(tp_group)
+        tp_group_rank_ids = get_process_group_ranks(tp_group)
 
         pp_group = parallel_state.get_pipeline_model_parallel_group()
         pp_world_size = torch.distributed.get_world_size(pp_group)
-        pp_group_rank_ids = get_all_rank_ids_in_group(pp_group)
+        pp_group_rank_ids = get_process_group_ranks(pp_group)
 
         # Collect parameter info
         param_info = []

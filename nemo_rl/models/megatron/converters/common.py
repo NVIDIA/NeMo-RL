@@ -31,29 +31,6 @@ from transformers.integrations.accelerate import init_empty_weights
 import nemo_rl.models.megatron.converters.llama as llama_converter
 import nemo_rl.models.megatron.converters.qwen2 as qwen2_converter
 
-_GROUP_TO_RANKS_CACHE = {}
-
-
-def get_all_rank_ids_in_group(group):
-    """Get all rank ids in a group."""
-    if group in _GROUP_TO_RANKS_CACHE:
-        return _GROUP_TO_RANKS_CACHE[group]
-
-    curr_global_rank = int(torch.distributed.get_rank())
-    group_size = torch.distributed.get_world_size(group=group)
-    global_rank_tensor = torch.tensor(
-        [curr_global_rank], dtype=torch.int, device=torch.cuda.current_device()
-    )
-    global_ranks = [
-        torch.empty(1, dtype=torch.int, device=torch.cuda.current_device())
-        for _ in range(group_size)
-    ]
-    torch.distributed.all_gather(global_ranks, global_rank_tensor, group=group)
-    _GROUP_TO_RANKS_CACHE[group] = [
-        int(global_ranks[i].item()) for i in range(group_size)
-    ]
-    return _GROUP_TO_RANKS_CACHE[group]
-
 
 def get_local_layer_num(s):
     """Assumes layer number is preceeded by 'layers.'."""
