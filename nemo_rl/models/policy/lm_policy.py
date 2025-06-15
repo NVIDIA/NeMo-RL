@@ -91,6 +91,7 @@ class Policy(ColocatablePolicyInterface, GenerationInterface):
             cp_size = config["megatron_cfg"]["context_parallel_size"]
             training_backend = "megatron"
         else:
+            training_backend = "hf"
             worker_builder_cls = (
                 "nemo_rl.models.policy.fsdp1_policy_worker.FSDP1PolicyWorker"
             )
