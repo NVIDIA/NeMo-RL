@@ -956,9 +956,9 @@ def test_megatron_checkpoint_save_kill_and_restore(num_gpus, tp, pp):
             # This is a proxy for parameter values since we can't directly access the distributed model
             sample_data = BatchedDataDict(
                 {
-                    "input_ids": input_ids[:2],  # Just first 2 samples
-                    "input_lengths": input_lengths[:2],
-                    "attention_mask": attention_mask[:2],
+                    "input_ids": input_ids[:4],
+                    "input_lengths": input_lengths[:4],
+                    "attention_mask": attention_mask[:4],
                 }
             )
 
